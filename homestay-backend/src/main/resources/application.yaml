@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: homestay-backend
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/homestayv4?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: my-secret-pw
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        default_batch_fetch_size: 20
+    open-in-view: false
+
+
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+app:
+  cors:
+    allowed-origins: http://localhost:5173,http://localhost:3000
+  jwt:
+    secret: change-this-to-a-long-random-secret-at-least-256-bits-for-production
+    access-token-expiration-ms: 3600000        # 1 giờ
+    refresh-token-expiration-ms: 604800000     # 7 ngày
+
+logging:
+  level:
+    vn.edu.hust.homestay: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: INFO
