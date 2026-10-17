@@ -1,0 +1,40 @@
+:root {
+  /* Màu thương hiệu */
+  --color-primary: #FF385C;
+  --color-primary-hover: #E00B41;
+  --color-primary-soft: #FFE8EC;      /* nền nhạt cho badge/hover */
+  --color-primary-disabled: #FFD1DA;
+
+  /* Trung tính */
+  --color-ink: #222222;               /* chữ chính */
+  --color-body: #484848;              /* chữ phụ nội dung */
+  --color-muted: #717171;             /* chú thích, placeholder (đạt tương phản AA trên nền trắng) */
+  --color-border: #DDDDDD;
+  --color-border-strong: #B0B0B0;
+  --color-surface: #FFFFFF;
+  --color-surface-soft: #F7F7F7;      /* nền trang quản lý, ô nhập, hàng bảng xen kẽ */
+
+  /* Trạng thái (dùng cho badge, toast, banner) */
+  --color-success: #008A05;   --color-success-soft: #E6F4E6;
+  --color-warning: #B25E00;   --color-warning-soft: #FFF1DC;
+  --color-danger:  #C13515;   --color-danger-soft:  #FDE9E4;
+  --color-info:    #1D5FBF;   --color-info-soft:    #E6EFFB;
+  --color-teal:    #00786F;   --color-teal-soft:    #DDF3F0;
+
+  /* Bo góc */
+  --radius-sm: 8px;                   /* nút, input */
+  --radius-md: 12px;                  /* card, modal nhỏ */
+  --radius-lg: 20px;                  /* ảnh thẻ phòng, panel đặt phòng */
+  --radius-pill: 999px;               /* thanh tìm kiếm, chip */
+
+  /* Khoảng cách: lưới 4px */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px; --space-16: 64px;
+
+  /* Đổ bóng: chỉ 2 mức */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 8%), 0 2px 8px rgb(0 0 0 / 8%);       /* card nổi, dropdown */
+  --shadow-2: 0 6px 20px rgb(0 0 0 / 16%);                                  /* modal, popover lịch */
+
+  /* Lớp */
+  --z-sticky: 20; --z-dropdown: 40; --z-modal: 60; --z-toast: 80;
+}

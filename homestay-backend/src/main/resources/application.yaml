@@ -1,11 +1,13 @@
 spring:
+  config:
+    import: optional:file:./.env[.properties]
   application:
     name: homestay-backend
 
   datasource:
-    url: jdbc:mysql://localhost:3306/homestayv4?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false
-    username: root
-    password: my-secret-pw
+    url: ${DB_URL:jdbc:mysql://localhost:3306/homestayv4?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 10
@@ -34,8 +36,10 @@ server:
 app:
   cors:
     allowed-origins: http://localhost:5173,http://localhost:3000
+  storage:
+    upload-dir: storage/uploads
   jwt:
-    secret: change-this-to-a-long-random-secret-at-least-256-bits-for-production
+    secret: ${JWT_SECRET}
     access-token-expiration-ms: 3600000        # 1 giờ
     refresh-token-expiration-ms: 604800000     # 7 ngày
 

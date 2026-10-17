@@ -37,8 +37,10 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Health check
                 .requestMatchers("/api/v1/health").permitAll()
-                // Public API: xem homestay (Tuần 1)
+                // Public API: xem homestay & phòng (Tuần 1)
                 .requestMatchers("/api/v1/public/**").permitAll()
+                // Static file uploads (ảnh homestay, phòng)
+                .requestMatchers("/files/**").permitAll()
                 // Swagger UI (dev)
                 .requestMatchers(
                     "/swagger-ui/**",
