@@ -42,6 +42,9 @@ public class Room {
     @Column(nullable = false, length = 20)
     private RoomStatus status = RoomStatus.ACTIVE;
 
+    @Column(name = "status_reason", length = 255)
+    private String statusReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

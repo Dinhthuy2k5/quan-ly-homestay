@@ -71,6 +71,7 @@ CREATE TABLE rooms (
   amenities   JSON NULL,                           -- ["Wifi","Điều hòa",...]
   status      ENUM('ACTIVE','LOCKED','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
               -- ACTIVE: nhận đặt | LOCKED: tạm khóa | INACTIVE: ngừng khai thác
+  status_reason VARCHAR(255) NULL,                 -- lý do gần nhất khi Manager đổi trạng thái
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_rooms_name (homestay_id, name),

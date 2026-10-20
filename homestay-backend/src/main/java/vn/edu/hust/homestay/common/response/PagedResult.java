@@ -45,4 +45,14 @@ public class PagedResult<T> {
                 .totalPages(totalPages)
                 .build();
     }
+
+    public static <T, R> PagedResult<R> of(Page<T> page, List<R> items) {
+        return PagedResult.<R>builder()
+                .items(items)
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .build();
+    }
 }
