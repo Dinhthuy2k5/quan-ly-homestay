@@ -43,20 +43,23 @@ quan_ly_homestay/
 ### 1. Chuẩn bị Cơ sở dữ liệu (MySQL)
 1. Cài đặt MySQL 8.0 trở lên.
 2. Mở file `database/homestay-database.sql` trong MySQL Workbench hoặc Command Line và thực thi để tạo database `homestayv4` và các bảng.
-3. Cấu hình thông tin kết nối bằng biến môi trường. Không ghi mật khẩu hoặc JWT secret vào file được commit.
+3. Tạo file cấu hình riêng cho máy từ mẫu, rồi điền thông tin MySQL, JWT và SMTP. File `.env` này đã được Git bỏ qua.
 
-   Ví dụ trong PowerShell trước khi chạy backend:
+   Trong PowerShell:
 
    ```powershell
-   $env:DB_URL = 'jdbc:mysql://localhost:3306/homestayv4?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false'
-   $env:DB_USERNAME = 'root'
-   $env:DB_PASSWORD = 'mat-khau-mysql-cua-ban'
-   $jwtBytes = New-Object byte[] 32
-   [Security.Cryptography.RandomNumberGenerator]::Fill($jwtBytes)
-   $env:JWT_SECRET = [Convert]::ToBase64String($jwtBytes)
+   Copy-Item homestay-backend/.env.example homestay-backend/.env
    ```
 
-   `JWT_SECRET` cần tối thiểu 32 byte ngẫu nhiên. Có thể lưu các biến này trong cấu hình môi trường riêng của máy; không commit giá trị bí mật lên Git.
+   Điền `DB_PASSWORD`, `JWT_SECRET`, `MAIL_USERNAME`, `MAIL_PASSWORD` và `MAIL_FROM` trong `homestay-backend/.env`. `JWT_SECRET` phải là Base64 của ít nhất 32 byte ngẫu nhiên; có thể tạo bằng PowerShell:
+
+   ```powershell
+   $jwtBytes = New-Object byte[] 32
+   [Security.Cryptography.RandomNumberGenerator]::Fill($jwtBytes)
+   [Convert]::ToBase64String($jwtBytes)
+   ```
+
+   Gmail SMTP cần App Password 16 ký tự (bỏ khoảng trắng định dạng khi sao chép), không dùng mật khẩu đăng nhập Gmail. Không commit `.env` hoặc chia sẻ các giá trị bí mật.
 
 ### 2. Chạy Backend (Spring Boot)
 Yêu cầu: JDK 21 trở lên.

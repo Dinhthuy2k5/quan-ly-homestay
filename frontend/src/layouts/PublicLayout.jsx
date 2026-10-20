@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Home, Menu, Search, X } from 'lucide-react';
+import { Home, LogIn, LogOut, Menu, Search, User as UserIcon, X } from 'lucide-react';
 import SearchBar from '../components/ui/SearchBar';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../lib/constants';
+import { useAuth } from '../features/auth/context/useAuth';
 
 function SearchOverlay({ initialProvince, initialKeyword, onSearch, onClose }) {
   useEffect(() => {
@@ -33,6 +34,8 @@ export function PublicLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user, isAuthenticated, logout } = useAuth();
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const province = searchParams.get('province') || '';
@@ -47,6 +50,21 @@ export function PublicLayout() {
     navigate(`/search${query ? `?${query}` : ''}`);
     setSearchOpen(false);
     setMenuOpen(false);
+  };
+
+  const handleLogout = async () => {
+    setMenuOpen(false);
+    await logout();
+    navigate('/', { replace: true });
+  };
+
+  const getInitials = (name) => {
+    if (!name) return 'HS';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
   };
 
   return (
@@ -73,14 +91,90 @@ export function PublicLayout() {
                 <span>Bắt đầu tìm kiếm</span>
               </button>
             )}
-            <button type="button" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-label="Mở menu điều hướng" className="flex h-11 items-center gap-2 rounded-full border border-[var(--color-border)] p-1.5 pl-3 transition-shadow hover:shadow-[var(--shadow-1)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)]">
+
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-expanded={menuOpen}
+              aria-label="Mở menu người dùng"
+              className="flex h-11 items-center gap-2 rounded-full border border-[var(--color-border)] p-1.5 pl-3 transition-shadow hover:shadow-[var(--shadow-1)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)]"
+            >
               {menuOpen ? <X aria-hidden="true" className="h-4 w-4" /> : <Menu aria-hidden="true" className="h-4 w-4" />}
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-surface-soft)] text-xs font-semibold text-[var(--color-body)]" aria-hidden="true">HS</span>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-surface-soft)] text-xs font-semibold text-[var(--color-body)]" aria-hidden="true">
+                {isAuthenticated ? getInitials(user?.fullName) : 'HS'}
+              </span>
             </button>
+
             {menuOpen && (
-              <nav aria-label="Menu chính" className="absolute right-0 top-14 z-[var(--z-dropdown)] w-56 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-2 shadow-[var(--shadow-2)]">
-                <Link to="/" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-3 text-sm font-medium hover:bg-[var(--color-surface-soft)]">Khám phá homestay</Link>
-                <Link to="/search" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-3 text-sm font-medium hover:bg-[var(--color-surface-soft)]">Tìm kiếm</Link>
+              <nav aria-label="Menu chính" className="absolute right-0 top-14 z-[var(--z-dropdown)] w-60 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-2 shadow-[var(--shadow-2)]">
+                {isAuthenticated ? (
+                  <>
+                    <div className="border-b border-[var(--color-border)] px-3 py-2.5">
+                      <p className="truncate text-sm font-semibold text-[var(--color-ink)]">{user?.fullName || 'Người dùng'}</p>
+                      <p className="truncate text-xs text-[var(--color-muted)]">{user?.email}</p>
+                    </div>
+
+                    <Link to="/account" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium hover:bg-[var(--color-surface-soft)]">
+                      <UserIcon className="h-4 w-4 text-[var(--color-muted)]" />
+                      <span>Tài khoản cá nhân</span>
+                    </Link>
+
+                    {user?.role === 'MANAGER' && (
+                      <Link to="/manager" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-soft)]">
+                        Khu vực Quản lý homestay
+                      </Link>
+                    )}
+                    {user?.role === 'DIRECTOR' && (
+                      <Link to="/director" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-soft)]">
+                        Khu vực Giám đốc
+                      </Link>
+                    )}
+                    {user?.role === 'ADMIN' && (
+                      <Link to="/admin/users" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-soft)]">
+                        Quản trị hệ thống
+                      </Link>
+                    )}
+
+                    <div className="my-1 border-t border-[var(--color-border)]" />
+
+                    <Link to="/" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-soft)]">
+                      Khám phá homestay
+                    </Link>
+                    <Link to="/search" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-soft)]">
+                      Tìm kiếm
+                    </Link>
+
+                    <div className="my-1 border-t border-[var(--color-border)]" />
+
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm font-medium text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      <span>Đăng xuất</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link to="/login" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]">
+                      <LogIn className="h-4 w-4 text-[var(--color-primary)]" />
+                      <span>Đăng nhập</span>
+                    </Link>
+                    <Link to="/register" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-soft)]">
+                      Đăng ký tài khoản
+                    </Link>
+
+                    <div className="my-1 border-t border-[var(--color-border)]" />
+
+                    <Link to="/" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-soft)]">
+                      Khám phá homestay
+                    </Link>
+                    <Link to="/search" onClick={() => setMenuOpen(false)} className="block rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-soft)]">
+                      Tìm kiếm
+                    </Link>
+                  </>
+                )}
               </nav>
             )}
           </div>

@@ -996,7 +996,7 @@ Quy ước đặt tên:
 
 ## 9. Tầng gọi API
 
-**Cấu hình** `src/lib/api/client.ts`:
+**Cấu hình** `src/lib/api/client.js`:
 
 - `baseURL = import.meta.env.VITE_API_BASE_URL` (mặc định `http://localhost:8080/api/v1`). Endpoint trong code viết **rút gọn sau `/api/v1`** như tài liệu (`/customer/bookings`).
 - Header `Authorization: Bearer <accessToken>` cho mọi endpoint trừ: `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password`, và `/public/**`.
@@ -1011,7 +1011,7 @@ type Meta = { page: number; size: number; totalElements: number; totalPages: num
 
 - Interceptor "mở phong bì": hàm API trả thẳng `data` (và `meta` nếu là danh sách); lỗi ném `ApiError` đã chuẩn hóa. Một số API tìm kiếm công khai (availability, danh sách homestay) trả `{ items, page, size, totalElements, totalPages }` không bọc — viết adapter riêng trong `api.ts` của feature để **component luôn nhận một dạng thống nhất**.
 - **Làm mới token:** gặp `401` với `TOKEN_EXPIRED` → gọi `/auth/refresh` **một lần** (xếp hàng các request đang chờ, tránh gọi nhiều lần), thử lại request gốc; refresh thất bại → xóa phiên, chuyển `/login`.
-- Lưu token: **accessToken trong bộ nhớ** (state), **refreshToken trong `localStorage`**. Ghi chú này là đánh đổi chấp nhận được cho đồ án; không lưu mật khẩu, không log token ra console.
+- Lưu token: **accessToken trong bộ nhớ**, **refreshToken trong `sessionStorage`** để mỗi tab giữ phiên đăng nhập riêng. Frontend hiện giữ access token tại `src/lib/api/accessTokenStore.js`; khi tải lại trang trong cùng tab, dùng refresh token để cấp access token mới trước khi tải hồ sơ. Các yêu cầu refresh đồng thời trong một tab phải dùng chung một lần gọi để tránh xoay cùng refresh token nhiều lần. Không lưu mật khẩu, không log token ra console.
 - Đăng xuất: gọi `/auth/logout`, xóa token, xóa cache TanStack Query.
 
 **Quy tắc TanStack Query:**

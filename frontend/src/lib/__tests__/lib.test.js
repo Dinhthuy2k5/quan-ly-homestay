@@ -39,6 +39,15 @@ test('getErrorMessage returns friendly Vietnamese message from error code', () =
   const errWithCode = { response: { data: { error: { code: 'ROOM_NOT_AVAILABLE' } } } };
   assert.equal(getErrorMessage(errWithCode), ERROR_MESSAGES.ROOM_NOT_AVAILABLE);
 
+  const errFutureBookings = { response: { data: { error: { code: 'ROOM_HAS_FUTURE_BOOKINGS' } } } };
+  assert.equal(getErrorMessage(errFutureBookings), ERROR_MESSAGES.ROOM_HAS_FUTURE_BOOKINGS);
+
+  const errRoomNameExists = { response: { data: { error: { code: 'ROOM_NAME_EXISTS' } } } };
+  assert.equal(getErrorMessage(errRoomNameExists), ERROR_MESSAGES.ROOM_NAME_EXISTS);
+
+  const errNotAssigned = { response: { data: { error: { code: 'HOMESTAY_NOT_ASSIGNED' } } } };
+  assert.equal(getErrorMessage(errNotAssigned), ERROR_MESSAGES.HOMESTAY_NOT_ASSIGNED);
+
   const errNotFound = { response: { status: 404 } };
   assert.equal(getErrorMessage(errNotFound), 'Không tìm thấy dữ liệu yêu cầu.');
 });
