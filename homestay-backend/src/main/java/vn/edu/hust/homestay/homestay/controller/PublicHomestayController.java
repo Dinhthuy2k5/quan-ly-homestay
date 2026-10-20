@@ -10,6 +10,8 @@ import vn.edu.hust.homestay.homestay.dto.HomestayDetailResponse;
 import vn.edu.hust.homestay.homestay.dto.HomestaySummaryResponse;
 import vn.edu.hust.homestay.homestay.service.PublicHomestayService;
 import vn.edu.hust.homestay.room.dto.RoomTypePublicResponse;
+import vn.edu.hust.homestay.room.dto.PublicRoomSummaryResponse;
+import vn.edu.hust.homestay.room.service.PublicRoomService;
 
 import java.util.List;
 
@@ -24,9 +26,11 @@ import java.util.List;
 public class PublicHomestayController {
 
     private final PublicHomestayService publicHomestayService;
+    private final PublicRoomService publicRoomService;
 
-    public PublicHomestayController(PublicHomestayService publicHomestayService) {
+    public PublicHomestayController(PublicHomestayService publicHomestayService, PublicRoomService publicRoomService) {
         this.publicHomestayService = publicHomestayService;
+        this.publicRoomService = publicRoomService;
     }
 
     /**
@@ -84,5 +88,17 @@ public class PublicHomestayController {
     ) {
         List<RoomTypePublicResponse> roomTypes = publicHomestayService.getHomestayRoomTypes(homestayId);
         return ResponseEntity.ok(ApiResponse.ok(roomTypes));
+    }
+
+    /** API-PUB-07: Danh sách phòng ACTIVE để khách duyệt tại homestay. */
+    @Operation(summary = "API-PUB-07: Danh sách phòng công khai của homestay")
+    @GetMapping("/{homestayId}/rooms")
+    public ResponseEntity<ApiResponse<PagedResult<PublicRoomSummaryResponse>>> getRooms(
+            @PathVariable Long homestayId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        PagedResult<PublicRoomSummaryResponse> rooms = publicRoomService.getHomestayRooms(homestayId, page, size);
+        return ResponseEntity.ok(ApiResponse.ok(rooms));
     }
 }

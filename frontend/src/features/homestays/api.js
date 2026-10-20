@@ -45,3 +45,11 @@ export async function fetchHomestayRoomTypes(homestayId) {
   if (!Array.isArray(result)) throw new Error('Máy chủ trả về danh mục loại phòng không hợp lệ.');
   return result;
 }
+
+/** Lấy danh sách phòng ACTIVE để khách duyệt trong trang homestay (API-PUB-07). */
+export async function fetchHomestayRooms(homestayId, { page = 0, size = 20 } = {}) {
+  const res = await apiClient.get(`/public/homestays/${homestayId}/rooms`, { params: { page, size } });
+  const result = res.data?.data;
+  if (!result || !Array.isArray(result.items)) throw new Error('Máy chủ trả về danh sách phòng không hợp lệ.');
+  return result;
+}

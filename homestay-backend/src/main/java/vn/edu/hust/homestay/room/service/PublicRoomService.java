@@ -6,7 +6,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import vn.edu.hust.homestay.common.exception.BusinessException;
+import vn.edu.hust.homestay.common.response.PagedResult;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.entity.Homestay.HomestayStatus;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
@@ -17,6 +20,7 @@ import vn.edu.hust.homestay.pricing.entity.PriceRule;
 import vn.edu.hust.homestay.pricing.entity.PriceRule.RuleType;
 import vn.edu.hust.homestay.pricing.repository.PriceRuleRepository;
 import vn.edu.hust.homestay.room.dto.RoomDetailPublicResponse;
+import vn.edu.hust.homestay.room.dto.PublicRoomSummaryResponse;
 import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.entity.RoomType;
@@ -131,5 +135,49 @@ public class PublicRoomService {
                         .description(roomType.getDescription())
                         .build() : null)
                 .build();
+    }
+
+    /** Danh sách phòng ACTIVE có thể xem công khai tại một homestay ACTIVE. */
+    public PagedResult<PublicRoomSummaryResponse> getHomestayRooms(Long homestayId, int page, int size) {
+        homestayRepository.findByIdAndStatus(homestayId, HomestayStatus.ACTIVE)
+                .orElseThrow(() -> BusinessException.notFound("HOMESTAY_NOT_FOUND", "Không tìm thấy homestay đang hoạt động"));
+
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        Page<Room> rooms = roomRepository.findByHomestayIdAndStatusOrderByIdAsc(
+                homestayId, RoomStatus.ACTIVE, PageRequest.of(safePage, safeSize));
+
+        List<PublicRoomSummaryResponse> items = rooms.getContent().stream().map(room -> {
+            RoomType roomType = roomTypeRepository.findByIdAndHomestayId(room.getRoomTypeId(), homestayId).orElse(null);
+            List<String> amenities = parseAmenities(room.getAmenities(), room.getId());
+            String coverUrl = mediaRepository.findFirstByOwnerTypeAndOwnerIdOrderBySortOrderAsc(OwnerType.ROOM, room.getId())
+                    .map(media -> media.getUrl()).orElse(null);
+            Long nightlyPrice = priceRuleRepository.findByRoomIdAndRuleTypeAndIsActiveTrue(room.getId(), RuleType.BASE)
+                    .map(PriceRule::getBasePrice).orElse(null);
+
+            return PublicRoomSummaryResponse.builder()
+                    .id(room.getId())
+                    .roomTypeId(room.getRoomTypeId())
+                    .name(room.getName())
+                    .roomTypeName(roomType != null ? roomType.getName() : null)
+                    .description(room.getDescription())
+                    .maxGuests(room.getMaxGuests() != null ? room.getMaxGuests().intValue() : null)
+                    .amenities(amenities)
+                    .coverImageUrl(coverUrl)
+                    .nightlyPrice(nightlyPrice)
+                    .build();
+        }).toList();
+
+        return PagedResult.of(rooms, items);
+    }
+
+    private List<String> parseAmenities(String json, Long roomId) {
+        if (json == null || json.isBlank()) return Collections.emptyList();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("Không thể parse amenities JSON cho room id {}: {}", roomId, e.getMessage());
+            return Collections.emptyList();
+        }
     }
 }

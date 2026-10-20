@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
-  AirVent, Check, ChevronLeft, ChevronRight, Clock, Home, MapPin,
-  Phone, Sparkles, Tv, Users, Wifi, X,
+  ChevronLeft, ChevronRight, Clock, Home,
+  Phone, Sparkles, Users, X,
 } from 'lucide-react';
 import { fetchRoomDetail } from '../api';
 import { fileUrl } from '../../../lib/api/client';
@@ -12,10 +12,8 @@ import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import Button from '../../../components/ui/Button';
 import ErrorBanner from '../../../components/ui/ErrorBanner';
 import StatusBadge from '../../../components/ui/StatusBadge';
-
-const AMENITY_ICONS = {
-  Wifi, 'Wi-Fi': Wifi, 'Điều hòa': AirVent, TV: Tv, Tivi: Tv,
-};
+import HomestayLocationMap from '../../homestays/components/HomestayLocationMap';
+import { groupAmenities } from '../../../lib/amenities';
 
 function PhotoGallery({ roomName, media }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -208,21 +206,33 @@ export function RoomDetailPage() {
               <p className="mt-4 text-sm text-[var(--color-muted)]">Homestay chưa cập nhật tiện nghi.</p>
             ) : (
               <>
-                <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {visibleAmenities.map((amenity, index) => {
-                    const Icon = AMENITY_ICONS[amenity] || Check;
-                    return <li key={`${amenity}-${index}`} className="flex min-h-11 items-center gap-3 text-[var(--color-body)]"><Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-[var(--color-muted)]" />{amenity}</li>;
-                  })}
-                </ul>
+                <div className="mt-5 space-y-6">
+                  {groupAmenities(visibleAmenities).map((group) => (
+                    <section key={group.name} aria-labelledby={`room-amenities-${group.name}`}>
+                      <h3 id={`room-amenities-${group.name}`} className="mb-2 text-base font-semibold text-[var(--color-ink)]">{group.name}</h3>
+                      <ul className="divide-y divide-[var(--color-border)]">
+                        {group.items.map(({ name, icon: Icon }, index) => (
+                          <li key={`${name}-${index}`} className="flex min-h-14 items-center gap-4 py-3 text-[var(--color-body)]">
+                            <Icon aria-hidden="true" className="h-6 w-6 shrink-0 text-[var(--color-ink)]" strokeWidth={1.75} />
+                            <span>{name}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
                 {amenities.length > 8 && <button type="button" onClick={() => setAmenitiesExpanded((expanded) => !expanded)} className="mt-5 min-h-11 rounded-[var(--radius-sm)] border border-[var(--color-ink)] px-4 text-sm font-semibold hover:bg-[var(--color-surface-soft)]">{amenitiesExpanded ? 'Thu gọn tiện nghi' : `Hiện tất cả ${amenities.length} tiện nghi`}</button>}
               </>
             )}
           </section>
 
-          <section id="location" className="scroll-mt-36 border-b border-[var(--color-border)] pb-8">
-            <div className="flex items-center gap-3"><MapPin aria-hidden="true" className="h-5 w-5 text-[var(--color-muted)]" /><h2 className="text-xl font-semibold text-[var(--color-ink)]">Bạn sẽ ở đâu</h2></div>
-            <p className="mt-4 leading-relaxed text-[var(--color-body)]">{[homestay.address, homestay.province].filter(Boolean).join(', ') || 'Homestay chưa cập nhật địa chỉ.'}</p>
-          </section>
+          <HomestayLocationMap
+            address={homestay.address}
+            province={homestay.province}
+            homestayName={homestay.name}
+            hotlinePhone={homestay.hotlinePhone}
+            className="border-b border-[var(--color-border)] pb-8"
+          />
 
           <section id="rules" className="scroll-mt-36">
             <div className="flex items-center gap-3"><Clock aria-hidden="true" className="h-5 w-5 text-[var(--color-muted)]" /><h2 className="text-xl font-semibold text-[var(--color-ink)]">Quy định lưu trú</h2></div>
@@ -235,8 +245,8 @@ export function RoomDetailPage() {
         </div>
 
         <aside className="hidden h-fit rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-6 lg:sticky lg:top-32 lg:block">
-          <p className="flex items-baseline gap-2"><span className="text-2xl font-semibold tabular-nums text-[var(--color-ink)]">{formatVnd(room.nightlyPrice)}</span><span className="text-sm text-[var(--color-muted)]">/ đêm</span></p>
-          <p className="mt-1 text-xs text-[var(--color-muted)]">Giá cơ bản, giá thực tế có thể thay đổi theo ngày.</p>
+          <p className="flex items-baseline gap-2"><span className="text-2xl font-semibold tabular-nums text-[var(--color-ink)]">{room.nightlyPrice == null ? 'Chưa thiết lập giá' : formatVnd(room.nightlyPrice)}</span>{room.nightlyPrice != null && <span className="text-sm text-[var(--color-muted)]">/ đêm</span>}</p>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">{room.nightlyPrice == null ? 'Vui lòng liên hệ homestay để hỏi giá.' : 'Giá cơ bản, giá thực tế có thể thay đổi theo ngày.'}</p>
           <div className="mt-5 rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 text-sm">
             <p className="font-semibold text-[var(--color-ink)]">Liên hệ để hỏi phòng</p>
             <p className="mt-2 text-[var(--color-body)]">Phòng tối đa {room.maxGuests ?? '—'} khách</p>
@@ -249,7 +259,7 @@ export function RoomDetailPage() {
 
       {homestay.hotlinePhone && (
         <div className="fixed inset-x-0 bottom-0 z-[var(--z-sticky)] flex items-center justify-between gap-3 border-t border-[var(--color-border)] bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
-          <div className="min-w-0"><p className="truncate font-semibold tabular-nums text-[var(--color-ink)]">{formatVnd(room.nightlyPrice)} <span className="text-sm font-normal text-[var(--color-muted)]">/ đêm</span></p><p className="text-xs text-[var(--color-muted)]">Giá cơ bản</p></div>
+          <div className="min-w-0"><p className="truncate font-semibold tabular-nums text-[var(--color-ink)]">{room.nightlyPrice == null ? 'Chưa thiết lập giá' : <>{formatVnd(room.nightlyPrice)} <span className="text-sm font-normal text-[var(--color-muted)]">/ đêm</span></>}</p><p className="text-xs text-[var(--color-muted)]">{room.nightlyPrice == null ? 'Liên hệ homestay để hỏi giá' : 'Giá cơ bản'}</p></div>
           <a href={`tel:${homestay.hotlinePhone}`} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[var(--radius-pill)] bg-[var(--color-primary)] px-5 text-sm font-semibold text-white"><Phone aria-hidden="true" className="h-4 w-4" />Gọi homestay</a>
         </div>
       )}
