@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Building2, MapPin, Phone, Edit3, CheckCircle2, AlertCircle, Save, X } from 'lucide-react';
 import { getAssignedHomestayApi, updateAssignedHomestayApi } from '../api';
 import StatusBadge from '../../../components/ui/StatusBadge';
+import MediaManager from '../components/MediaManager';
 
 export function ManagerHomestayPage() {
   const context = useOutletContext();
@@ -295,6 +296,13 @@ export function ManagerHomestayPage() {
           </div>
         )}
       </div>
+
+      <MediaManager
+        ownerType="HOMESTAY"
+        ownerId={homestay.id}
+        media={homestay.media || []}
+        onChange={(media) => setHomestay((current) => ({ ...current, media }))}
+      />
     </div>
   );
 }

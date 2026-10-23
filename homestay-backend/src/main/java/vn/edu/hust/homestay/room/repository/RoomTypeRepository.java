@@ -22,4 +22,6 @@ public interface RoomTypeRepository extends JpaRepository<RoomType, Long> {
 
     /** Kiểm tra loại phòng có thuộc homestay hay không */
     boolean existsByIdAndHomestayId(Long id, Long homestayId);
+
+    boolean existsByHomestayIdAndName(Long homestayId, String name);
 }

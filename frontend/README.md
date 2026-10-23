@@ -1,16 +1,34 @@
-# React + Vite
+# Frontend — Quản lý homestay
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Ứng dụng giao diện được xây dựng bằng React 19 và Vite.
 
-Currently, two official plugins are available:
+## Chạy ứng dụng
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `npm install`: cài thư viện.
+- `npm run dev`: chạy máy chủ phát triển.
+- `npm run build`: tạo bản build.
+- `npm run lint`: kiểm tra mã nguồn.
+- `npm test`: chạy unit test.
 
-## React Compiler
+## Cấu trúc thư mục
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `src/main.jsx`: điểm khởi chạy, gắn ứng dụng React vào trang.
+- `src/App.jsx`: khai báo route công khai, đăng nhập/đăng ký, tài khoản và khu vực quản lý.
+- `src/layouts/`: bố cục dùng chung cho các trang.
+- `src/features/auth/`: đăng nhập, đăng ký, quên/đặt lại mật khẩu và trạng thái phiên đăng nhập.
+- `src/features/account/`: trang tài khoản người dùng.
+- `src/features/homestays/`: tìm kiếm, danh sách và chi tiết homestay.
+- `src/features/rooms/`: trang chi tiết phòng dành cho khách.
+- `src/features/manager/`: giao diện và API dành cho quản lý homestay, phòng, ảnh và loại phòng.
+- `src/components/ui/`: các thành phần giao diện có thể tái sử dụng.
+- `src/components/auth/`: thành phần bảo vệ route theo trạng thái đăng nhập/quyền.
+- `src/lib/`: API client, lưu token, kiểm tra dữ liệu và hàm tiện ích dùng chung.
+- `src/styles/tokens.css` và `src/index.css`: biến thiết kế và CSS nền tảng.
+- `src/lib/__tests__/`: unit test cho các hàm tiện ích.
+- `public/`: tài nguyên tĩnh được phục vụ trực tiếp, chẳng hạn favicon.
 
-## Expanding the Oxlint configuration
+Các route quản trị viên và giám đốc chưa được khai báo trong `src/App.jsx` ở phiên bản hiện tại.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Hướng dẫn giao diện
+
+Xem `FRONTEND_GUIDELINES.md` ở thư mục frontend để biết quy ước giao diện và hành vi của sản phẩm.

@@ -40,16 +40,27 @@ export async function getManagerRoomsApi({ status, roomTypeId, keyword, page = 0
 }
 
 /**
- * API-MGR-04: Thêm phòng mới
+ * API-MGR-04: Thêm phòng mới, gửi multipart nếu có ảnh đính kèm.
  */
-export async function createRoomApi({ roomTypeId, name, description, maxGuests, amenities }) {
-  const res = await apiClient.post('/manager/rooms', {
+export async function createRoomApi({ roomTypeId, name, description, maxGuests, amenities, files = [] }) {
+  const payload = {
     roomTypeId,
     name,
     description,
     maxGuests,
     amenities,
-  });
+  };
+  let res;
+  if (files.length > 0) {
+    const formData = new FormData();
+    formData.append('room', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+    files.forEach((file) => formData.append('files', file));
+    res = await apiClient.post('/manager/rooms', formData, {
+      headers: { 'Content-Type': undefined },
+    });
+  } else {
+    res = await apiClient.post('/manager/rooms', payload);
+  }
   return res.data?.data;
 }
 
@@ -91,5 +102,42 @@ export async function updateRoomStatusApi(roomId, { status, reason }) {
  */
 export async function getManagerRoomTypesApi() {
   const res = await apiClient.get('/manager/room-types');
+  return res.data?.data;
+}
+
+/** CRUD loại phòng thuộc homestay của Manager. */
+export async function createManagerRoomTypeApi(payload) {
+  const res = await apiClient.post('/manager/room-types', payload);
+  return res.data?.data;
+}
+
+export async function updateManagerRoomTypeApi(roomTypeId, payload) {
+  const res = await apiClient.patch(`/manager/room-types/${roomTypeId}`, payload);
+  return res.data?.data;
+}
+
+export async function deleteManagerRoomTypeApi(roomTypeId) {
+  const res = await apiClient.delete(`/manager/room-types/${roomTypeId}`);
+  return res.data?.data;
+}
+
+/** API-MEDIA-01: upload một file media; để Axios tự tạo multipart boundary. */
+export async function uploadManagerMediaApi({ ownerType, ownerId, file, caption, sortOrder }) {
+  const formData = new FormData();
+  formData.append('ownerType', ownerType);
+  formData.append('ownerId', String(ownerId));
+  formData.append('file', file);
+  if (caption) formData.append('caption', caption);
+  formData.append('sortOrder', String(sortOrder ?? 0));
+  const res = await apiClient.post('/manager/media', formData, {
+    // Clear the Axios JSON default so the browser can add the multipart boundary.
+    headers: { 'Content-Type': undefined },
+  });
+  return res.data?.data;
+}
+
+/** API-MEDIA-02: xóa media thuộc homestay của Manager. */
+export async function deleteManagerMediaApi(mediaId) {
+  const res = await apiClient.delete(`/manager/media/${mediaId}`);
   return res.data?.data;
 }

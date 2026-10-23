@@ -8,6 +8,11 @@ import vn.edu.hust.homestay.homestay.dto.ManagerHomestayResponse;
 import vn.edu.hust.homestay.homestay.dto.UpdateManagerHomestayRequest;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
+import vn.edu.hust.homestay.media.dto.ManagerMediaResponse;
+import vn.edu.hust.homestay.media.entity.Media.OwnerType;
+import vn.edu.hust.homestay.media.repository.MediaRepository;
+
+import java.util.List;
 
 /**
  * Service xử lý các nghiệp vụ quản lý Homestay cho Manager:
@@ -19,9 +24,11 @@ import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
 public class ManagerHomestayService {
 
     private final HomestayRepository homestayRepository;
+    private final MediaRepository mediaRepository;
 
-    public ManagerHomestayService(HomestayRepository homestayRepository) {
+    public ManagerHomestayService(HomestayRepository homestayRepository, MediaRepository mediaRepository) {
         this.homestayRepository = homestayRepository;
+        this.mediaRepository = mediaRepository;
     }
 
     /**
@@ -83,6 +90,8 @@ public class ManagerHomestayService {
                 .hotlinePhone(homestay.getHotlinePhone())
                 .description(homestay.getDescription())
                 .status(homestay.getStatus())
+                .media(mediaRepository.findByOwnerTypeAndOwnerIdOrderBySortOrderAsc(OwnerType.HOMESTAY, homestay.getId())
+                        .stream().map(ManagerMediaResponse::from).toList())
                 .build();
     }
 }

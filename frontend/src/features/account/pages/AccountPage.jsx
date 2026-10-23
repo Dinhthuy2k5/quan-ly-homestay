@@ -7,6 +7,7 @@ import Button from '../../../components/ui/Button';
 import PasswordInput from '../../../components/ui/PasswordInput';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { getErrorMessage } from '../../../lib/errors';
+import { validatePhone } from '../../../lib/validation';
 
 function ProfileForm({ user, refreshProfile }) {
   const [fullName, setFullName] = useState(user?.fullName || '');
@@ -20,8 +21,14 @@ function ProfileForm({ user, refreshProfile }) {
     setProfileError('');
     setProfileSuccess('');
 
-    if (!fullName.trim() || !phone.trim()) {
-      setProfileError('Vui lòng nhập đầy đủ họ tên và số điện thoại.');
+    if (!fullName.trim()) {
+      setProfileError('Vui lòng nhập họ và tên.');
+      return;
+    }
+
+    const phoneError = validatePhone(phone);
+    if (phoneError) {
+      setProfileError(phoneError);
       return;
     }
 

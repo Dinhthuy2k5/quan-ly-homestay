@@ -2,7 +2,10 @@ package vn.edu.hust.homestay.homestay.dto;
 
 import lombok.Builder;
 import lombok.Getter;
+import vn.edu.hust.homestay.media.dto.ManagerMediaResponse;
 import vn.edu.hust.homestay.homestay.entity.Homestay.HomestayStatus;
+
+import java.util.List;
 
 /**
  * Mã API: API-MGR-01, API-MGR-02
@@ -19,4 +22,5 @@ public class ManagerHomestayResponse {
     private String hotlinePhone;
     private String description;
     private HomestayStatus status;
+    private List<ManagerMediaResponse> media;
 }

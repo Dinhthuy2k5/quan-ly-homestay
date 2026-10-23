@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.common.response.PagedResult;
@@ -72,7 +73,7 @@ public class ManagerRoomController {
     }
 
     /**
-     * API-MGR-04 — Thêm phòng mới
+     * API-MGR-04 — Thêm phòng mới bằng JSON, không đính kèm tệp.
      */
     @PostMapping
     public ResponseEntity<ApiResponse<ManagerRoomDetailResponse>> createRoom(
@@ -80,6 +81,17 @@ public class ManagerRoomController {
             @Valid @RequestBody CreateRoomRequest request
     ) {
         ManagerRoomDetailResponse response = managerRoomService.createRoom(principal, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
+    }
+
+    /** API-MGR-04: Tạo phòng kèm tối đa 8 ảnh trong một request multipart/form-data. */
+    @PostMapping(consumes = "multipart/form-data")
+    public ResponseEntity<ApiResponse<ManagerRoomDetailResponse>> createRoomWithMedia(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestPart("room") CreateRoomRequest request,
+            @RequestPart(value = "files", required = false) java.util.List<MultipartFile> files
+    ) {
+        ManagerRoomDetailResponse response = managerRoomService.createRoomWithMedia(principal, request, files);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
     }
 

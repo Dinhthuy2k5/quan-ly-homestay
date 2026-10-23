@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { formatVnd, formatDate, nightsBetween } from '../format.js';
 import { getStatusInfo } from '../status.js';
 import { getErrorMessage, ERROR_MESSAGES } from '../errors.js';
+import { validateEmail, validatePhone } from '../validation.js';
 
 test('formatVnd formats money integers correctly to Vietnamese Dong', () => {
   assert.equal(formatVnd(0), '0 ₫');
@@ -50,4 +51,24 @@ test('getErrorMessage returns friendly Vietnamese message from error code', () =
 
   const errNotFound = { response: { status: 404 } };
   assert.equal(getErrorMessage(errNotFound), 'Không tìm thấy dữ liệu yêu cầu.');
+});
+
+test('validateEmail validates format using regular expression', () => {
+  assert.equal(validateEmail('test@example.com'), null);
+  assert.equal(validateEmail('khach.hang+1@hust.edu.vn'), null);
+  assert.match(validateEmail(''), /không được để trống/);
+  assert.match(validateEmail('invalid-email'), /không đúng định dạng/);
+  assert.match(validateEmail('user@domain'), /không đúng định dạng/);
+  assert.match(validateEmail('@domain.com'), /không đúng định dạng/);
+});
+
+test('validatePhone validates Vietnamese phone numbers using regular expression', () => {
+  assert.equal(validatePhone('0901234567'), null);
+  assert.equal(validatePhone('0387654321'), null);
+  assert.match(validatePhone(''), /không được để trống/);
+  assert.match(validatePhone('+84901234567'), /không hợp lệ/);
+  assert.match(validatePhone('12345'), /không hợp lệ/);
+  assert.match(validatePhone('09012345abc'), /không hợp lệ/);
+  assert.match(validatePhone('01234'), /không hợp lệ/);
+  assert.match(validatePhone('090123456789'), /không hợp lệ/);
 });

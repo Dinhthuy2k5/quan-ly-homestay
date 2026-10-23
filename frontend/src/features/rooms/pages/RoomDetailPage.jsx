@@ -13,7 +13,7 @@ import Button from '../../../components/ui/Button';
 import ErrorBanner from '../../../components/ui/ErrorBanner';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import HomestayLocationMap from '../../homestays/components/HomestayLocationMap';
-import { groupAmenities } from '../../../lib/amenities';
+import { AmenitySection } from '../../../components/ui/AmenitySection';
 
 function PhotoGallery({ roomName, media }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -110,7 +110,6 @@ export function RoomDetailPage() {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const [amenitiesExpanded, setAmenitiesExpanded] = useState(false);
 
   useEffect(() => {
     if (!roomId) return undefined;
@@ -142,7 +141,6 @@ export function RoomDetailPage() {
   const roomType = room.roomType || {};
   const media = room.media || [];
   const amenities = room.amenities || [];
-  const visibleAmenities = amenitiesExpanded ? amenities : amenities.slice(0, 8);
   const description = [room.description, roomType.description].filter(Boolean).join('\n\n');
 
   return (
@@ -198,32 +196,11 @@ export function RoomDetailPage() {
           </section>
 
           <section id="amenities" className="scroll-mt-36 border-b border-[var(--color-border)] pb-8">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-6">
               <Sparkles aria-hidden="true" className="h-5 w-5 text-[var(--color-muted)]" />
-              <h2 className="text-xl font-semibold text-[var(--color-ink)]">Phòng này có gì</h2>
+              <h2 className="text-xl font-semibold text-[var(--color-ink)]">Nơi này có những gì</h2>
             </div>
-            {amenities.length === 0 ? (
-              <p className="mt-4 text-sm text-[var(--color-muted)]">Homestay chưa cập nhật tiện nghi.</p>
-            ) : (
-              <>
-                <div className="mt-5 space-y-6">
-                  {groupAmenities(visibleAmenities).map((group) => (
-                    <section key={group.name} aria-labelledby={`room-amenities-${group.name}`}>
-                      <h3 id={`room-amenities-${group.name}`} className="mb-2 text-base font-semibold text-[var(--color-ink)]">{group.name}</h3>
-                      <ul className="divide-y divide-[var(--color-border)]">
-                        {group.items.map(({ name, icon: Icon }, index) => (
-                          <li key={`${name}-${index}`} className="flex min-h-14 items-center gap-4 py-3 text-[var(--color-body)]">
-                            <Icon aria-hidden="true" className="h-6 w-6 shrink-0 text-[var(--color-ink)]" strokeWidth={1.75} />
-                            <span>{name}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  ))}
-                </div>
-                {amenities.length > 8 && <button type="button" onClick={() => setAmenitiesExpanded((expanded) => !expanded)} className="mt-5 min-h-11 rounded-[var(--radius-sm)] border border-[var(--color-ink)] px-4 text-sm font-semibold hover:bg-[var(--color-surface-soft)]">{amenitiesExpanded ? 'Thu gọn tiện nghi' : `Hiện tất cả ${amenities.length} tiện nghi`}</button>}
-              </>
-            )}
+            <AmenitySection amenities={amenities} />
           </section>
 
           <HomestayLocationMap

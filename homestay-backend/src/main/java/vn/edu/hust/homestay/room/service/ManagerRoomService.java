@@ -8,13 +8,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.common.response.PagedResult;
-import vn.edu.hust.homestay.media.dto.MediaItemResponse;
+import vn.edu.hust.homestay.media.dto.ManagerMediaResponse;
 import vn.edu.hust.homestay.media.entity.Media;
 import vn.edu.hust.homestay.media.entity.Media.OwnerType;
 import vn.edu.hust.homestay.media.repository.MediaRepository;
+import vn.edu.hust.homestay.media.service.ManagerMediaService;
 import vn.edu.hust.homestay.pricing.entity.PriceRule;
 import vn.edu.hust.homestay.pricing.entity.PriceRule.RuleType;
 import vn.edu.hust.homestay.pricing.repository.PriceRuleRepository;
@@ -48,18 +50,21 @@ public class ManagerRoomService {
     private final RoomTypeRepository roomTypeRepository;
     private final MediaRepository mediaRepository;
     private final PriceRuleRepository priceRuleRepository;
+    private final ManagerMediaService managerMediaService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ManagerRoomService(
             RoomRepository roomRepository,
             RoomTypeRepository roomTypeRepository,
             MediaRepository mediaRepository,
-            PriceRuleRepository priceRuleRepository
+            PriceRuleRepository priceRuleRepository,
+            ManagerMediaService managerMediaService
     ) {
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
         this.mediaRepository = mediaRepository;
         this.priceRuleRepository = priceRuleRepository;
+        this.managerMediaService = managerMediaService;
     }
 
     /**
@@ -144,6 +149,28 @@ public class ManagerRoomService {
 
         Room saved = roomRepository.save(room);
         return toDetailResponse(saved, roomType.getName());
+    }
+
+    /** API-MGR-04: Tạo phòng và các ảnh kèm theo trong cùng một transaction. */
+    @Transactional
+    public ManagerRoomDetailResponse createRoomWithMedia(
+            UserPrincipal principal,
+            CreateRoomRequest req,
+            List<MultipartFile> files
+    ) {
+        List<MultipartFile> selectedFiles = files == null ? List.of() : files.stream()
+                .filter(file -> file != null && !file.isEmpty())
+                .toList();
+        if (selectedFiles.size() > 8) {
+            throw BusinessException.badRequest("TOO_MANY_MEDIA_FILES", "Mỗi lần tạo phòng chỉ được tải tối đa 8 ảnh");
+        }
+
+        ManagerRoomDetailResponse created = createRoom(principal, req);
+        for (int i = 0; i < selectedFiles.size(); i++) {
+            managerMediaService.upload(principal, "ROOM", created.getId(), null, i, selectedFiles.get(i));
+        }
+
+        return getRoomDetail(principal, created.getId());
     }
 
     /**
@@ -310,10 +337,10 @@ public class ManagerRoomService {
     }
 
     private ManagerRoomDetailResponse toDetailResponse(Room room, String roomTypeName) {
-        List<MediaItemResponse> mediaList = mediaRepository
+        List<ManagerMediaResponse> mediaList = mediaRepository
                 .findByOwnerTypeAndOwnerIdOrderBySortOrderAsc(OwnerType.ROOM, room.getId())
                 .stream()
-                .map(MediaItemResponse::from)
+                .map(ManagerMediaResponse::from)
                 .toList();
 
         Long basePrice = priceRuleRepository

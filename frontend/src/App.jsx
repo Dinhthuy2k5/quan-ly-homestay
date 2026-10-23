@@ -18,6 +18,7 @@ import ManagerLayout from './features/manager/layouts/ManagerLayout';
 import ManagerHomestayPage from './features/manager/pages/ManagerHomestayPage';
 import ManagerRoomsPage from './features/manager/pages/ManagerRoomsPage';
 import ManagerRoomDetailPage from './features/manager/pages/ManagerRoomDetailPage';
+import ManagerRoomTypesPage from './features/manager/pages/ManagerRoomTypesPage';
 
 function SearchResultsRoute() {
   const location = useLocation();
@@ -82,6 +83,7 @@ export function App() {
               <Route path="homestay" element={<ManagerHomestayPage />} />
               <Route path="rooms" element={<ManagerRoomsPage />} />
               <Route path="rooms/:roomId" element={<ManagerRoomDetailPage />} />
+              <Route path="room-types" element={<ManagerRoomTypesPage />} />
             </Route>
 
             {/* Trang 403 Forbidden */}

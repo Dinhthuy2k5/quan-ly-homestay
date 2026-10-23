@@ -65,7 +65,7 @@ export function HomestayDetailPage() {
       .catch((roomError) => { if (active) setRoomsError(getErrorMessage(roomError)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [homestayId, reloadKey, roomsPage]);
+  }, [homestayId, reloadKey, roomsPage, roomsMeta.size]);
 
   const retry = () => {
     setLoading(true);

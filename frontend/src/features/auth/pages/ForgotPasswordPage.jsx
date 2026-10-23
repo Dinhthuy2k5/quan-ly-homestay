@@ -4,6 +4,7 @@ import { CheckCircle2, Home, Mail } from 'lucide-react';
 import { forgotPasswordApi } from '../api';
 import Button from '../../../components/ui/Button';
 import { getErrorMessage } from '../../../lib/errors';
+import { validateEmail } from '../../../lib/validation';
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -13,7 +14,11 @@ export function ForgotPasswordPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
 
     setLoading(true);
     setError('');

@@ -1,7 +1,8 @@
 package vn.edu.hust.homestay.homestay.dto;
 
-import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -29,7 +30,10 @@ public class UpdateManagerHomestayRequest {
     private String address;
 
     @NotBlank(message = "Số điện thoại hotline không được để trống")
-    @Size(max = 20, message = "Số điện thoại hotline không được vượt quá 20 ký tự")
+    @Pattern(
+        regexp = "^(0|\\+84)[0-9]{8,11}$",
+        message = "Số điện thoại hotline không đúng định dạng (ví dụ: 02143871999 hoặc +842143871999)"
+    )
     private String hotlinePhone;
 
     private String description;

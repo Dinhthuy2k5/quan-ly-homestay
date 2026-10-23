@@ -28,6 +28,30 @@ import { AmenityBadge } from '../components/AmenityIcon';
 import { AmenityPicker } from '../components/AmenityPicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { formatVnd } from '../../../lib/format';
+import { fileUrl } from '../../../lib/api/client';
+
+function RoomCoverImage({ room, className }) {
+  const [failed, setFailed] = useState(false);
+  const src = fileUrl(room.coverImageUrl);
+
+  if (!src || failed) {
+    return (
+      <div className={`grid place-items-center bg-gray-100 text-gray-400 ${className}`} aria-label={`Chưa có ảnh cho ${room.name}`}>
+        <BedDouble aria-hidden="true" className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={room.name}
+      className={className}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export function ManagerRoomsPage() {
   const navigate = useNavigate();
@@ -63,6 +87,7 @@ export function ManagerRoomsPage() {
     description: '',
     amenities: ['Wifi tốc độ cao', 'Điều hòa 2 chiều']
   });
+  const [createMediaFiles, setCreateMediaFiles] = useState([]);
 
   const [editingRoomId, setEditingRoomId] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -136,6 +161,13 @@ export function ManagerRoomsPage() {
     setActiveKeyword(searchKeyword.trim());
   };
 
+  const closeCreateModal = () => {
+    if (modalSubmitting) return;
+    setCreateMediaFiles([]);
+    setModalError('');
+    setCreateModalOpen(false);
+  };
+
   const handleClearFilters = () => {
     setFilterStatus('');
     setFilterRoomType('');
@@ -169,7 +201,8 @@ export function ManagerRoomsPage() {
         name: createForm.name.trim(),
         maxGuests: Number(createForm.maxGuests),
         description: createForm.description.trim(),
-        amenities: createForm.amenities
+        amenities: createForm.amenities,
+        files: createMediaFiles
       });
       setCreateModalOpen(false);
       showSuccess(`Đã tạo mới phòng "${createForm.name}" thành công!`);
@@ -180,6 +213,7 @@ export function ManagerRoomsPage() {
         description: '',
         amenities: ['Wifi tốc độ cao', 'Điều hòa 2 chiều']
       });
+      setCreateMediaFiles([]);
       setCurrentPage(0);
       setReloadTrigger((k) => k + 1);
     } catch (err) {
@@ -431,7 +465,6 @@ export function ManagerRoomsPage() {
         /* AIRBNB CARD GRID */
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {rooms.map((room) => {
-            const coverImage = room.coverImageUrl || `/files/rooms/room-${room.id}-1.webp`;
             return (
               <div
                 key={room.id}
@@ -440,15 +473,7 @@ export function ManagerRoomsPage() {
               >
                 {/* Photo container */}
                 <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-gray-100 shadow-sm border border-gray-100">
-                  <img
-                    src={coverImage}
-                    alt={room.name}
-                    className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80';
-                    }}
-                  />
+                  <RoomCoverImage room={room} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   {/* Status Badge floating on top right */}
                   <div className="absolute top-3 right-3">
                     <StatusBadge type="room" status={room.status} />
@@ -547,15 +572,7 @@ export function ManagerRoomsPage() {
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <img
-                          src={room.coverImageUrl || `/files/rooms/room-${room.id}-1.webp`}
-                          alt={room.name}
-                          className="h-10 w-12 rounded-lg object-cover"
-                          onError={(e) => {
-                            e.target.onerror = null;
-                            e.target.src = 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=200&q=80';
-                          }}
-                        />
+                        <RoomCoverImage room={room} className="h-10 w-12 rounded-lg object-cover" />
                         <div>
                           <span className="font-bold text-gray-900 block">{room.name}</span>
                           <span className="text-xs text-gray-400">ID: #{room.id}</span>
@@ -652,7 +669,8 @@ export function ManagerRoomsPage() {
               <h3 className="text-xl font-bold text-gray-900">Thêm phòng mới cho homestay</h3>
               <button
                 type="button"
-                onClick={() => setCreateModalOpen(false)}
+                onClick={closeCreateModal}
+                disabled={modalSubmitting}
                 className="rounded-full p-2 text-gray-400 hover:bg-gray-100"
               >
                 <X className="h-5 w-5" />
@@ -733,6 +751,61 @@ export function ManagerRoomsPage() {
               </div>
 
               <div>
+                <label htmlFor="create-room-media" className="block text-sm font-semibold text-gray-900">
+                  Ảnh phòng <span className="font-normal text-gray-500">(không bắt buộc, tối đa 8 ảnh)</span>
+                </label>
+                <p className="mb-2 mt-1 text-xs text-gray-500">Mỗi ảnh tối đa 5 MB. Hỗ trợ JPG, PNG và WEBP.</p>
+                <input
+                  id="create-room-media"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  onChange={(event) => {
+                    const selectedFiles = Array.from(event.target.files || []);
+                    event.target.value = '';
+                    const invalidSize = selectedFiles.find((file) => file.size > 5 * 1024 * 1024);
+                    if (invalidSize) {
+                      setModalError(`Ảnh "${invalidSize.name}" vượt quá giới hạn 5 MB.`);
+                      return;
+                    }
+
+                    const additions = selectedFiles.filter((file) => !createMediaFiles.some(
+                        (current) => current.name === file.name
+                          && current.size === file.size
+                          && current.lastModified === file.lastModified
+                    ));
+                    if (createMediaFiles.length + additions.length > 8) {
+                      setModalError('Bạn chỉ có thể chọn tối đa 8 ảnh cho một phòng.');
+                      return;
+                    }
+                    setModalError('');
+                    setCreateMediaFiles((currentFiles) => [...currentFiles, ...additions]);
+                  }}
+                  className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-xs file:font-semibold"
+                />
+                {createMediaFiles.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-xs text-gray-600" aria-live="polite">
+                    {createMediaFiles.map((file, index) => (
+                      <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-3">
+                        <span className="truncate">{file.name}</span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          {(file.size / (1024 * 1024)).toFixed(1)} MB
+                          <button
+                            type="button"
+                            aria-label={`Bỏ ảnh ${file.name}`}
+                            onClick={() => setCreateMediaFiles((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                            className="rounded-full p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                          >
+                            <X aria-hidden="true" className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div>
                 <h4 className="text-sm font-semibold text-gray-900">Tiện nghi phòng</h4>
                 <p className="mb-3 mt-1 text-xs text-gray-500">Tìm và chọn các tiện nghi đang có tại phòng.</p>
                 <AmenityPicker value={createForm.amenities} onChange={(amenities) => setCreateForm((prev) => ({ ...prev, amenities }))} />
@@ -760,7 +833,7 @@ export function ManagerRoomsPage() {
               <div className="flex shrink-0 items-center justify-end gap-3 border-t border-gray-100 bg-white px-5 py-4 sm:px-7">
                 <button
                   type="button"
-                  onClick={() => setCreateModalOpen(false)}
+                  onClick={closeCreateModal}
                   disabled={modalSubmitting}
                   className="rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
                 >

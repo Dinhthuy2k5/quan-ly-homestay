@@ -5,6 +5,7 @@ import { useAuth } from '../context/useAuth';
 import Button from '../../../components/ui/Button';
 import PasswordInput from '../../../components/ui/PasswordInput';
 import { getErrorMessage } from '../../../lib/errors';
+import { validateEmail, validatePhone } from '../../../lib/validation';
 
 export function RegisterPage() {
   const { register, login } = useAuth();
@@ -21,6 +22,18 @@ export function RegisterPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+
+    const phoneError = validatePhone(phone);
+    if (phoneError) {
+      setError(phoneError);
+      return;
+    }
 
     if (password.length < 8) {
       setError('Mật khẩu phải chứa ít nhất 8 ký tự.');

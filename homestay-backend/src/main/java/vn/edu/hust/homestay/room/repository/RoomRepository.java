@@ -34,6 +34,9 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     /** Kiểm tra tên phòng đã tồn tại trong homestay ngoại trừ phòng hiện tại */
     boolean existsByHomestayIdAndNameAndIdNot(Long homestayId, String name, Long id);
 
+    /** Kiểm tra loại phòng còn được phòng nào trong cùng homestay sử dụng không. */
+    boolean existsByRoomTypeIdAndHomestayId(Long roomTypeId, Long homestayId);
+
     /**
      * Tra cứu danh sách phòng theo homestay, có hỗ trợ lọc theo trạng thái, loại phòng, từ khóa và phân trang.
      * Dùng cho API-MGR-03.

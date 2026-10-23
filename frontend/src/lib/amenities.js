@@ -32,19 +32,66 @@ export function getAmenityMeta(name) {
   const exact = amenityMeta.get(label.toLocaleLowerCase('vi'));
   if (exact) return { ...exact, label };
   const lower = label.toLocaleLowerCase('vi');
-  if (lower.includes('wifi') || lower.includes('wi-fi') || lower.includes('internet') || lower.includes('mạng')) return { icon: Wifi, label, category: 'Không gian làm việc' };
-  if (lower.includes('điều hòa') || lower.includes('máy lạnh')) return { icon: AirVent, label, category: 'Điều hòa và sưởi' };
-  if (lower.includes('bình nóng lạnh') || lower.includes('tắm') || lower.includes('dầu gội') || lower.includes('nước nóng')) return { icon: Bath, label, category: 'Phòng tắm' };
-  if (lower.includes('máy sấy')) return { icon: Wind, label, category: lower.includes('quần áo') ? 'Phòng ngủ và phòng giặt' : 'Phòng tắm' };
-  if (lower.includes('tủ lạnh')) return { icon: Refrigerator, label, category: 'Nhà bếp và ăn uống' };
-  if (lower.includes('tv') || lower.includes('tivi') || lower.includes('truyền hình')) return { icon: Tv, label, category: 'Giải trí' };
-  if (lower.includes('bếp') || lower.includes('nấu')) return { icon: CookingPot, label, category: 'Nhà bếp và ăn uống' };
-  if (lower.includes('bàn làm việc')) return { icon: Laptop, label, category: 'Không gian làm việc' };
-  if (lower.includes('móc treo') || lower.includes('quần áo')) return { icon: Shirt, label, category: 'Phòng ngủ và phòng giặt' };
-  if (lower.includes('ban công') || lower.includes('view') || lower.includes('núi') || lower.includes('hồ')) return { icon: Mountain, label, category: 'Không gian ngoài trời' };
-  if (lower.includes('đỗ xe') || lower.includes('bãi xe') || lower.includes('ô tô')) return { icon: Car, label, category: 'Đỗ xe và tiện ích' };
-  if (lower.includes('hồ bơi') || lower.includes('bể bơi')) return { icon: Waves, label, category: 'Không gian ngoài trời' };
-  if (lower.includes('nước')) return { icon: Droplets, label, category: 'Nhà bếp và ăn uống' };
+
+  // Internet & Workspace
+  if (lower.includes('wifi') || lower.includes('wi-fi') || lower.includes('internet') || lower.includes('mạng') || lower.includes('workspace') || lower.includes('bàn làm việc') || lower.includes('desk') || lower.includes('laptop')) {
+    return { icon: lower.includes('workspace') || lower.includes('bàn') || lower.includes('desk') ? Laptop : Wifi, label, category: 'Không gian làm việc' };
+  }
+
+  // Bathroom
+  if (lower.includes('hair dryer') || lower.includes('máy sấy tóc')) return { icon: Wind, label, category: 'Phòng tắm' };
+  if (lower.includes('shampoo') || lower.includes('conditioner') || lower.includes('soap') || lower.includes('dầu gội') || lower.includes('dầu xả') || lower.includes('xà phòng') || lower.includes('sữa tắm')) {
+    return { icon: SoapDispenserDroplet, label, category: 'Phòng tắm' };
+  }
+  if (lower.includes('hot water') || lower.includes('nước nóng') || lower.includes('bình nóng lạnh')) return { icon: ShowerHead, label, category: 'Phòng tắm' };
+  if (lower.includes('bathtub') || lower.includes('bồn tắm')) return { icon: Bath, label, category: 'Phòng tắm' };
+  if (lower.includes('shower') || lower.includes('vòi sen') || lower.includes('tắm')) return { icon: ShowerHead, label, category: 'Phòng tắm' };
+
+  // Bedroom & Laundry
+  if (lower.includes('washer') || lower.includes('máy giặt')) return { icon: WashingMachine, label, category: 'Phòng ngủ và phòng giặt' };
+  if (lower.includes('dryer') || lower.includes('máy sấy quần áo')) return { icon: WashingMachine, label, category: 'Phòng ngủ và phòng giặt' };
+  if (lower.includes('hanger') || lower.includes('móc treo') || lower.includes('tủ quần áo') || lower.includes('wardrobe') || lower.includes('closet')) return { icon: Shirt, label, category: 'Phòng ngủ và phòng giặt' };
+  if (lower.includes('iron') || lower.includes('bàn là')) return { icon: Shirt, label, category: 'Phòng ngủ và phòng giặt' };
+  if (lower.includes('linen') || lower.includes('bed') || lower.includes('pillow') || lower.includes('blanket') || lower.includes('ga trải giường') || lower.includes('gối') || lower.includes('chăn')) {
+    return { icon: BedDouble, label, category: 'Phòng ngủ và phòng giặt' };
+  }
+  if (lower.includes('towel') || lower.includes('khăn') || lower.includes('essential')) return { icon: Sparkles, label, category: 'Những điều cần thiết' };
+
+  // Heating & Cooling
+  if (lower.includes('air conditioning') || lower.includes('điều hòa') || lower.includes('máy lạnh') || lower.includes('a/c') || lower.includes('ac')) return { icon: AirVent, label, category: 'Điều hòa và sưởi' };
+  if (lower.includes('heat') || lower.includes('sưởi')) return { icon: Heater, label, category: 'Điều hòa và sưởi' };
+  if (lower.includes('fan') || lower.includes('quạt')) return { icon: Fan, label, category: 'Điều hòa và sưởi' };
+
+  // Entertainment
+  if (lower.includes('tv') || lower.includes('tivi') || lower.includes('netflix') || lower.includes('disney') || lower.includes('apple tv') || lower.includes('truyền hình')) return { icon: Tv, label, category: 'Giải trí' };
+  if (lower.includes('speaker') || lower.includes('loa') || lower.includes('sound')) return { icon: Speaker, label, category: 'Giải trí' };
+  if (lower.includes('game')) return { icon: Gamepad2, label, category: 'Giải trí' };
+
+  // Safety
+  if (lower.includes('camera') || lower.includes('cctv')) return { icon: ShieldCheck, label, category: 'An toàn' };
+  if (lower.includes('smoke alarm') || lower.includes('carbon monoxide') || lower.includes('báo khói')) return { icon: ShieldCheck, label, category: 'An toàn' };
+  if (lower.includes('fire extinguisher') || lower.includes('chữa cháy')) return { icon: ShieldCheck, label, category: 'An toàn' };
+  if (lower.includes('first aid') || lower.includes('sơ cứu')) return { icon: ShieldCheck, label, category: 'An toàn' };
+  if (lower.includes('lock') || lower.includes('khóa')) return { icon: LockKeyhole, label, category: 'An toàn' };
+
+  // Kitchen & Dining
+  if (lower.includes('kitchen') || lower.includes('bếp') || lower.includes('nấu') || lower.includes('cooking') || lower.includes('stove')) return { icon: CookingPot, label, category: 'Nhà bếp và ăn uống' };
+  if (lower.includes('refrigerator') || lower.includes('fridge') || lower.includes('tủ lạnh')) return { icon: Refrigerator, label, category: 'Nhà bếp và ăn uống' };
+  if (lower.includes('microwave') || lower.includes('lò vi sóng')) return { icon: Microwave, label, category: 'Nhà bếp và ăn uống' };
+  if (lower.includes('coffee') || lower.includes('cà phê') || lower.includes('kettle') || lower.includes('siêu tốc')) return { icon: Coffee, label, category: 'Nhà bếp và ăn uống' };
+  if (lower.includes('dish') || lower.includes('bát đĩa') || lower.includes('utensil') || lower.includes('bàn ăn') || lower.includes('dining')) return { icon: Utensils, label, category: 'Nhà bếp và ăn uống' };
+
+  // Outdoor & Views
+  if (lower.includes('balcony') || lower.includes('ban công') || lower.includes('view') || lower.includes('núi') || lower.includes('hồ')) return { icon: Mountain, label, category: 'Không gian ngoài trời' };
+  if (lower.includes('garden') || lower.includes('vườn') || lower.includes('patio') || lower.includes('sân hiên')) return { icon: Trees, label, category: 'Không gian ngoài trời' };
+  if (lower.includes('pool') || lower.includes('hồ bơi') || lower.includes('bể bơi')) return { icon: Waves, label, category: 'Không gian ngoài trời' };
+  if (lower.includes('bbq') || lower.includes('nướng')) return { icon: Flame, label, category: 'Không gian ngoài trời' };
+
+  // Parking & Facilities
+  if (lower.includes('parking') || lower.includes('đỗ xe') || lower.includes('bãi xe') || lower.includes('ô tô') || lower.includes('ev charger')) return { icon: Car, label, category: 'Đỗ xe và tiện ích' };
+  if (lower.includes('bike') || lower.includes('xe đạp')) return { icon: Bike, label, category: 'Đỗ xe và tiện ích' };
+  if (lower.includes('luggage') || lower.includes('hành lý')) return { icon: Luggage, label, category: 'Không gian làm việc' };
+
   return { icon: CircleHelp, label: label || 'Tiện nghi khác', category: 'Khác' };
 }
 

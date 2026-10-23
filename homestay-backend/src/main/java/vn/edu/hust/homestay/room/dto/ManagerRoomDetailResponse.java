@@ -2,7 +2,7 @@ package vn.edu.hust.homestay.room.dto;
 
 import lombok.Builder;
 import lombok.Getter;
-import vn.edu.hust.homestay.media.dto.MediaItemResponse;
+import vn.edu.hust.homestay.media.dto.ManagerMediaResponse;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 
 import java.time.Instant;
@@ -25,7 +25,7 @@ public class ManagerRoomDetailResponse {
     private Integer maxGuests;
     private List<String> amenities;
     private RoomStatus status;
-    private List<MediaItemResponse> media;
+    private List<ManagerMediaResponse> media;
     private Long basePrice;
     private Instant createdAt;
     private Instant updatedAt;

@@ -1,7 +1,7 @@
 package vn.edu.hust.homestay.auth.dto;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,7 +23,10 @@ import lombok.Setter;
 public class RegisterRequest {
 
     @NotBlank(message = "Email không được để trống")
-    @Email(message = "Email không đúng định dạng")
+    @Pattern(
+        regexp = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$",
+        message = "Email không đúng định dạng (ví dụ: user@example.com)"
+    )
     private String email;
 
     @NotBlank(message = "Mật khẩu không được để trống")
@@ -34,5 +37,9 @@ public class RegisterRequest {
     private String fullName;
 
     @NotBlank(message = "Số điện thoại không được để trống")
+    @Pattern(
+        regexp = "^0[0-9]{9}$",
+        message = "Số điện thoại không đúng định dạng (phải gồm 10 chữ số và bắt đầu bằng số 0, ví dụ: 0901234567)"
+    )
     private String phone;
 }

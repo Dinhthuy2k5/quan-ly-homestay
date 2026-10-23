@@ -10,7 +10,7 @@ export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const initialToken = searchParams.get('token') || '';
 
-  const [token, setToken] = useState(initialToken);
+  const token = initialToken;
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -86,21 +86,6 @@ export function ResetPasswordPage() {
                 {error}
               </div>
             )}
-
-            <div>
-              <label htmlFor="reset-token" className="mb-1 block text-sm font-semibold text-[var(--color-ink)]">
-                Mã xác nhận (Token)
-              </label>
-              <input
-                id="reset-token"
-                type="text"
-                required
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="Nhập mã token đặt lại"
-                className="h-12 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-ink)] focus:outline-none"
-              />
-            </div>
 
             <div>
               <label htmlFor="reset-password" className="mb-1 block text-sm font-semibold text-[var(--color-ink)]">

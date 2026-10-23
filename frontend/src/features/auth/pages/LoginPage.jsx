@@ -5,6 +5,7 @@ import { useAuth } from '../context/useAuth';
 import Button from '../../../components/ui/Button';
 import PasswordInput from '../../../components/ui/PasswordInput';
 import { getErrorMessage } from '../../../lib/errors';
+import { validateEmail } from '../../../lib/validation';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -21,8 +22,13 @@ export function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email.trim() || !password) {
-      setError('Vui lòng nhập đầy đủ email và mật khẩu.');
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+    if (!password) {
+      setError('Vui lòng nhập mật khẩu.');
       return;
     }
 

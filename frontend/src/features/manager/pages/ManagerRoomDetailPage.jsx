@@ -9,12 +9,9 @@ import {
   CheckCircle2,
   MapPin,
   Phone,
-  Sparkles,
-  ShieldCheck,
   Building2,
   X,
   Plus,
-  Clock
 } from 'lucide-react';
 import {
   getRoomDetailApi,
@@ -26,6 +23,8 @@ import { AirbnbAmenityList } from '../components/AmenityIcon';
 import { AmenityPicker } from '../components/AmenityPicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { formatVnd, formatDate } from '../../../lib/format';
+import { fileUrl } from '../../../lib/api/client';
+import MediaManager from '../components/MediaManager';
 
 export function ManagerRoomDetailPage() {
   const { roomId } = useParams();
@@ -190,11 +189,7 @@ export function ManagerRoomDetailPage() {
   }
 
   // Chuẩn bị danh sách ảnh media
-  const mediaList = room.media && room.media.length > 0 ? room.media : [
-    { url: `/files/rooms/room-${room.id}-1.webp`, caption: 'Phòng ngủ chính' },
-    { url: `/files/rooms/room-${room.id}-2.webp`, caption: 'Tầm nhìn từ phòng' },
-    { url: `/files/rooms/room-${room.id}-3.webp`, caption: 'Phòng tắm tiện nghi' }
-  ];
+  const mediaList = room.media || [];
 
   return (
     <div className="mx-auto max-w-7xl px-2 sm:px-4 py-4 space-y-6">
@@ -279,57 +274,61 @@ export function ManagerRoomDetailPage() {
         </div>
       </div>
 
-      {/* Airbnb 5-Photo Gallery Grid */}
+      {/* Gallery grid: render each stored photo once, matching the customer gallery. */}
       <div className="relative overflow-hidden rounded-2xl bg-gray-100 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 h-[320px] sm:h-[420px] lg:h-[480px]">
-          {/* Main big image on the left (spanning 2 columns) */}
-          <div className="md:col-span-2 relative h-full overflow-hidden group cursor-pointer" onClick={() => setGalleryModalOpen(true)}>
-            <img
-              src={mediaList[0]?.url}
-              alt={mediaList[0]?.caption || room.name}
-              className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80';
-              }}
-            />
+        {mediaList.length > 0 ? <div className="grid grid-cols-1 md:grid-cols-4 gap-2 h-[320px] sm:h-[420px] lg:h-[480px]">
+          {/* Main big image on the left (spanning 2 columns when there are side photos). */}
+          <div className={`${mediaList.length > 1 ? 'md:col-span-2' : 'md:col-span-4'} relative h-full overflow-hidden group cursor-pointer`} onClick={() => setGalleryModalOpen(true)}>
+            {mediaList[0]?.mimeType?.startsWith('video/') ? (
+              <video src={fileUrl(mediaList[0].url)} muted controls className="h-full w-full object-cover" aria-label={mediaList[0].caption || room.name} />
+            ) : (
+              <img src={fileUrl(mediaList[0]?.url)} alt={mediaList[0]?.caption || room.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />
+            )}
             <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
           </div>
 
-          {/* Right smaller photos (2 columns x 2 rows) */}
-          <div className="hidden md:grid md:col-span-2 grid-cols-2 gap-2 h-full">
-            {[1, 2, 3, 4].map((idx) => {
-              const photo = mediaList[idx] || mediaList[idx % mediaList.length];
-              return (
-                <div
-                  key={idx}
-                  className="relative h-full overflow-hidden group cursor-pointer"
-                  onClick={() => setGalleryModalOpen(true)}
-                >
-                  <img
-                    src={photo?.url}
-                    alt={photo?.caption || `${room.name} ảnh ${idx + 1}`}
-                    className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80';
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+          {/* Right smaller photos: use actual media only, with empty cells for the layout. */}
+          {mediaList.length > 1 && <div className="hidden md:grid md:col-span-2 grid-cols-2 grid-rows-2 gap-2 h-full">
+            {mediaList.slice(1, 5).map((photo, index) => (
+              <div
+                key={photo.id || photo.url || index}
+                className="relative h-full min-h-0 overflow-hidden group cursor-pointer"
+                onClick={() => setGalleryModalOpen(true)}
+              >
+                {photo.mimeType?.startsWith('video/') ? (
+                  <video src={fileUrl(photo.url)} muted controls className="h-full w-full object-cover" aria-label={photo.caption || `Video ${index + 2}`} />
+                ) : (
+                  <img src={fileUrl(photo.url)} alt={photo.caption || `${room.name} ảnh ${index + 2}`} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                )}
+                <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
+              </div>
+            ))}
+            {mediaList.length < 5 && Array.from({ length: 5 - mediaList.length }).map((_, index) => (
+              <div key={`empty-${index}`} className="bg-gray-100" aria-hidden="true" />
+            ))}
+          </div>}
+        </div> : <div className="flex h-[240px] flex-col items-center justify-center gap-2 text-sm text-[var(--color-muted)] sm:h-[320px]">
+          <p>Phòng chưa có ảnh giới thiệu.</p>
+          <a href="#room-media-management" className="font-semibold text-[var(--color-ink)] underline underline-offset-4">Thêm ảnh phòng</a>
+        </div>}
 
         {/* Nút xem toàn bộ ảnh */}
-        <button
+        {mediaList.length > 0 && <button
           type="button"
           onClick={() => setGalleryModalOpen(true)}
           className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-xl bg-white/95 px-4 py-2 text-xs font-bold text-gray-900 backdrop-blur-md shadow-md hover:bg-white transition-all"
         >
           <span>Xem tất cả {mediaList.length} ảnh</span>
-        </button>
+        </button>}
+      </div>
+
+      <div id="room-media-management" className="scroll-mt-24">
+        <MediaManager
+          ownerType="ROOM"
+          ownerId={room.id}
+          media={mediaList}
+          onChange={(media) => setRoom((current) => ({ ...current, media }))}
+        />
       </div>
 
       {/* Main Content Layout (Left 65%, Right 35%) */}
@@ -353,32 +352,6 @@ export function ManagerRoomDetailPage() {
               </div>
             </div>
 
-            {/* Highlights phong cách Airbnb */}
-            <div className="mt-6 space-y-4 pt-4">
-              <div className="flex items-start gap-4">
-                <ShieldCheck className="h-6 w-6 text-gray-800 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900">Cơ sở vật chất được xác minh</h4>
-                  <p className="text-xs text-gray-500">Phòng được trang bị đồng bộ theo tiêu chuẩn của chuỗi homestay.</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-4">
-                <Sparkles className="h-6 w-6 text-gray-800 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900">Không gian nghỉ dưỡng yên tĩnh</h4>
-                  <p className="text-xs text-gray-500">Thiết kế thoáng đãng, đón ánh sáng tự nhiên và view núi rừng trong lành.</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-4">
-                <Clock className="h-6 w-6 text-gray-800 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900">Quy trình đón tiếp chu đáo</h4>
-                  <p className="text-xs text-gray-500">Quản lý cơ sở hỗ trợ check-in nhanh chóng và tư vấn trải nghiệm địa phương.</p>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Giới thiệu về phòng này */}
@@ -771,11 +744,11 @@ export function ManagerRoomDetailPage() {
               {mediaList.map((m, idx) => (
                 <div key={idx} className="space-y-1.5">
                   <div className="aspect-[4/3] rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">
-                    <img
-                      src={m.url}
-                      alt={m.caption || `Ảnh ${idx + 1}`}
-                      className="h-full w-full object-cover"
-                    />
+                      {m.mimeType?.startsWith('video/') ? (
+                        <video src={fileUrl(m.url)} controls className="h-full w-full object-cover" aria-label={m.caption || `Video ${idx + 1}`} />
+                      ) : (
+                        <img src={fileUrl(m.url)} alt={m.caption || `Ảnh ${idx + 1}`} className="h-full w-full object-cover" />
+                      )}
                   </div>
                   {m.caption && <p className="text-xs text-gray-600 font-medium text-center">{m.caption}</p>}
                 </div>
