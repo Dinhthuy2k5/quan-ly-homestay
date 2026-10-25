@@ -20,4 +20,7 @@ public interface MediaRepository extends JpaRepository<Media, Long> {
 
     /** Lấy ảnh đầu tiên (cover image) của một đối tượng */
     Optional<Media> findFirstByOwnerTypeAndOwnerIdOrderBySortOrderAsc(OwnerType ownerType, Long ownerId);
+
+    /** Đếm tổng số lượng tệp media của một đối tượng */
+    long countByOwnerTypeAndOwnerId(OwnerType ownerType, Long ownerId);
 }

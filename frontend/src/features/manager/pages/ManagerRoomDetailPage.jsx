@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import {
   getRoomDetailApi,
+  getManagerRoomBasePriceApi,
   updateRoomApi,
   updateRoomStatusApi,
   getManagerRoomTypesApi
@@ -31,6 +32,10 @@ export function ManagerRoomDetailPage() {
   const { homestay } = useOutletContext() || {};
 
   const [room, setRoom] = useState(null);
+  const [basePriceState, setBasePriceState] = useState({ roomId: null, loading: true, nightlyPrice: null, error: '' });
+  const displayedBasePriceState = basePriceState.roomId === Number(roomId)
+    ? basePriceState
+    : { loading: true, nightlyPrice: null, error: '' };
   const [roomTypes, setRoomTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -79,7 +84,7 @@ export function ManagerRoomDetailPage() {
         });
         setStatusForm({
           status: data.status || 'ACTIVE',
-          reason: ''
+          reason: data.statusReason || ''
         });
       } catch (err) {
         if (!active) return;
@@ -90,6 +95,19 @@ export function ManagerRoomDetailPage() {
     }
 
     fetchDetail();
+
+    getManagerRoomBasePriceApi(roomId)
+      .then((data) => {
+        if (active) setBasePriceState({ roomId: data.roomId, loading: false, nightlyPrice: data.nightlyPrice, error: '' });
+      })
+      .catch((err) => {
+        if (active) setBasePriceState({
+          roomId: Number(roomId),
+          loading: false,
+          nightlyPrice: null,
+          error: err.response?.data?.error?.message || err.message || 'Không thể tải giá cơ bản.',
+        });
+      });
 
     getManagerRoomTypesApi()
       .then((types) => {
@@ -138,9 +156,15 @@ export function ManagerRoomDetailPage() {
         status: statusForm.status,
         reason: statusForm.reason.trim() || undefined
       });
-      setRoom((prev) => ({ ...prev, status: updated.status }));
+      const newReason = updated.reason !== undefined ? updated.reason : (statusForm.reason.trim() || null);
+      setRoom((prev) => ({
+        ...prev,
+        status: updated.status,
+        statusReason: newReason,
+      }));
       setStatusModalOpen(false);
-      showToast('success', `Đã cập nhật trạng thái phòng thành ${updated.status}!`);
+      const statusText = updated.status === 'ACTIVE' ? 'Mở hoạt động' : updated.status === 'LOCKED' ? 'Tạm khóa' : 'Ngừng kinh doanh';
+      showToast('success', `Đã chuyển trạng thái phòng sang "${statusText}" thành công!`);
     } catch (err) {
       setModalError(err.response?.data?.error?.message || 'Không thể đổi trạng thái phòng.');
     } finally {
@@ -238,6 +262,10 @@ export function ManagerRoomDetailPage() {
             type="button"
             onClick={() => {
               setModalError('');
+              setStatusForm({
+                status: room.status || 'ACTIVE',
+                reason: room.statusReason || ''
+              });
               setStatusModalOpen(true);
             }}
             className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black transition-colors shadow-sm"
@@ -272,6 +300,30 @@ export function ManagerRoomDetailPage() {
             </>
           )}
         </div>
+
+        {/* Cảnh báo khi phòng bị tạm khóa hoặc ngừng hoạt động */}
+        {room.status === 'LOCKED' && (
+          <div className="mt-3.5 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900 shadow-sm">
+            <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+            <div>
+              <p className="font-bold text-amber-800">Phòng đang tạm khóa (LOCKED)</p>
+              <p className="mt-0.5 text-amber-700">
+                {room.statusReason ? `Lý do: ${room.statusReason}` : 'Chưa ghi rõ lý do bảo trì/sửa chữa.'}
+              </p>
+            </div>
+          </div>
+        )}
+        {room.status === 'INACTIVE' && (
+          <div className="mt-3.5 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-800 shadow-sm">
+            <AlertCircle className="h-4 w-4 shrink-0 text-slate-600 mt-0.5" />
+            <div>
+              <p className="font-bold text-slate-700">Phòng đang ngừng kinh doanh (INACTIVE)</p>
+              <p className="mt-0.5 text-slate-600">
+                {room.statusReason ? `Lý do: ${room.statusReason}` : 'Ngừng khai thác dài hạn.'}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Gallery grid: render each stored photo once, matching the customer gallery. */}
@@ -400,13 +452,25 @@ export function ManagerRoomDetailPage() {
               <div className="flex items-baseline justify-between">
                 <div>
                   <span className="text-2xl sm:text-3xl font-extrabold text-gray-900">
-                    {room.basePrice == null ? 'Chưa thiết lập giá' : formatVnd(room.basePrice)}
+                    {displayedBasePriceState.loading
+                      ? 'Đang tải giá...'
+                      : displayedBasePriceState.error
+                        ? 'Không tải được giá'
+                        : displayedBasePriceState.nightlyPrice == null
+                          ? 'Chưa thiết lập giá'
+                          : formatVnd(displayedBasePriceState.nightlyPrice)}
                   </span>
-                  {room.basePrice != null && <span className="text-sm text-gray-500 font-normal"> / đêm</span>}
+                  {!displayedBasePriceState.loading && !displayedBasePriceState.error && displayedBasePriceState.nightlyPrice != null && (
+                    <span className="text-sm text-gray-500 font-normal"> / đêm</span>
+                  )}
                 </div>
                 <StatusBadge type="room" status={room.status} />
               </div>
-              <p className="mt-1 text-xs text-gray-400">{room.basePrice == null ? 'Chưa có giá cơ bản được thiết lập.' : 'Giá cơ bản áp dụng cho ngày thường'}</p>
+              <p className="mt-1 text-xs text-gray-400">
+                {displayedBasePriceState.error || (displayedBasePriceState.nightlyPrice == null
+                  ? 'Chưa có giá cơ bản được thiết lập.'
+                  : 'Giá cơ bản áp dụng cho ngày thường')}
+              </p>
             </div>
 
             {/* Thông tin vắn tắt */}
@@ -426,6 +490,12 @@ export function ManagerRoomDetailPage() {
                   {room.status === 'LOCKED' && 'Tạm dừng đón khách (Đang bảo trì)'}
                   {room.status === 'INACTIVE' && 'Ngừng khai thác dài hạn'}
                 </span>
+                {room.statusReason && (
+                  <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 p-2 text-xs text-gray-600">
+                    <span className="font-semibold text-gray-700">Lý do: </span>
+                    <span className="text-gray-600">{room.statusReason}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -446,6 +516,10 @@ export function ManagerRoomDetailPage() {
                 type="button"
                 onClick={() => {
                   setModalError('');
+                  setStatusForm({
+                    status: room.status || 'ACTIVE',
+                    reason: room.statusReason || ''
+                  });
                   setStatusModalOpen(true);
                 }}
                 className="w-full rounded-xl border border-gray-300 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50 transition-all active:scale-[0.98]"

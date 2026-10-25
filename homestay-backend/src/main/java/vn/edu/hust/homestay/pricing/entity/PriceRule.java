@@ -56,8 +56,9 @@ public class PriceRule {
     @Column(nullable = false)
     private Short priority = 0;
 
-    @Column(name = "is_active", nullable = false)
-    private Boolean isActive = true;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private Status status = Status.ACTIVE;
 
     @Column(name = "base_room_id", insertable = false, updatable = false)
     private Long baseRoomId;
@@ -74,5 +75,9 @@ public class PriceRule {
 
     public enum AdjustType {
         PERCENT, FIXED_PRICE
+    }
+
+    public enum Status {
+        ACTIVE, INACTIVE, EXPIRED
     }
 }

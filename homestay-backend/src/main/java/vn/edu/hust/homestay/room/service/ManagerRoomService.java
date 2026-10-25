@@ -19,6 +19,7 @@ import vn.edu.hust.homestay.media.repository.MediaRepository;
 import vn.edu.hust.homestay.media.service.ManagerMediaService;
 import vn.edu.hust.homestay.pricing.entity.PriceRule;
 import vn.edu.hust.homestay.pricing.entity.PriceRule.RuleType;
+import vn.edu.hust.homestay.pricing.dto.ManagerRoomBasePriceResponse;
 import vn.edu.hust.homestay.pricing.repository.PriceRuleRepository;
 import vn.edu.hust.homestay.room.dto.*;
 import vn.edu.hust.homestay.room.entity.Room;
@@ -99,7 +100,7 @@ public class ManagerRoomService {
                             .map(Media::getUrl)
                             .orElse(null);
                     Long basePrice = priceRuleRepository
-                            .findByRoomIdAndRuleTypeAndIsActiveTrue(room.getId(), RuleType.BASE)
+                            .findByRoomIdAndRuleTypeAndStatus(room.getId(), RuleType.BASE, PriceRule.Status.ACTIVE)
                             .map(PriceRule::getBasePrice)
                             .orElse(null);
 
@@ -111,6 +112,7 @@ public class ManagerRoomService {
                             .maxGuests(room.getMaxGuests() != null ? room.getMaxGuests().intValue() : null)
                             .amenities(parseAmenities(room.getAmenities()))
                             .status(room.getStatus())
+                            .statusReason(room.getStatusReason())
                             .coverImageUrl(coverUrl)
                             .basePrice(basePrice)
                             .build();
@@ -189,6 +191,26 @@ public class ManagerRoomService {
 
         RoomType roomType = roomTypeRepository.findById(room.getRoomTypeId()).orElse(null);
         return toDetailResponse(room, roomType != null ? roomType.getName() : null);
+    }
+
+    /** API-PRICE-01: Lấy giá BASE đã được duyệt cho một đêm của phòng. */
+    @Transactional(readOnly = true)
+    public ManagerRoomBasePriceResponse getRoomBasePrice(UserPrincipal principal, Long roomId) {
+        Long homestayId = validateAndGetHomestayId(principal);
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> BusinessException.notFound("ROOM_NOT_FOUND", "Không tìm thấy phòng"));
+        if (!room.getHomestayId().equals(homestayId)) {
+            throw BusinessException.forbidden(
+                    "HOMESTAY_SCOPE_VIOLATION",
+                    "Không có quyền xem dữ liệu phòng thuộc cơ sở khác"
+            );
+        }
+
+        Long nightlyPrice = priceRuleRepository
+                .findByRoomIdAndRuleTypeAndStatus(roomId, RuleType.BASE, PriceRule.Status.ACTIVE)
+                .map(PriceRule::getBasePrice)
+                .orElse(null);
+        return new ManagerRoomBasePriceResponse(roomId, nightlyPrice);
     }
 
     /**
@@ -344,7 +366,7 @@ public class ManagerRoomService {
                 .toList();
 
         Long basePrice = priceRuleRepository
-                .findByRoomIdAndRuleTypeAndIsActiveTrue(room.getId(), RuleType.BASE)
+                .findByRoomIdAndRuleTypeAndStatus(room.getId(), RuleType.BASE, PriceRule.Status.ACTIVE)
                 .map(PriceRule::getBasePrice)
                 .orElse(null);
 
@@ -358,6 +380,7 @@ public class ManagerRoomService {
                 .maxGuests(room.getMaxGuests() != null ? room.getMaxGuests().intValue() : null)
                 .amenities(parseAmenities(room.getAmenities()))
                 .status(room.getStatus())
+                .statusReason(room.getStatusReason())
                 .media(mediaList)
                 .basePrice(basePrice)
                 .createdAt(room.getCreatedAt())

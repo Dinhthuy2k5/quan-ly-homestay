@@ -139,15 +139,15 @@ CREATE TABLE price_rules (
   start_date     DATE NULL,
   end_date       DATE NULL,
   priority       SMALLINT NOT NULL DEFAULT 0,
-  is_active      BOOLEAN NOT NULL DEFAULT TRUE,   -- quy tắc đang áp dụng phải được Director phê duyệt
-  -- Mỗi phòng chỉ có một giá BASE đang hoạt động; quy tắc ADJUSTMENT có thể có nhiều dòng.
+  status         ENUM('ACTIVE','INACTIVE','EXPIRED') NOT NULL DEFAULT 'ACTIVE',
+  -- ACTIVE BASE: mỗi phòng một giá; hết end_date thì ứng dụng chuyển trạng thái sang EXPIRED.
   base_room_id   BIGINT GENERATED ALWAYS AS
-                   (CASE WHEN rule_type = 'BASE' AND is_active = TRUE THEN room_id ELSE NULL END) STORED,
+                   (CASE WHEN rule_type = 'BASE' AND status = 'ACTIVE' THEN room_id ELSE NULL END) STORED,
   created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_price_base_room (base_room_id),
   UNIQUE KEY uq_price_rules_id_hs (id, homestay_id),
-  KEY idx_price_rules_scope (homestay_id, is_active, room_id, rule_type, priority),
+  KEY idx_price_rules_scope (homestay_id, status, room_id, rule_type, priority),
   CONSTRAINT fk_price_rules_hs FOREIGN KEY (homestay_id) REFERENCES homestays(id),
   CONSTRAINT fk_price_rules_room FOREIGN KEY (room_id, homestay_id) REFERENCES rooms(id, homestay_id),
   CONSTRAINT ck_price_rule_shape CHECK (

@@ -15,6 +15,7 @@ import vn.edu.hust.homestay.common.response.PagedResult;
 import vn.edu.hust.homestay.room.dto.*;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.service.ManagerRoomService;
+import vn.edu.hust.homestay.pricing.dto.ManagerRoomBasePriceResponse;
 
 /**
  * Controller xử lý các API quản lý phòng của Manager:
@@ -104,6 +105,16 @@ public class ManagerRoomController {
             @PathVariable Long roomId
     ) {
         ManagerRoomDetailResponse response = managerRoomService.getRoomDetail(principal, roomId);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    /** API-PRICE-01 — Giá BASE mỗi đêm đã được Director phê duyệt. */
+    @GetMapping("/{roomId}/base-price")
+    public ResponseEntity<ApiResponse<ManagerRoomBasePriceResponse>> getRoomBasePrice(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long roomId
+    ) {
+        ManagerRoomBasePriceResponse response = managerRoomService.getRoomBasePrice(principal, roomId);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 

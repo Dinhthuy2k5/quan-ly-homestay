@@ -112,10 +112,19 @@ export function RoomDetailPage() {
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [roomId]);
+
+  useEffect(() => {
     if (!roomId) return undefined;
     let active = true;
     fetchRoomDetail(roomId)
-      .then((data) => { if (active) setRoom(data); })
+      .then((data) => {
+        if (active) {
+          setRoom(data);
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        }
+      })
       .catch((err) => { if (active) setError(getErrorMessage(err)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };

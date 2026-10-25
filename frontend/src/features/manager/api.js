@@ -72,6 +72,39 @@ export async function getRoomDetailApi(roomId) {
   return res.data?.data;
 }
 
+/** API-PRICE-01: Lấy giá BASE đã được Director duyệt theo đêm của phòng. */
+export async function getManagerRoomBasePriceApi(roomId) {
+  const res = await apiClient.get(`/manager/rooms/${roomId}/base-price`);
+  const result = res.data?.data;
+  if (!result || result.roomId == null) {
+    throw new Error('Máy chủ trả về giá cơ bản phòng không hợp lệ.');
+  }
+  return result;
+}
+
+/** API-PRICE-02: liệt kê quy tắc giá đã duyệt, có phân trang và bộ lọc. */
+export async function getManagerPriceRulesApi({
+  roomId,
+  ruleType,
+  status,
+  fromDate,
+  toDate,
+  page = 0,
+  size = 20,
+} = {}) {
+  const params = { page, size };
+  if (roomId) params.roomId = Number(roomId);
+  if (ruleType) params.ruleType = ruleType;
+  if (status) params.status = status;
+  if (fromDate) params.fromDate = fromDate;
+  if (toDate) params.toDate = toDate;
+  const res = await apiClient.get('/manager/price-rules', { params });
+  return {
+    items: res.data?.data || [],
+    meta: res.data?.meta || { page: 0, size, totalElements: 0, totalPages: 0 },
+  };
+}
+
 /**
  * API-MGR-06: Cập nhật thông tin phòng
  */

@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useParams } from 'react-router-dom';
+import ScrollToTop from './components/common/ScrollToTop';
 import { AuthProvider } from './features/auth/context/AuthContext';
 import PublicLayout from './layouts/PublicLayout';
 import HomePage from './features/homestays/pages/HomePage';
@@ -19,6 +20,7 @@ import ManagerHomestayPage from './features/manager/pages/ManagerHomestayPage';
 import ManagerRoomsPage from './features/manager/pages/ManagerRoomsPage';
 import ManagerRoomDetailPage from './features/manager/pages/ManagerRoomDetailPage';
 import ManagerRoomTypesPage from './features/manager/pages/ManagerRoomTypesPage';
+import ManagerPriceRulesPage from './features/manager/pages/ManagerPriceRulesPage';
 
 function SearchResultsRoute() {
   const location = useLocation();
@@ -38,6 +40,7 @@ function RoomDetailRoute() {
 export function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AuthProvider>
         <Routes>
           <Route element={<PublicLayout />}>
@@ -84,6 +87,7 @@ export function App() {
               <Route path="rooms" element={<ManagerRoomsPage />} />
               <Route path="rooms/:roomId" element={<ManagerRoomDetailPage />} />
               <Route path="room-types" element={<ManagerRoomTypesPage />} />
+              <Route path="price-rules" element={<ManagerPriceRulesPage />} />
             </Route>
 
             {/* Trang 403 Forbidden */}

@@ -25,6 +25,7 @@ public class ManagerRoomDetailResponse {
     private Integer maxGuests;
     private List<String> amenities;
     private RoomStatus status;
+    private String statusReason;
     private List<ManagerMediaResponse> media;
     private Long basePrice;
     private Instant createdAt;

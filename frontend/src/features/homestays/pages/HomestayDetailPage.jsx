@@ -38,12 +38,19 @@ export function HomestayDetailPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [homestayId]);
+
+  useEffect(() => {
     if (!homestayId) return undefined;
     let active = true;
     Promise.allSettled([fetchHomestayDetail(homestayId), fetchHomestayRoomTypes(homestayId)])
       .then(([detailResult, typesResult]) => {
         if (!active) return;
-        if (detailResult.status === 'fulfilled') setHomestay(detailResult.value);
+        if (detailResult.status === 'fulfilled') {
+          setHomestay(detailResult.value);
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        }
         else setError(getErrorMessage(detailResult.reason));
         if (typesResult.status === 'fulfilled') setRoomTypes(typesResult.value || []);
         else setRoomTypesError(getErrorMessage(typesResult.reason));

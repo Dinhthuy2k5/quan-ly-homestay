@@ -110,7 +110,7 @@ public class PublicRoomService {
 
         // 6. Lấy giá BASE hiện tại đang hoạt động
         Long nightlyPrice = priceRuleRepository
-                .findByRoomIdAndRuleTypeAndIsActiveTrue(roomId, RuleType.BASE)
+                .findByRoomIdAndRuleTypeAndStatus(roomId, RuleType.BASE, PriceRule.Status.ACTIVE)
                 .map(PriceRule::getBasePrice)
                 .orElse(null);
 
@@ -152,7 +152,7 @@ public class PublicRoomService {
             List<String> amenities = parseAmenities(room.getAmenities(), room.getId());
             String coverUrl = mediaRepository.findFirstByOwnerTypeAndOwnerIdOrderBySortOrderAsc(OwnerType.ROOM, room.getId())
                     .map(media -> media.getUrl()).orElse(null);
-            Long nightlyPrice = priceRuleRepository.findByRoomIdAndRuleTypeAndIsActiveTrue(room.getId(), RuleType.BASE)
+            Long nightlyPrice = priceRuleRepository.findByRoomIdAndRuleTypeAndStatus(room.getId(), RuleType.BASE, PriceRule.Status.ACTIVE)
                     .map(PriceRule::getBasePrice).orElse(null);
 
             return PublicRoomSummaryResponse.builder()

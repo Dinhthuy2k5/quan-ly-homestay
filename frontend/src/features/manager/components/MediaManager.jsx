@@ -10,6 +10,7 @@ function mediaErrorMessage(error) {
   const code = error.response?.data?.error?.code;
   if (code === 'FILE_TOO_LARGE') return 'Tệp vượt quá giới hạn 5 MB.';
   if (code === 'UNSUPPORTED_MEDIA_TYPE') return 'Chỉ nhận ảnh JPG, PNG, WEBP hoặc video MP4.';
+  if (code === 'TOO_MANY_MEDIA_FILES') return error.response?.data?.error?.message || 'Đã đạt giới hạn số lượng ảnh/video tối đa.';
   return error.response?.data?.error?.message || 'Không thể thực hiện thao tác với tệp.';
 }
 
@@ -97,7 +98,9 @@ export default function MediaManager({ ownerType, ownerId, media = [], onChange 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id={`media-heading-${ownerType}-${ownerId}`} className="text-lg font-semibold text-[var(--color-ink)]">Ảnh và video</h2>
-          <p className="mt-1 text-sm text-[var(--color-muted)]">JPG, PNG, WEBP hoặc MP4 · tối đa 5 MB mỗi tệp. Ảnh đầu tiên được dùng làm ảnh bìa.</p>
+          <p className="mt-1 text-sm text-[var(--color-muted)]">
+            JPG, PNG, WEBP hoặc MP4 · tối đa 5 MB mỗi tệp (tối đa {ownerType === 'HOMESTAY' ? '20' : '12'} tệp). Ảnh đầu tiên được dùng làm ảnh bìa.
+          </p>
         </div>
         <button type="button" onClick={() => inputRef.current?.click()} className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors">
           <ImagePlus aria-hidden="true" className="h-4 w-4" /> Chọn tệp

@@ -159,6 +159,7 @@ export function ManagerRoomsPage() {
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setActiveKeyword(searchKeyword.trim());
+    setCurrentPage(0);
   };
 
   const closeCreateModal = () => {
@@ -173,6 +174,7 @@ export function ManagerRoomsPage() {
     setFilterRoomType('');
     setSearchKeyword('');
     setActiveKeyword('');
+    setCurrentPage(0);
   };
 
   const addCustomAmenity = (isEdit = false) => {
@@ -272,7 +274,7 @@ export function ManagerRoomsPage() {
     setStatusTargetRoom(room);
     setStatusForm({
       status: room.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE',
-      reason: ''
+      reason: room.statusReason || ''
     });
     setModalError('');
     setStatusModalOpen(true);
@@ -290,7 +292,8 @@ export function ManagerRoomsPage() {
         reason: statusForm.reason.trim() || undefined
       });
       setStatusModalOpen(false);
-      showSuccess(`Đã chuyển trạng thái phòng "${statusTargetRoom.name}" sang ${statusForm.status}!`);
+      const statusText = statusForm.status === 'ACTIVE' ? 'Mở hoạt động' : statusForm.status === 'LOCKED' ? 'Tạm khóa' : 'Ngừng kinh doanh';
+      showSuccess(`Đã chuyển trạng thái phòng "${statusTargetRoom.name}" sang "${statusText}"!`);
       setReloadTrigger((k) => k + 1);
     } catch (err) {
       setModalError(err.response?.data?.error?.message || 'Không thể thay đổi trạng thái phòng.');
@@ -387,7 +390,10 @@ export function ManagerRoomsPage() {
           {/* Lọc Trạng thái */}
           <select
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
+            onChange={(e) => {
+              setFilterStatus(e.target.value);
+              setCurrentPage(0);
+            }}
             className="rounded-full border border-gray-300 px-4 py-2.5 text-xs font-semibold text-gray-700 bg-white shadow-sm focus:border-black focus:outline-none"
           >
             <option value="">Tất cả trạng thái</option>
@@ -399,7 +405,10 @@ export function ManagerRoomsPage() {
           {/* Lọc Loại phòng */}
           <select
             value={filterRoomType}
-            onChange={(e) => setFilterRoomType(e.target.value)}
+            onChange={(e) => {
+              setFilterRoomType(e.target.value);
+              setCurrentPage(0);
+            }}
             className="rounded-full border border-gray-300 px-4 py-2.5 text-xs font-semibold text-gray-700 bg-white shadow-sm focus:border-black focus:outline-none"
           >
             <option value="">Tất cả loại phòng</option>
@@ -513,6 +522,13 @@ export function ManagerRoomsPage() {
                     )}
                   </div>
 
+                  {room.status === 'LOCKED' && room.statusReason && (
+                    <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200/60 px-2.5 py-1 text-[11px] text-amber-800">
+                      <AlertCircle className="h-3 w-3 shrink-0 text-amber-600" />
+                      <span className="truncate" title={room.statusReason}>{room.statusReason}</span>
+                    </div>
+                  )}
+
                   {/* Pricing row */}
                   <div className="pt-2 flex items-baseline justify-between border-t border-gray-100 mt-2">
                     <div>
@@ -596,6 +612,11 @@ export function ManagerRoomsPage() {
                     </td>
                     <td className="px-6 py-4">
                       <StatusBadge type="room" status={room.status} />
+                      {room.status === 'LOCKED' && room.statusReason && (
+                        <p className="mt-1 text-[11px] text-amber-700 max-w-[180px] truncate" title={room.statusReason}>
+                          {room.statusReason}
+                        </p>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>

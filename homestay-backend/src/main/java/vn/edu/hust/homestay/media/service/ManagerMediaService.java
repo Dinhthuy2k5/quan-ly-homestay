@@ -32,6 +32,9 @@ public class ManagerMediaService {
 
     private static final Logger log = LoggerFactory.getLogger(ManagerMediaService.class);
     private static final long MAX_FILE_SIZE = 5L * 1024 * 1024;
+    private static final int MAX_HOMESTAY_MEDIA = 20;
+    private static final int MAX_ROOM_MEDIA = 12;
+    private static final int MAX_SERVICE_MEDIA = 10;
 
     private final MediaRepository mediaRepository;
     private final HomestayRepository homestayRepository;
@@ -65,6 +68,19 @@ public class ManagerMediaService {
         long homestayId = requireHomestayId(principal);
         OwnerType ownerType = parseOwnerType(rawOwnerType);
         requireOwnerAccess(ownerType, ownerId, homestayId);
+
+        int maxAllowed = switch (ownerType) {
+            case HOMESTAY -> MAX_HOMESTAY_MEDIA;
+            case ROOM -> MAX_ROOM_MEDIA;
+            case SERVICE -> MAX_SERVICE_MEDIA;
+        };
+        long currentCount = mediaRepository.countByOwnerTypeAndOwnerId(ownerType, ownerId);
+        if (currentCount >= maxAllowed) {
+            throw BusinessException.badRequest(
+                    "TOO_MANY_MEDIA_FILES",
+                    String.format("Số lượng ảnh/video đã đạt giới hạn tối đa (%d tệp)", maxAllowed)
+            );
+        }
 
         if (file == null || file.isEmpty()) {
             throw BusinessException.badRequest("UNSUPPORTED_MEDIA_TYPE", "Tệp tải lên đang trống");
