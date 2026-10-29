@@ -11,6 +11,7 @@ import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDate;
 
 /**
  * Repository truy vấn bảng 'rooms'.
@@ -18,6 +19,20 @@ import java.util.Optional;
  */
 @Repository
 public interface RoomRepository extends JpaRepository<Room, Long> {
+
+    /** Ngày đã được giữ trong sổ đêm, dùng để gạch ngày không khả dụng trên lịch công khai. */
+    @Query(value = """
+        SELECT stay_date FROM booking_room_nights
+        WHERE room_id = :roomId
+          AND stay_date >= :fromDate
+          AND stay_date < :toDate
+        ORDER BY stay_date
+        """, nativeQuery = true)
+    List<LocalDate> findUnavailableStayDates(
+            @Param("roomId") Long roomId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate
+    );
 
     /** Tìm phòng theo id và status */
     Optional<Room> findByIdAndStatus(Long id, RoomStatus status);
@@ -27,6 +42,85 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
 
     /** Danh sách phòng đang hoạt động công khai thuộc homestay, phân trang ổn định. */
     Page<Room> findByHomestayIdAndStatusOrderByIdAsc(Long homestayId, RoomStatus status, Pageable pageable);
+
+    /** API-PUB-03: phòng ACTIVE, đủ sức chứa, có giá BASE và không bị giữ trong bất kỳ đêm lưu trú nào. */
+    @Query(value = """
+        SELECT r.*
+        FROM rooms r
+        JOIN homestays h ON h.id = r.homestay_id
+        JOIN room_types rt ON rt.id = r.room_type_id AND rt.homestay_id = r.homestay_id
+        WHERE r.status = 'ACTIVE'
+          AND h.status = 'ACTIVE'
+          AND r.max_guests >= :guestCount
+          AND (:homestayId IS NULL OR h.id = :homestayId)
+          AND (:province IS NULL OR LOWER(h.province) LIKE CONCAT('%', LOWER(:province), '%'))
+          AND (:keyword IS NULL OR (
+                LOWER(h.name) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(h.address) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(h.province) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(COALESCE(h.description, '')) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(r.name) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(COALESCE(r.description, '')) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(rt.name) LIKE CONCAT('%', LOWER(:keyword), '%')
+          ))
+          AND EXISTS (
+                SELECT 1 FROM price_rules base_rule
+                WHERE base_rule.homestay_id = h.id
+                  AND base_rule.room_id = r.id
+                  AND base_rule.rule_type = 'BASE'
+                  AND base_rule.status = 'ACTIVE'
+          )
+          AND NOT EXISTS (
+                SELECT 1 FROM booking_room_nights reserved_night
+                WHERE reserved_night.room_id = r.id
+                  AND reserved_night.stay_date >= :checkInDate
+                  AND reserved_night.stay_date < :checkOutDate
+          )
+        ORDER BY h.name ASC, r.id ASC
+        """,
+        countQuery = """
+        SELECT COUNT(*)
+        FROM rooms r
+        JOIN homestays h ON h.id = r.homestay_id
+        JOIN room_types rt ON rt.id = r.room_type_id AND rt.homestay_id = r.homestay_id
+        WHERE r.status = 'ACTIVE'
+          AND h.status = 'ACTIVE'
+          AND r.max_guests >= :guestCount
+          AND (:homestayId IS NULL OR h.id = :homestayId)
+          AND (:province IS NULL OR LOWER(h.province) LIKE CONCAT('%', LOWER(:province), '%'))
+          AND (:keyword IS NULL OR (
+                LOWER(h.name) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(h.address) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(h.province) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(COALESCE(h.description, '')) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(r.name) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(COALESCE(r.description, '')) LIKE CONCAT('%', LOWER(:keyword), '%')
+                OR LOWER(rt.name) LIKE CONCAT('%', LOWER(:keyword), '%')
+          ))
+          AND EXISTS (
+                SELECT 1 FROM price_rules base_rule
+                WHERE base_rule.homestay_id = h.id
+                  AND base_rule.room_id = r.id
+                  AND base_rule.rule_type = 'BASE'
+                  AND base_rule.status = 'ACTIVE'
+          )
+          AND NOT EXISTS (
+                SELECT 1 FROM booking_room_nights reserved_night
+                WHERE reserved_night.room_id = r.id
+                  AND reserved_night.stay_date >= :checkInDate
+                  AND reserved_night.stay_date < :checkOutDate
+          )
+        """,
+        nativeQuery = true)
+    Page<Room> searchAvailableRooms(
+            @Param("homestayId") Long homestayId,
+            @Param("province") String province,
+            @Param("keyword") String keyword,
+            @Param("checkInDate") LocalDate checkInDate,
+            @Param("checkOutDate") LocalDate checkOutDate,
+            @Param("guestCount") int guestCount,
+            Pageable pageable
+    );
 
     /** Kiểm tra tên phòng đã tồn tại trong homestay chưa */
     boolean existsByHomestayIdAndName(Long homestayId, String name);

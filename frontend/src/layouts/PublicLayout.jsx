@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronDown, Home, LogIn, LogOut, Menu, Search, User as UserIcon, X } from 'lucide-react';
-import SearchBar from '../components/ui/SearchBar';
+import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { ChevronDown, Home, LogIn, LogOut, Menu, User as UserIcon } from 'lucide-react';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../lib/constants';
 import { useAuth } from '../features/auth/context/useAuth';
 
@@ -12,43 +11,12 @@ const ROLE_BADGES = {
   ADMIN: { label: 'Quản trị viên', className: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
-function SearchOverlay({ initialProvince, initialKeyword, onSearch, onClose }) {
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-[var(--z-modal)] bg-black/40 p-4 sm:hidden" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="mobile-search-title" className="mx-auto mt-2 max-w-lg rounded-[var(--radius-lg)] bg-white p-5 shadow-[var(--shadow-2)]">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 id="mobile-search-title" className="text-lg font-semibold text-[var(--color-ink)]">Tìm homestay</h2>
-          <button type="button" onClick={onClose} aria-label="Đóng tìm kiếm" className="grid h-11 w-11 place-items-center rounded-full hover:bg-[var(--color-surface-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-ink)]">
-            <X aria-hidden="true" className="h-5 w-5" />
-          </button>
-        </div>
-        <SearchBar idPrefix="mobile-search" key={`${initialProvince}:${initialKeyword}`} initialProvince={initialProvince} initialKeyword={initialKeyword} onSearch={onSearch} />
-        <p className="mt-4 text-sm text-[var(--color-muted)]">Tìm theo tỉnh/thành phố hoặc tên homestay.</p>
-      </section>
-    </div>
-  );
-}
-
 export function PublicLayout() {
-  const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { user, isAuthenticated, logout } = useAuth();
 
-  const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
-  const province = searchParams.get('province') || '';
-  const keyword = searchParams.get('keyword') || '';
-  const showSearch = location.pathname === '/' || location.pathname === '/search' || location.pathname.startsWith('/rooms/');
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -60,16 +28,6 @@ export function PublicLayout() {
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [menuOpen]);
-
-  const submitSearch = ({ province: nextProvince, keyword: nextKeyword }) => {
-    const params = new URLSearchParams();
-    if (nextProvince) params.set('province', nextProvince);
-    if (nextKeyword) params.set('keyword', nextKeyword);
-    const query = params.toString();
-    navigate(`/search${query ? `?${query}` : ''}`);
-    setSearchOpen(false);
-    setMenuOpen(false);
-  };
 
   const handleLogout = async () => {
     setMenuOpen(false);
@@ -97,25 +55,7 @@ export function PublicLayout() {
             <span className="hidden sm:inline">Homestay</span>
           </Link>
 
-          {showSearch && (
-            <div className="hidden min-w-0 flex-1 justify-center px-6 sm:flex">
-              <SearchBar idPrefix="desktop-search" key={`${province}:${keyword}`} initialProvince={province} initialKeyword={keyword} onSearch={submitSearch} className="max-w-[680px]" />
-            </div>
-          )}
-
           <div ref={menuRef} className="relative flex shrink-0 items-center gap-2">
-            {showSearch && (
-              <button
-                type="button"
-                onClick={() => setSearchOpen(true)}
-                className="flex min-h-11 items-center gap-2 rounded-full border border-[var(--color-border)] px-4 text-sm font-medium text-[var(--color-ink)] shadow-[var(--shadow-1)] sm:hidden"
-                aria-label="Bắt đầu tìm homestay"
-              >
-                <Search aria-hidden="true" className="h-4 w-4" />
-                <span>Bắt đầu tìm kiếm</span>
-              </button>
-            )}
-
             {/* Khung hiển thị tài khoản cá nhân */}
             {isAuthenticated ? (
               <button
@@ -248,7 +188,7 @@ export function PublicLayout() {
                       onClick={() => setMenuOpen(false)}
                       className="block rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-soft)] text-gray-700"
                     >
-                      Tìm kiếm
+                      Danh sách homestay
                     </Link>
 
                     <div className="my-1.5 border-t border-[var(--color-border)]" />
@@ -319,7 +259,7 @@ export function PublicLayout() {
         <div className="mx-auto grid max-w-[1280px] gap-8 px-4 py-8 text-sm sm:grid-cols-3 sm:px-6">
           <div>
             <h2 className="font-semibold text-[var(--color-ink)]">Khám phá</h2>
-            <Link to="/search" className="mt-3 inline-block text-[var(--color-body)] hover:underline">Tìm homestay</Link>
+            <Link to="/search" className="mt-3 inline-block text-[var(--color-body)] hover:underline">Xem tất cả homestay</Link>
           </div>
           <div>
             <h2 className="font-semibold text-[var(--color-ink)]">Hỗ trợ đặt phòng</h2>
@@ -334,7 +274,6 @@ export function PublicLayout() {
         </div>
       </footer>
 
-      {searchOpen && showSearch && <SearchOverlay initialProvince={province} initialKeyword={keyword} onSearch={submitSearch} onClose={() => setSearchOpen(false)} />}
     </div>
   );
 }

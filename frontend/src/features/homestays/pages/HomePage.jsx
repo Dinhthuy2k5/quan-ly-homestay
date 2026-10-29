@@ -45,7 +45,7 @@ export function HomePage() {
           Mai Châu · Mộc Châu · Sa Pa
         </p>
         <h1 className="max-w-3xl text-3xl font-semibold leading-tight tracking-tight text-[var(--color-ink)] sm:text-5xl">
-          Tìm homestay cho chuyến đi của bạn
+          Khám phá nơi nghỉ cho chuyến đi của bạn
         </h1>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-body)] sm:text-lg">
           Khám phá nơi nghỉ dưỡng, xem thông tin phòng và liên hệ trực tiếp với homestay.
@@ -69,11 +69,11 @@ export function HomePage() {
       <section className="rounded-[var(--radius-lg)] bg-[var(--color-surface-soft)] px-6 py-7 sm:px-8 sm:py-9">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-[var(--color-ink)]">Đã biết nơi muốn đến?</h2>
-            <p className="mt-1 text-sm text-[var(--color-body)]">Tìm homestay theo tỉnh hoặc tên cơ sở.</p>
+            <h2 className="text-xl font-semibold text-[var(--color-ink)]">Chọn homestay bạn muốn khám phá</h2>
+            <p className="mt-1 text-sm text-[var(--color-body)]">Sau khi chọn homestay, bạn có thể tìm phòng theo ngày lưu trú và số khách.</p>
           </div>
           <Link to="/search" className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-[var(--radius-pill)] bg-[var(--color-ink)] px-5 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)]">
-            Tìm homestay <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            Xem tất cả homestay <ArrowRight aria-hidden="true" className="h-4 w-4" />
           </Link>
         </div>
       </section>

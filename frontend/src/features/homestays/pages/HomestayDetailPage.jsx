@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BedDouble, MapPin, Phone, Home, Users, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
-import { fetchHomestayDetail, fetchHomestayRoomTypes, fetchHomestayRooms } from '../api';
+import { BedDouble, MapPin, Phone, Home, Users, ChevronLeft, ChevronRight, SlidersHorizontal, Search } from 'lucide-react';
+import { fetchHomestayDetail, fetchHomestayRoomTypes, fetchHomestayRooms, searchAvailableRooms } from '../api';
 import { fileUrl } from '../../../lib/api/client';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { getErrorMessage } from '../../../lib/errors';
@@ -24,6 +24,11 @@ function DetailSkeleton() {
 
 export function HomestayDetailPage() {
   const { homestayId } = useParams();
+  const [todayDate] = useState(() => {
+    const date = new Date();
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0, 10);
+  });
   const [homestay, setHomestay] = useState(null);
   const [roomTypes, setRoomTypes] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -35,6 +40,12 @@ export function HomestayDetailPage() {
   const [error, setError] = useState('');
   const [roomTypesError, setRoomTypesError] = useState('');
   const [roomsError, setRoomsError] = useState('');
+  const [checkInDate, setCheckInDate] = useState('');
+  const [checkOutDate, setCheckOutDate] = useState('');
+  const [guestCount, setGuestCount] = useState(2);
+  const [availableRooms, setAvailableRooms] = useState(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -82,6 +93,32 @@ export function HomestayDetailPage() {
     setReloadKey((key) => key + 1);
   };
 
+  const handleAvailabilitySearch = async (event) => {
+    event.preventDefault();
+    setAvailabilityError('');
+    if (!checkInDate || !checkOutDate || checkOutDate <= checkInDate) {
+      setAvailabilityError('Chọn ngày nhận phòng và ngày trả phòng hợp lệ để tìm phòng.');
+      return;
+    }
+    setAvailabilityLoading(true);
+    try {
+      const result = await searchAvailableRooms({
+        homestayId,
+        checkInDate,
+        checkOutDate,
+        guestCount,
+        page: 0,
+        size: 100,
+      });
+      setAvailableRooms(result.items || []);
+    } catch (searchError) {
+      setAvailabilityError(getErrorMessage(searchError));
+      setAvailableRooms(null);
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  };
+
   if (loading) return <DetailSkeleton />;
   if (error || !homestay) {
     return (
@@ -94,12 +131,13 @@ export function HomestayDetailPage() {
 
   const media = homestay.media || [];
   const photos = media.slice(0, 5);
-  const visibleRooms = rooms
-    .filter((room) => !roomTypeFilter || String(room.roomTypeId) === roomTypeFilter || room.roomTypeName === roomTypeFilter)
+  const selectedRoomType = roomTypes.find((type) => String(type.id) === roomTypeFilter);
+  const visibleRooms = (availableRooms ?? rooms)
+    .filter((room) => !roomTypeFilter || String(room.roomTypeId) === roomTypeFilter || room.roomTypeName === roomTypeFilter || (selectedRoomType && room.roomTypeName === selectedRoomType.name))
     .sort((a, b) => priceSort === 'asc'
-      ? (a.nightlyPrice ?? Number.MAX_SAFE_INTEGER) - (b.nightlyPrice ?? Number.MAX_SAFE_INTEGER)
+      ? (a.roomTotalPrice ?? a.nightlyPrice ?? Number.MAX_SAFE_INTEGER) - (b.roomTotalPrice ?? b.nightlyPrice ?? Number.MAX_SAFE_INTEGER)
       : priceSort === 'desc'
-        ? (b.nightlyPrice ?? -1) - (a.nightlyPrice ?? -1)
+        ? (b.roomTotalPrice ?? b.nightlyPrice ?? -1) - (a.roomTotalPrice ?? a.nightlyPrice ?? -1)
         : 0);
 
   return (
@@ -143,13 +181,26 @@ export function HomestayDetailPage() {
           </section>
 
           <section aria-labelledby="rooms-title" className="scroll-mt-28">
+            <form onSubmit={handleAvailabilitySearch} className="mb-6 grid gap-3 rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-1)] sm:grid-cols-[1fr_1fr_0.7fr_auto] sm:items-end">
+              <label className="grid gap-1 text-xs font-semibold text-[var(--color-body)]">Ngày nhận phòng
+                <input type="date" required min={todayDate} value={checkInDate} onChange={(event) => setCheckInDate(event.target.value)} className="min-h-11 rounded-xl border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)]" />
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-[var(--color-body)]">Ngày trả phòng
+                <input type="date" required min={checkInDate || todayDate} value={checkOutDate} onChange={(event) => setCheckOutDate(event.target.value)} className="min-h-11 rounded-xl border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)]" />
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-[var(--color-body)]">Số khách
+                <input type="number" min="1" max="20" required value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value))} className="min-h-11 rounded-xl border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)]" />
+              </label>
+              <button type="submit" disabled={availabilityLoading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-sm font-semibold text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-60"><Search aria-hidden="true" className="h-4 w-4" />{availabilityLoading ? 'Đang tìm…' : 'Tìm phòng'}</button>
+            </form>
+            {availabilityError && <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{availabilityError}</p>}
             <div className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border)] pb-5 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <BedDouble aria-hidden="true" className="h-5 w-5 text-[var(--color-muted)]" />
                   <h2 id="rooms-title" className="text-xl font-semibold text-[var(--color-ink)] sm:text-2xl">Phòng tại {homestay.name}</h2>
                 </div>
-                <p className="mt-1 text-sm text-[var(--color-muted)]">{roomsMeta.totalElements} phòng đang được công khai</p>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">{availableRooms === null ? `${roomsMeta.totalElements} phòng đang được công khai` : `${availableRooms.length} phòng còn trống từ ${checkInDate} đến ${checkOutDate} · ${guestCount} khách`}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <label className="sr-only" htmlFor="room-type-filter">Lọc theo loại phòng</label>
@@ -169,22 +220,22 @@ export function HomestayDetailPage() {
               </div>
             </div>
 
-            {roomsError ? <ErrorBanner message={roomsError} onRetry={retry} className="my-4" /> : visibleRooms.length === 0 ? (
-              <EmptyState title={rooms.length ? 'Không có phòng phù hợp' : 'Chưa có phòng được công khai'} description={rooms.length ? 'Thử chọn loại phòng khác.' : 'Homestay chưa mở phòng nào để khách xem. Bạn có thể liên hệ trực tiếp để được tư vấn.'} />
+            {roomsError && availableRooms === null ? <ErrorBanner message={roomsError} onRetry={retry} className="my-4" /> : visibleRooms.length === 0 ? (
+              <EmptyState title={availableRooms !== null ? 'Không có phòng trống trong khoảng ngày này' : rooms.length ? 'Không có phòng phù hợp' : 'Chưa có phòng được công khai'} description={availableRooms !== null ? 'Thử đổi ngày lưu trú hoặc giảm số khách.' : rooms.length ? 'Thử chọn loại phòng khác.' : 'Homestay chưa mở phòng nào để khách xem. Bạn có thể liên hệ trực tiếp để được tư vấn.'} />
             ) : (
               <div className="grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
                 {visibleRooms.map((room) => (
-                  <article key={room.id} className="group min-w-0">
-                    <Link to={`/rooms/${room.id}`} className="block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-ink)]">
+                  <article key={room.roomId ?? room.id} className="group min-w-0">
+                    <Link to={`/rooms/${room.roomId ?? room.id}${availableRooms === null ? '' : `?checkIn=${checkInDate}&checkOut=${checkOutDate}&guests=${guestCount}`}`} className="block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-ink)]">
                       <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-[var(--color-surface-soft)]">
-                        {room.coverImageUrl ? <img src={fileUrl(room.coverImageUrl)} alt={room.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" /> : <div className="flex h-full items-center justify-center text-[var(--color-muted)]"><BedDouble aria-hidden="true" className="h-10 w-10" /></div>}
+                        {room.coverImageUrl ? <img src={fileUrl(room.coverImageUrl)} alt={room.roomName || room.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" /> : <div className="flex h-full items-center justify-center text-[var(--color-muted)]"><BedDouble aria-hidden="true" className="h-10 w-10" /></div>}
                       </div>
                       <div className="mt-3 flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h3 className="truncate font-semibold text-[var(--color-ink)]">{room.name}</h3>
+                          <h3 className="truncate font-semibold text-[var(--color-ink)]">{room.roomName || room.name}</h3>
                           <p className="mt-0.5 truncate text-sm text-[var(--color-muted)]">{room.roomTypeName || 'Phòng lưu trú'}{homestay.province ? ` · ${homestay.province}` : ''}</p>
                         </div>
-                        <span className="shrink-0 text-sm font-semibold text-[var(--color-ink)]">{room.nightlyPrice == null ? 'Chưa thiết lập giá' : <>{formatVnd(room.nightlyPrice)} <span className="font-normal text-[var(--color-muted)]">/ đêm</span></>}</span>
+                        <span className="shrink-0 text-sm font-semibold text-[var(--color-ink)]">{room.roomTotalPrice != null ? <>{formatVnd(room.roomTotalPrice)} <span className="font-normal text-[var(--color-muted)]">/ {Math.max(1, (new Date(checkOutDate) - new Date(checkInDate)) / 86400000)} đêm</span></> : room.nightlyPrice == null ? 'Chưa thiết lập giá' : <>{formatVnd(room.nightlyPrice)} <span className="font-normal text-[var(--color-muted)]">/ đêm</span></>}</span>
                       </div>
                       <div className="mt-2 flex items-center gap-1.5 text-sm text-[var(--color-body)]"><Users aria-hidden="true" className="h-4 w-4 text-[var(--color-muted)]" />Tối đa {room.maxGuests ?? '—'} khách</div>
                       {room.amenities?.length > 0 && (
@@ -199,7 +250,7 @@ export function HomestayDetailPage() {
                 ))}
               </div>
             )}
-            {roomsMeta.totalPages > 1 && (
+            {availableRooms === null && roomsMeta.totalPages > 1 && (
               <nav aria-label="Phân trang danh sách phòng" className="mt-8 flex items-center justify-center gap-4">
                 <button type="button" disabled={roomsMeta.page <= 0} onClick={() => setRoomsPage((page) => Math.max(0, page - 1))} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-border)] px-4 text-sm font-medium disabled:opacity-40"><ChevronLeft aria-hidden="true" className="h-4 w-4" />Trước</button>
                 <span className="text-sm text-[var(--color-muted)]">Trang {roomsMeta.page + 1} / {roomsMeta.totalPages}</span>

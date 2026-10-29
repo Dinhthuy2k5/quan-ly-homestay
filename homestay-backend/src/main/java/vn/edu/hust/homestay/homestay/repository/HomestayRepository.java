@@ -35,6 +35,7 @@ public interface HomestayRepository extends JpaRepository<Homestay, Long> {
           AND (:keyword IS NULL OR (
                 LOWER(h.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
                 OR LOWER(h.address) LIKE LOWER(CONCAT('%', :keyword, '%'))
+                OR LOWER(h.province) LIKE LOWER(CONCAT('%', :keyword, '%'))
           ))
         ORDER BY h.name ASC
     """)

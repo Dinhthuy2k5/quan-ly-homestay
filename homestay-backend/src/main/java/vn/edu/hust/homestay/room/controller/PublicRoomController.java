@@ -6,10 +6,15 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.room.dto.RoomDetailPublicResponse;
 import vn.edu.hust.homestay.room.service.PublicRoomService;
+import vn.edu.hust.homestay.room.service.PublicRoomAvailabilityService;
+import vn.edu.hust.homestay.room.dto.RoomAvailabilityResponse;
+
+import java.time.LocalDate;
 
 /**
  * Controller phục vụ các API công khai về Phòng (Tuần 1).
@@ -22,9 +27,11 @@ import vn.edu.hust.homestay.room.service.PublicRoomService;
 public class PublicRoomController {
 
     private final PublicRoomService publicRoomService;
+    private final PublicRoomAvailabilityService availabilityService;
 
-    public PublicRoomController(PublicRoomService publicRoomService) {
+    public PublicRoomController(PublicRoomService publicRoomService, PublicRoomAvailabilityService availabilityService) {
         this.publicRoomService = publicRoomService;
+        this.availabilityService = availabilityService;
     }
 
     /**
@@ -44,5 +51,16 @@ public class PublicRoomController {
     ) {
         RoomDetailPublicResponse response = publicRoomService.getRoomDetail(roomId);
         return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    /** Ngày đã được giữ để khách xem lịch phòng trước khi chọn check-in/check-out. */
+    @Operation(summary = "Tra cứu ngày không khả dụng của phòng")
+    @GetMapping("/{roomId}/availability")
+    public ResponseEntity<ApiResponse<RoomAvailabilityResponse>> getAvailability(
+            @PathVariable Long roomId,
+            @RequestParam LocalDate fromDate,
+            @RequestParam LocalDate toDate
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(availabilityService.getAvailability(roomId, fromDate, toDate)));
     }
 }

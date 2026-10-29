@@ -14,6 +14,7 @@ import ErrorBanner from '../../../components/ui/ErrorBanner';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import HomestayLocationMap from '../../homestays/components/HomestayLocationMap';
 import { AmenitySection } from '../../../components/ui/AmenitySection';
+import RoomAvailabilityCalendar from '../components/RoomAvailabilityCalendar';
 
 function PhotoGallery({ roomName, media }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -166,6 +167,7 @@ export function RoomDetailPage() {
         <a href="#overview" className="shrink-0 hover:text-[var(--color-ink)]">Tổng quan</a>
         <a href="#amenities" className="shrink-0 hover:text-[var(--color-ink)]">Tiện nghi</a>
         <a href="#location" className="shrink-0 hover:text-[var(--color-ink)]">Vị trí</a>
+        <a href="#availability" className="shrink-0 hover:text-[var(--color-ink)]">Lịch trống</a>
         <a href="#rules" className="shrink-0 hover:text-[var(--color-ink)]">Quy định</a>
       </nav>
 
@@ -238,15 +240,21 @@ export function RoomDetailPage() {
             <p className="mt-2 text-[var(--color-body)]">Phòng tối đa {room.maxGuests ?? '—'} khách</p>
             <p className="mt-1 text-[var(--color-body)]">Nhận từ {CHECK_IN_TIME} · Trả đến {CHECK_OUT_DEADLINE}</p>
           </div>
+          <a href="#availability" className="mt-4 flex min-h-12 w-full items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-ink)] px-4 font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]">Chọn ngày lưu trú</a>
           {homestay.hotlinePhone ? <a href={`tel:${homestay.hotlinePhone}`} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)]"><Phone aria-hidden="true" className="h-4 w-4" />Gọi homestay</a> : <p className="mt-4 text-sm text-[var(--color-muted)]">Homestay chưa cập nhật hotline.</p>}
-          <p className="mt-3 text-center text-xs text-[var(--color-muted)]">Tình trạng phòng cần được xác nhận trực tiếp với homestay.</p>
+          <p className="mt-3 text-center text-xs text-[var(--color-muted)]">Kiểm tra ngày trống và giá thực tế ngay trên lịch.</p>
         </aside>
       </div>
+
+      <RoomAvailabilityCalendar key={room.id} room={room} />
 
       {homestay.hotlinePhone && (
         <div className="fixed inset-x-0 bottom-0 z-[var(--z-sticky)] flex items-center justify-between gap-3 border-t border-[var(--color-border)] bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
           <div className="min-w-0"><p className="truncate font-semibold tabular-nums text-[var(--color-ink)]">{room.nightlyPrice == null ? 'Chưa thiết lập giá' : <>{formatVnd(room.nightlyPrice)} <span className="text-sm font-normal text-[var(--color-muted)]">/ đêm</span></>}</p><p className="text-xs text-[var(--color-muted)]">{room.nightlyPrice == null ? 'Liên hệ homestay để hỏi giá' : 'Giá cơ bản'}</p></div>
-          <a href={`tel:${homestay.hotlinePhone}`} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[var(--radius-pill)] bg-[var(--color-primary)] px-5 text-sm font-semibold text-white"><Phone aria-hidden="true" className="h-4 w-4" />Gọi homestay</a>
+          <div className="flex shrink-0 gap-2">
+            <a href={`tel:${homestay.hotlinePhone}`} aria-label="Gọi homestay" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-pill)] border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-ink)]"><Phone aria-hidden="true" className="h-4 w-4" /></a>
+            <a href="#availability" className="inline-flex min-h-11 items-center justify-center rounded-[var(--radius-pill)] bg-[var(--color-primary)] px-4 text-sm font-semibold text-white">Chọn ngày</a>
+          </div>
         </div>
       )}
     </article>

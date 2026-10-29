@@ -30,6 +30,7 @@ import vn.edu.hust.homestay.room.repository.RoomRepository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -130,9 +131,19 @@ class ManagerPriceRuleChangeRequestTests {
     @Test
     @DisplayName("API-PRICE-03: Manager gửi yêu cầu CREATE giá cơ bản (BASE) cho phòng thành công (201)")
     void testCreateBasePriceChangeRequest_Success() throws Exception {
+        // Dùng phòng mới trong transaction của test để không phụ thuộc đề xuất BASE đang chờ
+        // hoặc giá BASE hiện có của dữ liệu seed.
+        Room testRoom = new Room();
+        testRoom.setHomestayId(homestay1Id);
+        testRoom.setRoomTypeId(roomRepository.findById(room1Id).orElseThrow().getRoomTypeId());
+        testRoom.setName("Test BASE request " + UUID.randomUUID());
+        testRoom.setMaxGuests((byte) 2);
+        testRoom.setStatus(RoomStatus.ACTIVE);
+        testRoom = roomRepository.saveAndFlush(testRoom);
+
         ProposedRuleDto proposed = ProposedRuleDto.builder()
                 .ruleType(RuleType.BASE)
-                .roomId(room1Id)
+                .roomId(testRoom.getId())
                 .basePrice(1000000L)
                 .name("Giá cơ bản mới phòng 101")
                 .build();

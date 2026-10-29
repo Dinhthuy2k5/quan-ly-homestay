@@ -23,7 +23,7 @@ import {
 import { AirbnbAmenityList } from '../components/AmenityIcon';
 import { AmenityPicker } from '../components/AmenityPicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
-import { formatVnd, formatDate } from '../../../lib/format';
+import { formatVnd, formatDateTime } from '../../../lib/format';
 import { fileUrl } from '../../../lib/api/client';
 import MediaManager from '../components/MediaManager';
 
@@ -436,10 +436,10 @@ export function ManagerRoomDetailPage() {
                 <span className="font-semibold text-gray-800">Cơ sở homestay:</span> #{room.homestayId} ({homestay?.name || 'N/A'})
               </div>
               <div>
-                <span className="font-semibold text-gray-800">Thời điểm khởi tạo:</span> {formatDate(room.createdAt)}
+                <span className="font-semibold text-gray-800">Thời điểm khởi tạo:</span> {formatDateTime(room.createdAt) || '—'}
               </div>
               <div>
-                <span className="font-semibold text-gray-800">Cập nhật lần cuối:</span> {formatDate(room.updatedAt)}
+                <span className="font-semibold text-gray-800">Cập nhật lần cuối:</span> {formatDateTime(room.updatedAt) || '—'}
               </div>
             </div>
           </div>

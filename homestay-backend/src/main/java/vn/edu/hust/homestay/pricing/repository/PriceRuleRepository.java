@@ -12,6 +12,8 @@ import vn.edu.hust.homestay.pricing.entity.PriceRule.RuleType;
 
 import java.time.LocalDate;
 import java.util.Optional;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * Repository truy vấn bảng 'price_rules'.
@@ -25,6 +27,25 @@ public interface PriceRuleRepository extends JpaRepository<PriceRule, Long> {
      * Mỗi phòng chỉ có tối đa 1 dòng BASE ACTIVE theo unique constraint uq_price_base_room.
      */
     Optional<PriceRule> findByRoomIdAndRuleTypeAndStatus(Long roomId, RuleType ruleType, PriceRule.Status status);
+
+    /** API-PUB-03: lấy giá BASE của các phòng trong trang cùng điều chỉnh toàn cơ sở/phòng cụ thể. */
+    @Query("""
+        SELECT rule FROM PriceRule rule
+        WHERE rule.homestayId IN :homestayIds
+          AND rule.status = :status
+          AND (
+                (rule.ruleType = :baseType AND rule.roomId IN :roomIds)
+                OR (rule.ruleType = :adjustmentType AND (rule.roomId IS NULL OR rule.roomId IN :roomIds))
+          )
+        ORDER BY rule.priority DESC, rule.id ASC
+        """)
+    List<PriceRule> findActiveQuoteRules(
+            @Param("homestayIds") Collection<Long> homestayIds,
+            @Param("roomIds") Collection<Long> roomIds,
+            @Param("status") PriceRule.Status status,
+            @Param("baseType") RuleType baseType,
+            @Param("adjustmentType") RuleType adjustmentType
+    );
 
     /** API-PRICE-02: list approved rules inside the Manager's homestay with optional filters. */
     @Query("""

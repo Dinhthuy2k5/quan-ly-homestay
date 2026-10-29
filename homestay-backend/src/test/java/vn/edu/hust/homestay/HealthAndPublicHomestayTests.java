@@ -10,6 +10,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import java.time.LocalDate;
+
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -167,5 +169,21 @@ class HealthAndPublicHomestayTests {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success", is(false)))
                 .andExpect(jsonPath("$.error.code", is("ROOM_NOT_FOUND")));
+    }
+
+    @Test
+    @DisplayName("Lịch công khai trả về các đêm đã được giữ của phòng")
+    void testPublicRoomAvailabilityCalendar() throws Exception {
+        LocalDate fromDate = LocalDate.now().plusDays(1);
+        LocalDate toDate = fromDate.plusDays(30);
+        mockMvc.perform(get("/api/v1/public/rooms/1/availability")
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.roomId", is(1)))
+                .andExpect(jsonPath("$.data.fromDate", is(fromDate.toString())))
+                .andExpect(jsonPath("$.data.toDate", is(toDate.toString())))
+                .andExpect(jsonPath("$.data.unavailableDates", isA(java.util.List.class)));
     }
 }
