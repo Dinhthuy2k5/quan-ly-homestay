@@ -1,7 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, BadgeDollarSign, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import {
+  AlertCircle,
+  BadgeDollarSign,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Edit3,
+  Plus,
+  PowerOff,
+  RefreshCw,
+} from 'lucide-react';
 import { getManagerPriceRulesApi, getManagerRoomsApi } from '../api';
 import { formatVnd } from '../../../lib/format';
+import PriceRuleChangeRequestModal from '../components/PriceRuleChangeRequestModal';
+import PriceRuleChangeRequestsPanel from '../components/PriceRuleChangeRequestsPanel';
 
 function describeRule(rule) {
   if (rule.ruleType === 'BASE') {
@@ -66,6 +78,21 @@ export default function ManagerPriceRulesPage() {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Modal đề xuất thay đổi giá (API-PRICE-03)
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState('CREATE');
+  const [selectedRule, setSelectedRule] = useState(null);
+  const [modalSession, setModalSession] = useState(0);
+
+  // Toast thông báo phản hồi
+  const [toast, setToast] = useState({ type: '', message: '' });
+
+  useEffect(() => {
+    if (!toast.message) return;
+    const timer = setTimeout(() => setToast({ type: '', message: '' }), 4500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   useEffect(() => {
     let active = true;
     getManagerRoomsApi({ size: 100 })
@@ -83,6 +110,8 @@ export default function ManagerPriceRulesPage() {
     });
     return map;
   }, [rooms]);
+
+  const activeRules = useMemo(() => items.filter((r) => r.status === 'ACTIVE'), [items]);
 
   useEffect(() => {
     let active = true;
@@ -120,10 +149,48 @@ export default function ManagerPriceRulesPage() {
     setPage(update);
   };
 
+  const openModal = (mode, rule = null) => {
+    setModalMode(mode);
+    setSelectedRule(rule);
+    setModalSession((s) => s + 1);
+    setModalOpen(true);
+  };
+
+  const handleRequestSuccess = (createdRequest) => {
+    const typeLabel =
+      createdRequest?.requestType === 'CREATE'
+        ? 'thêm mới'
+        : createdRequest?.requestType === 'UPDATE'
+        ? 'cập nhật'
+        : 'ngừng áp dụng';
+    setToast({
+      type: 'success',
+      message: `Đã gửi đề xuất ${typeLabel} quy tắc giá thành công! Yêu cầu đang chờ Giám đốc phê duyệt.`,
+    });
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
+
   const pageLabel = meta.totalPages === 0 ? '0 / 0' : `${meta.page + 1} / ${meta.totalPages}`;
 
   return (
     <section className="space-y-5">
+      {/* Toast thông báo */}
+      {toast.message && (
+        <div
+          className={`fixed bottom-6 right-6 z-[var(--z-toast)] flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl transition-all ${
+            toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="h-5 w-5 shrink-0" />
+          ) : (
+            <AlertCircle className="h-5 w-5 shrink-0" />
+          )}
+          <span className="text-sm font-medium">{toast.message}</span>
+        </div>
+      )}
+
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="flex items-center gap-2 text-sm font-semibold text-[var(--color-primary)]">
@@ -131,16 +198,27 @@ export default function ManagerPriceRulesPage() {
             Giá đã được Giám đốc phê duyệt
           </p>
           <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-ink)]">Quy tắc giá</h2>
-          <p className="mt-1 text-sm text-[var(--color-muted)]">Chỉ xem quy tắc đang áp dụng hoặc đã được duyệt. Manager gửi đề xuất thay đổi ở API riêng.</p>
+          <p className="mt-1 text-sm text-[var(--color-muted)]">
+            Xem quy tắc giá đang áp dụng. Manager có thể gửi đề xuất thay đổi giá để Giám đốc xét duyệt.
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => { setLoading(true); setReloadKey((key) => key + 1); }}
-          disabled={loading}
-          className="inline-flex min-h-10 items-center justify-center gap-2 self-start rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        >
-          <RefreshCw aria-hidden="true" className="h-4 w-4" /> Làm mới
-        </button>
+        <div className="flex items-center gap-2.5 self-start">
+          <button
+            type="button"
+            onClick={() => openModal('CREATE')}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-semibold text-white shadow-sm hover:opacity-95 transition-opacity"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4" /> Đề xuất đổi giá
+          </button>
+          <button
+            type="button"
+            onClick={() => { setLoading(true); setReloadKey((key) => key + 1); }}
+            disabled={loading}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw aria-hidden="true" className="h-4 w-4" /> Làm mới
+          </button>
+        </div>
       </header>
 
       <form
@@ -207,7 +285,7 @@ export default function ManagerPriceRulesPage() {
       {(loading || items.length > 0) && (
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left text-sm">
+            <table className="w-full min-w-[950px] text-left text-sm">
               <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
                   <th className="px-4 py-3">Quy tắc</th>
@@ -217,11 +295,12 @@ export default function ManagerPriceRulesPage() {
                   <th className="px-4 py-3">Thứ trong tuần</th>
                   <th className="px-4 py-3">Ưu tiên</th>
                   <th className="px-4 py-3">Trạng thái</th>
+                  <th className="px-4 py-3 text-right">Đề xuất thay đổi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading && items.length === 0 && (
-                  <tr><td colSpan="7" className="px-4 py-10 text-center text-gray-500">Đang tải quy tắc giá…</td></tr>
+                  <tr><td colSpan="8" className="px-4 py-10 text-center text-gray-500">Đang tải quy tắc giá…</td></tr>
                 )}
                 {items.map((rule) => (
                   <tr key={rule.id} className="align-top hover:bg-gray-50/70">
@@ -238,6 +317,34 @@ export default function ManagerPriceRulesPage() {
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${rule.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : rule.status === 'EXPIRED' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
                         {rule.status === 'ACTIVE' ? 'Đang áp dụng' : rule.status === 'EXPIRED' ? 'Đã hết hạn' : 'Ngừng áp dụng'}
                       </span>
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      {rule.status === 'ACTIVE' ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openModal('UPDATE', rule)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:text-[var(--color-primary)] transition-colors shadow-2xs"
+                            title="Gửi đề xuất sửa quy tắc giá này"
+                          >
+                            <Edit3 className="h-3.5 w-3.5 text-gray-500" />
+                            Sửa
+                          </button>
+                          {rule.ruleType !== 'BASE' && (
+                            <button
+                              type="button"
+                              onClick={() => openModal('DEACTIVATE', rule)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs"
+                              title="Gửi đề xuất ngừng áp dụng quy tắc này"
+                            >
+                              <PowerOff className="h-3.5 w-3.5 text-rose-600" />
+                              Ngừng
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -256,6 +363,22 @@ export default function ManagerPriceRulesPage() {
             </div>
           </footer>
         </div>
+      )}
+
+      <PriceRuleChangeRequestsPanel reloadKey={reloadKey} />
+
+      {/* Modal đề xuất thay đổi giá */}
+      {modalOpen && (
+        <PriceRuleChangeRequestModal
+          key={`${modalMode}-${selectedRule?.id || 'new'}-${modalSession}`}
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSuccess={handleRequestSuccess}
+          rooms={rooms}
+          activeRules={activeRules}
+          initialMode={modalMode}
+          initialTargetRule={selectedRule}
+        />
       )}
     </section>
   );

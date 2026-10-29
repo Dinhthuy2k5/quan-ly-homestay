@@ -106,6 +106,35 @@ export async function getManagerPriceRulesApi({
 }
 
 /**
+ * API-PRICE-03: Gửi đề xuất thay đổi quy tắc giá (CREATE, UPDATE, DEACTIVATE).
+ */
+export async function createPriceRuleChangeRequestApi({ requestType, targetRuleId, proposedRule }) {
+  const payload = {
+    requestType,
+    targetRuleId: targetRuleId ? Number(targetRuleId) : null,
+    proposedRule: proposedRule || null,
+  };
+  const res = await apiClient.post('/manager/price-rule-change-requests', payload);
+  return res.data?.data;
+}
+
+/** API-PRICE-04: Lịch sử yêu cầu thay đổi giá của homestay manager được giao. */
+export async function getManagerPriceRuleChangeRequestsApi({
+  status,
+  page = 0,
+  size = 10,
+  sort = 'requestedAt,desc',
+} = {}) {
+  const params = { page, size, sort };
+  if (status) params.status = status;
+  const res = await apiClient.get('/manager/price-rule-change-requests', { params });
+  return {
+    items: res.data?.data || [],
+    meta: res.data?.meta || { page: 0, size, totalElements: 0, totalPages: 0 },
+  };
+}
+
+/**
  * API-MGR-06: Cập nhật thông tin phòng
  */
 export async function updateRoomApi(roomId, { roomTypeId, name, description, maxGuests, amenities }) {

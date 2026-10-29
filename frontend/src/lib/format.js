@@ -12,14 +12,17 @@ export function formatVnd(amount) {
 }
 
 /**
- * Định dạng ngày thuần từ chuỗi "YYYY-MM-DD".
+ * Định dạng ngày thuần từ chuỗi "YYYY-MM-DD" hoặc ISO string.
  * Cấm dùng new Date("YYYY-MM-DD") để tránh lệch múi giờ.
  * @param {string|null|undefined} dateStr
  * @returns {string} ví dụ: "10/10/2026"
  */
 export function formatDate(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return '';
-  const parts = dateStr.split('-');
+  const dateOnly = dateStr.includes('T')
+    ? dateStr.split('T')[0]
+    : (dateStr.includes(' ') ? dateStr.split(' ')[0] : dateStr);
+  const parts = dateOnly.split('-');
   if (parts.length === 3) {
     const [year, month, day] = parts;
     return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
@@ -28,21 +31,25 @@ export function formatDate(dateStr) {
 }
 
 /**
- * Định dạng thời điểm ISO sang múi giờ Asia/Ho_Chi_Minh: HH:mm dd/MM/yyyy.
+ * Định dạng thời điểm ISO sang múi giờ Asia/Ho_Chi_Minh: HH:mm:ss dd/MM/yyyy.
  * @param {string|null|undefined} dateTimeStr
- * @returns {string}
+ * @returns {string} ví dụ: "20:42:08 27/10/2026"
  */
 export function formatDateTime(dateTimeStr) {
   if (!dateTimeStr) return '';
   try {
     const d = new Date(dateTimeStr);
     if (isNaN(d.getTime())) return dateTimeStr;
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${hours}:${minutes} ${day}/${month}/${year}`;
+    return new Intl.DateTimeFormat('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour12: false,
+    }).format(d);
   } catch {
     return dateTimeStr;
   }

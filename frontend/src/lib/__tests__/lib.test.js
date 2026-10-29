@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatVnd, formatDate, nightsBetween } from '../format.js';
+import { formatVnd, formatDate, formatDateTime, nightsBetween } from '../format.js';
 import { getStatusInfo } from '../status.js';
 import { getErrorMessage, ERROR_MESSAGES } from '../errors.js';
 import { validateEmail, validatePhone } from '../validation.js';
@@ -16,8 +16,15 @@ test('formatVnd formats money integers correctly to Vietnamese Dong', () => {
 test('formatDate formats YYYY-MM-DD strings without timezone shift', () => {
   assert.equal(formatDate('2026-10-17'), '17/10/2026');
   assert.equal(formatDate('2026-01-05'), '05/01/2026');
+  assert.equal(formatDate('2026-10-17T20:58:34Z'), '17/10/2026');
   assert.equal(formatDate(''), '');
   assert.equal(formatDate(null), '');
+});
+
+test('formatDateTime formats ISO strings into Vietnam timezone HH:mm:ss DD/MM/YYYY', () => {
+  assert.equal(formatDateTime('2026-10-27T13:42:08Z'), '20:42:08 27/10/2026');
+  assert.equal(formatDateTime(''), '');
+  assert.equal(formatDateTime(null), '');
 });
 
 test('nightsBetween calculates days accurately', () => {
@@ -48,6 +55,12 @@ test('getErrorMessage returns friendly Vietnamese message from error code', () =
 
   const errNotAssigned = { response: { data: { error: { code: 'HOMESTAY_NOT_ASSIGNED' } } } };
   assert.equal(getErrorMessage(errNotAssigned), ERROR_MESSAGES.HOMESTAY_NOT_ASSIGNED);
+
+  const errPricePending = { response: { data: { error: { code: 'PRICE_REQUEST_ALREADY_PENDING' } } } };
+  assert.equal(getErrorMessage(errPricePending), ERROR_MESSAGES.PRICE_REQUEST_ALREADY_PENDING);
+
+  const errPriceConflict = { response: { data: { error: { code: 'PRICE_RULE_CONFLICT' } } } };
+  assert.equal(getErrorMessage(errPriceConflict), ERROR_MESSAGES.PRICE_RULE_CONFLICT);
 
   const errNotFound = { response: { status: 404 } };
   assert.equal(getErrorMessage(errNotFound), 'Không tìm thấy dữ liệu yêu cầu.');
