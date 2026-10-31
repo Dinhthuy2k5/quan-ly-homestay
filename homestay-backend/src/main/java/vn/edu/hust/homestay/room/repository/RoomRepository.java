@@ -2,6 +2,7 @@ package vn.edu.hust.homestay.room.repository;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -12,6 +13,7 @@ import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import java.util.List;
 import java.util.Optional;
 import java.time.LocalDate;
+import jakarta.persistence.LockModeType;
 
 /**
  * Repository truy vấn bảng 'rooms'.
@@ -36,6 +38,11 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
 
     /** Tìm phòng theo id và status */
     Optional<Room> findByIdAndStatus(Long id, RoomStatus status);
+
+    /** Khóa các phòng trong transaction tạo booking để tuần tự hóa thao tác giữ đêm. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT room FROM Room room WHERE room.id IN :roomIds ORDER BY room.id")
+    List<Room> findAllByIdInForUpdate(@Param("roomIds") List<Long> roomIds);
 
     /** Lấy danh sách phòng theo homestay và status */
     List<Room> findByHomestayIdAndStatus(Long homestayId, RoomStatus status);

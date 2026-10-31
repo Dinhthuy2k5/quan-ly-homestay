@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, KeyRound, Shield, User as UserIcon } from 'lucide-react';
+import { CalendarCheck, CheckCircle2, KeyRound, Shield, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../../auth/context/useAuth';
 import { changePasswordApi, updateProfileApi } from '../../auth/api';
 import Button from '../../../components/ui/Button';
@@ -287,10 +287,22 @@ export function AccountPage() {
         <span className="font-medium text-[var(--color-ink)]">Tài khoản</span>
       </nav>
 
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight text-[var(--color-ink)] sm:text-3xl">Cài đặt tài khoản</h1>
-        <p className="text-sm text-[var(--color-muted)]">Quản lý thông tin hồ sơ và bảo mật tài khoản của bạn</p>
-      </header>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--color-border)] pb-6">
+        <header className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-ink)] sm:text-3xl">Cài đặt tài khoản</h1>
+          <p className="text-sm text-[var(--color-muted)]">Quản lý thông tin hồ sơ và bảo mật tài khoản của bạn</p>
+        </header>
+
+        {user?.role === 'CUSTOMER' && (
+          <Link
+            to="/customer/bookings"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors shadow-xs self-start sm:self-auto"
+          >
+            <CalendarCheck className="h-4 w-4 text-[var(--color-primary)]" />
+            <span>Chuyến đi của tôi</span>
+          </Link>
+        )}
+      </div>
 
       <div className="grid gap-8 md:grid-cols-2">
         <ProfileForm key={user?.id || 'profile'} user={user} refreshProfile={refreshProfile} />

@@ -82,6 +82,9 @@ public class SecurityConfig {
                 // Manager API (Tuần 3)
                 .requestMatchers("/api/v1/manager/**").hasRole("MANAGER")
 
+                // Customer booking APIs
+                .requestMatchers("/api/v1/customer/**").hasRole("CUSTOMER")
+
                 // Mọi request còn lại yêu cầu đăng nhập
                 .anyRequest().authenticated()
             )

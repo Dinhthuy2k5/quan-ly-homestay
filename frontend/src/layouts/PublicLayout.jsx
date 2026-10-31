@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
-import { ChevronDown, Home, LogIn, LogOut, Menu, User as UserIcon } from 'lucide-react';
+import { CalendarCheck, ChevronDown, Home, LogIn, LogOut, Menu, User as UserIcon } from 'lucide-react';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../lib/constants';
 import { useAuth } from '../features/auth/context/useAuth';
 
@@ -145,6 +145,17 @@ export function PublicLayout() {
                       <UserIcon className="h-4 w-4 text-[var(--color-primary)]" />
                       <span className="font-semibold text-[var(--color-ink)]">Tài khoản cá nhân</span>
                     </Link>
+
+                    {user?.role === 'CUSTOMER' && (
+                      <Link
+                        to="/customer/bookings"
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium hover:bg-[var(--color-surface-soft)] transition-colors"
+                      >
+                        <CalendarCheck className="h-4 w-4 text-[var(--color-primary)]" />
+                        <span className="font-semibold text-[var(--color-ink)]">Chuyến đi của tôi</span>
+                      </Link>
+                    )}
 
                     {user?.role === 'MANAGER' && (
                       <Link

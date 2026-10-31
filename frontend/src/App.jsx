@@ -12,6 +12,7 @@ import RegisterPage from './features/auth/pages/RegisterPage';
 import ForgotPasswordPage from './features/auth/pages/ForgotPasswordPage';
 import ResetPasswordPage from './features/auth/pages/ResetPasswordPage';
 import AccountPage from './features/account/pages/AccountPage';
+import CustomerBookingsPage from './features/bookings/pages/CustomerBookingsPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import ForbiddenPage from './pages/ForbiddenPage';
 
@@ -72,6 +73,17 @@ export function App() {
                 </ProtectedRoute>
               }
             />
+
+            {/* Chuyến đi / Booking của khách hàng (API-CUS-02) */}
+            <Route
+              path="/customer/bookings"
+              element={
+                <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                  <CustomerBookingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/bookings" element={<Navigate to="/customer/bookings" replace />} />
 
             {/* Khu vực Quản lý Homestay & Phòng (Tuần 3: API-MGR-01 đến 07) */}
             <Route

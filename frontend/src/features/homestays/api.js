@@ -39,6 +39,21 @@ export async function searchAvailableRooms({ province = '', keyword = '', homest
   return result;
 }
 
+/** Tạo booking cho Customer hiện tại (API-CUS-01). */
+export async function createCustomerBooking({ homestayId, roomIds, checkInDate, checkOutDate, guestCount, note = '' }) {
+  const res = await apiClient.post('/customer/bookings', {
+    homestayId: Number(homestayId),
+    roomIds: roomIds.map(Number),
+    checkInDate,
+    checkOutDate,
+    guestCount: Number(guestCount),
+    note: note.trim() || null,
+  });
+  const result = res.data?.data ?? res.data;
+  if (!result || !result.id || !result.code) throw new Error('Máy chủ trả về thông tin booking không hợp lệ.');
+  return result;
+}
+
 /**
  * Xem chi tiết homestay (API-PUB-02).
  * @param {number|string} homestayId
