@@ -19,3 +19,13 @@ export async function fetchCustomerBookingsApi({
     meta: res.data?.meta || { page: 0, size, totalElements: 0, totalPages: 0 },
   };
 }
+
+/**
+ * API-CUS-03: Lấy chi tiết booking của khách hàng.
+ * @param {number|string} bookingId
+ */
+export async function fetchCustomerBookingDetailApi(bookingId) {
+  const res = await apiClient.get(`/customer/bookings/${bookingId}`);
+  return res.data?.data || null;
+}
+

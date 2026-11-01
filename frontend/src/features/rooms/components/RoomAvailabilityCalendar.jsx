@@ -258,6 +258,26 @@ export function RoomAvailabilityCalendar({ room }) {
               <span aria-hidden="true">›</span>
             </Link>
           </div>}
+
+          {(room.homestay?.id || room.homestayId) && (
+            <div className="mt-5 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3.5 text-xs text-[var(--color-muted)]">
+              <p className="font-semibold text-[var(--color-ink)]">Cần đặt nhiều phòng cho đoàn hoặc gia đình?</p>
+              <p className="mt-1">
+                Homestay có nhiều phòng với các mức sức chứa khác nhau. Bạn có thể chọn và kết hợp nhiều phòng trong cùng 1 đơn đặt.
+              </p>
+              <Link
+                to={`/homestays/${room.homestay?.id || room.homestayId}${
+                  checkIn && checkOut
+                    ? `?checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}&guests=${encodeURIComponent(guestCount)}`
+                    : ''
+                }#rooms-title`}
+                className="mt-2.5 inline-flex items-center gap-1 font-semibold text-[var(--color-primary)] hover:underline"
+              >
+                <span>Xem và chọn nhiều phòng tại homestay này</span>
+                <span aria-hidden="true">→</span>
+              </Link>
+            </div>
+          )}
         </aside>
       </div>
     </section>

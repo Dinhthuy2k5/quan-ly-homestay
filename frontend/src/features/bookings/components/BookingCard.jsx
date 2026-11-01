@@ -161,10 +161,21 @@ export default function BookingCard({ booking, onOpenPayment }) {
               </button>
             )}
 
+            <Link
+              to={`/customer/bookings/${booking.id}`}
+              className={`flex w-full min-h-9 items-center justify-center rounded-[var(--radius-sm)] border px-3 text-xs font-semibold transition-colors ${
+                !isPendingDeposit
+                  ? 'bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] border-transparent shadow-xs'
+                  : 'border-[var(--color-border)] bg-white text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]'
+              }`}
+            >
+              Chi tiết đơn đặt
+            </Link>
+
             {primaryRoom?.roomId && (
               <Link
                 to={`/rooms/${primaryRoom.roomId}`}
-                className="flex w-full min-h-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors"
+                className="flex w-full min-h-8 items-center justify-center rounded-[var(--radius-sm)] px-3 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-ink)] transition-colors"
               >
                 Xem lại phòng
               </Link>

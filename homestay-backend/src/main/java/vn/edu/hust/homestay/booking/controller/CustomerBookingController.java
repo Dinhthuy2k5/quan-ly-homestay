@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CustomerBookingDetailResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.service.CustomerBookingService;
@@ -76,6 +78,15 @@ public class CustomerBookingController {
                 .last(result.isLast())
                 .build();
         return ResponseEntity.ok(ApiResponse.ok(result.getContent(), meta));
+    }
+
+    @Operation(summary = "API-CUS-03: Chi tiết booking của khách hàng")
+    @GetMapping("/{bookingId}")
+    public ResponseEntity<ApiResponse<CustomerBookingDetailResponse>> getBookingDetail(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(customerBookingService.getBookingDetail(principal, bookingId)));
     }
 
     private Sort parseSort(String sort) {

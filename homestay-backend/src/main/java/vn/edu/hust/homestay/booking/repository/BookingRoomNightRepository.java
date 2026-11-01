@@ -24,4 +24,6 @@ public interface BookingRoomNightRepository extends JpaRepository<BookingRoomNig
             @Param("checkInDate") LocalDate checkInDate,
             @Param("checkOutDate") LocalDate checkOutDate
     );
+
+    List<BookingRoomNight> findByBookingIdOrderByIdRoomIdAscIdStayDateAsc(Long bookingId);
 }

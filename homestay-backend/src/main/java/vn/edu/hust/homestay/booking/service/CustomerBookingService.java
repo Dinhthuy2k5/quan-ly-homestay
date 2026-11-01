@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CustomerBookingDetailResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.entity.Booking;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
@@ -160,6 +161,96 @@ public class CustomerBookingService {
     }
 
     @Transactional(readOnly = true)
+    public CustomerBookingDetailResponse getBookingDetail(UserPrincipal principal, Long bookingId) {
+        // Kiểm tra booking thuộc về khách hàng đang đăng nhập
+        boolean bookingExists = bookingRepository.existsById(bookingId);
+        Booking booking = bookingRepository.findByIdAndCustomerId(bookingId, principal.getId())
+                .orElseThrow(() -> bookingExists
+                        ? BusinessException.forbidden("BOOKING_NOT_OWNED", "Đây không phải đơn đặt phòng của bạn")
+                        : BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+
+        Homestay homestay = homestayRepository.findById(booking.getHomestayId()).orElse(null);
+
+        // Lấy các phòng trong booking
+        List<BookingRoom> bRooms = bookingRoomRepository.findByBookingId(booking.getId());
+        Set<Long> roomIds = bRooms.stream().map(BookingRoom::getRoomId).collect(Collectors.toSet());
+        Map<Long, Room> roomMap = roomIds.isEmpty() ? Map.of() :
+                roomRepository.findAllById(roomIds).stream().collect(Collectors.toMap(Room::getId, r -> r));
+        Map<Long, Media> roomCovers = roomIds.isEmpty() ? Map.of() :
+                mediaRepository.findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(Media.OwnerType.ROOM, roomIds).stream()
+                        .collect(Collectors.toMap(Media::getOwnerId, m -> m, (first, second) -> first));
+
+        // Lấy các đêm lưu trú, nhóm theo phòng
+        List<BookingRoomNight> allNights = bookingRoomNightRepository
+                .findByBookingIdOrderByIdRoomIdAscIdStayDateAsc(booking.getId());
+        Map<Long, List<BookingRoomNight>> nightsByRoomId = allNights.stream()
+                .collect(Collectors.groupingBy(n -> n.getId().getRoomId()));
+
+        List<CustomerBookingDetailResponse.BookingRoomDetail> roomDetails = bRooms.stream().map(br -> {
+            Room room = roomMap.get(br.getRoomId());
+            Media cover = room != null ? roomCovers.get(room.getId()) : null;
+            List<CustomerBookingDetailResponse.RoomNightDetail> nights =
+                    nightsByRoomId.getOrDefault(br.getRoomId(), List.of()).stream()
+                            .map(n -> new CustomerBookingDetailResponse.RoomNightDetail(
+                                    n.getId().getStayDate(), n.getNightlyPrice(), n.getAppliedRuleNameSnapshot()))
+                            .toList();
+            return new CustomerBookingDetailResponse.BookingRoomDetail(
+                    br.getRoomId(),
+                    room != null ? room.getName() : "Phòng #" + br.getRoomId(),
+                    cover != null ? cover.getUrl() : null,
+                    nights
+            );
+        }).toList();
+
+        // Hướng dẫn thanh toán chỉ hiển thị khi trạng thái PENDING_DEPOSIT
+        CreateBookingResponse.PaymentInstruction instruction = null;
+        if (booking.getStatus() == BookingStatus.PENDING_DEPOSIT) {
+            Map<String, String> bankData = policySettingRepository
+                    .findByPolicyGroupAndPolicyKeyIn("PAYMENT", BANK_POLICY_KEYS).stream()
+                    .collect(Collectors.toMap(PolicySetting::getPolicyKey, PolicySetting::getPolicyValue));
+            if (!bankData.isEmpty()) {
+                instruction = new CreateBookingResponse.PaymentInstruction(
+                        bankData.get("bank_name"),
+                        bankData.get("bank_account_number"),
+                        bankData.get("bank_account_holder"),
+                        booking.getCode() + " DAT COC"
+                );
+            }
+        }
+
+        //TODO fix khi làm api pay 01
+        // paidAmount = 0 cho đến khi module Payment (API-PAY-01+) được triển khai
+        long paidAmount = 0L;
+        long outstandingAmount = Math.max(0L, booking.getRoomTotalPrice() - paidAmount);
+
+        OffsetDateTime holdExpiresAt = booking.getHoldExpiresAt() == null ? null :
+                booking.getHoldExpiresAt().atOffset(ZoneOffset.UTC)
+                        .atZoneSameInstant(BUSINESS_TIME_ZONE).toOffsetDateTime();
+
+        return new CustomerBookingDetailResponse(
+                booking.getId(),
+                booking.getCode(),
+                booking.getHomestayId(),
+                homestay != null ? homestay.getName() : null,
+                homestay != null ? homestay.getProvince() : null,
+                homestay != null ? homestay.getAddress() : null,
+                booking.getStatus(),
+                booking.getCheckInDate(),
+                booking.getCheckOutDate(),
+                booking.getGuestCount(),
+                booking.getNote(),
+                booking.getRoomTotalPrice(),
+                booking.getDepositAmount(),
+                paidAmount,
+                outstandingAmount,
+                holdExpiresAt,
+                booking.getCreatedAt(),
+                roomDetails,
+                instruction
+        );
+    }
+
+    @Transactional(readOnly = true)
     public Page<CustomerBookingSummaryResponse> getCustomerBookings(
             UserPrincipal principal,
             BookingStatus status,
@@ -247,6 +338,7 @@ public class CustomerBookingService {
     }
 
     private void validateRooms(List<Room> rooms, CreateBookingRequest request, Long homestayId) {
+        int totalCapacity = 0;
         for (Room room : rooms) {
             if (!homestayId.equals(room.getHomestayId())) {
                 throw BusinessException.badRequest("ROOM_NOT_AVAILABLE", "Phòng không thuộc homestay đã chọn");
@@ -254,10 +346,10 @@ public class CustomerBookingService {
             if (room.getStatus() != RoomStatus.ACTIVE) {
                 throw BusinessException.conflict("ROOM_LOCKED", "Một hoặc nhiều phòng hiện không nhận đặt");
             }
-            // nếu đặt nhiều phòng, coi như số khách <= max count từng phòng
-            if (request.getGuestCount() > Byte.toUnsignedInt(room.getMaxGuests())) {
-                throw BusinessException.badRequest("ROOM_CAPACITY_EXCEEDED", "Số khách vượt quá sức chứa của một hoặc nhiều phòng");
-            }
+            totalCapacity += Byte.toUnsignedInt(room.getMaxGuests());
+        }
+        if (request.getGuestCount() > totalCapacity) {
+            throw BusinessException.badRequest("ROOM_CAPACITY_EXCEEDED", "Số khách vượt quá tổng sức chứa của các phòng đã chọn");
         }
     }
 
