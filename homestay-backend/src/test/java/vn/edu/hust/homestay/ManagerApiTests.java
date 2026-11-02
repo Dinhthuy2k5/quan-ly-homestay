@@ -379,6 +379,16 @@ class ManagerApiTests {
     @Test
     @DisplayName("API-MGR-06: Cập nhật phòng thành công (200 OK)")
     void testUpdateRoomSuccess() throws Exception {
+        Room roomToUpdate = new Room();
+        roomToUpdate.setHomestayId(homestay1Id);
+        roomToUpdate.setRoomTypeId(roomType1Id);
+        roomToUpdate.setName("Phòng Update Thử 999");
+        roomToUpdate.setMaxGuests((byte) 2);
+        roomToUpdate.setDescription("Mô tả cũ");
+        roomToUpdate.setAmenities("[\"Wifi\"]");
+        roomToUpdate.setStatus(RoomStatus.ACTIVE);
+        Room savedRoom = roomRepository.save(roomToUpdate);
+
         UpdateRoomRequest req = UpdateRoomRequest.builder()
                 .name("Phòng 101 Cải Tiến")
                 .description("Mô tả mới sau sửa chữa")
@@ -386,7 +396,7 @@ class ManagerApiTests {
                 .amenities(List.of("Wifi", "Điều hòa", "Smart TV"))
                 .build();
 
-        mockMvc.perform(patch("/api/v1/manager/rooms/" + room1Id)
+        mockMvc.perform(patch("/api/v1/manager/rooms/" + savedRoom.getId())
                         .header("Authorization", "Bearer " + tokenMgr1)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))

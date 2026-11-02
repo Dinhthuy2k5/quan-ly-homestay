@@ -23,6 +23,7 @@ import ManagerRoomsPage from './features/manager/pages/ManagerRoomsPage';
 import ManagerRoomDetailPage from './features/manager/pages/ManagerRoomDetailPage';
 import ManagerRoomTypesPage from './features/manager/pages/ManagerRoomTypesPage';
 import ManagerPriceRulesPage from './features/manager/pages/ManagerPriceRulesPage';
+import ManagerBookingsPage from './features/manager/pages/ManagerBookingsPage';
 
 function SearchResultsRoute() {
   const location = useLocation();
@@ -105,6 +106,7 @@ export function App() {
             >
               <Route index element={<Navigate to="homestay" replace />} />
               <Route path="homestay" element={<ManagerHomestayPage />} />
+              <Route path="bookings" element={<ManagerBookingsPage />} />
               <Route path="rooms" element={<ManagerRoomsPage />} />
               <Route path="rooms/:roomId" element={<ManagerRoomDetailPage />} />
               <Route path="room-types" element={<ManagerRoomTypesPage />} />

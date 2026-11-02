@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { Building2, BedDouble, AlertCircle, ExternalLink, ShieldCheck, Tags, CircleDollarSign } from 'lucide-react';
+import { Building2, BedDouble, AlertCircle, ExternalLink, ShieldCheck, Tags, CircleDollarSign, CalendarCheck } from 'lucide-react';
 import { getAssignedHomestayApi } from '../api';
 import StatusBadge from '../../../components/ui/StatusBadge';
 
@@ -99,6 +99,10 @@ export function ManagerLayout() {
             <NavLink to="/manager/homestay" end className={navItemClass}>
               <Building2 className="h-4 w-4" />
               <span>Thông tin cơ sở</span>
+            </NavLink>
+            <NavLink to="/manager/bookings" className={navItemClass}>
+              <CalendarCheck className="h-4 w-4" />
+              <span>Đơn đặt phòng</span>
             </NavLink>
             <NavLink to="/manager/rooms" className={navItemClass}>
               <BedDouble className="h-4 w-4" />

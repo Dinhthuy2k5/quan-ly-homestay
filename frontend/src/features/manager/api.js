@@ -183,7 +183,34 @@ export async function deleteManagerRoomTypeApi(roomTypeId) {
   return res.data?.data;
 }
 
-/** API-MEDIA-01: upload một file media; để Axios tự tạo multipart boundary. */
+/**
+ * API-MGR-BOOK-01: Danh sách booking cơ sở thuộc homestay được giao cho Manager
+ */
+export async function getManagerBookingsApi({
+  status,
+  fromDate,
+  toDate,
+  keyword,
+  page = 0,
+  size = 20,
+  sort = 'createdAt,desc',
+} = {}) {
+  const params = { page, size, sort };
+  if (status) params.status = status;
+  if (fromDate) params.fromDate = fromDate;
+  if (toDate) params.toDate = toDate;
+  if (keyword?.trim()) params.keyword = keyword.trim();
+
+  const res = await apiClient.get('/manager/bookings', { params });
+  return {
+    items: res.data?.data || [],
+    meta: res.data?.meta || { page: 0, size, totalElements: 0, totalPages: 0 },
+  };
+}
+
+/**
+ * API-MEDIA-01: upload một file media; để Axios tự tạo multipart boundary.
+ */
 export async function uploadManagerMediaApi({ ownerType, ownerId, file, caption, sortOrder }) {
   const formData = new FormData();
   formData.append('ownerType', ownerType);
