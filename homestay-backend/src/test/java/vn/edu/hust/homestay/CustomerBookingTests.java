@@ -18,6 +18,9 @@ import vn.edu.hust.homestay.auth.entity.UserStatus;
 import vn.edu.hust.homestay.auth.repository.UserRepository;
 import vn.edu.hust.homestay.auth.security.JwtService;
 import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
+import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingRequest;
+import vn.edu.hust.homestay.booking.entity.Booking;
+import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.entity.BookingRoomNight;
 import vn.edu.hust.homestay.booking.repository.BookingRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomNightRepository;
@@ -29,13 +32,18 @@ import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -590,6 +598,307 @@ class CustomerBookingTests {
                 .andExpect(jsonPath("$.success", is(true)))
                 .andExpect(jsonPath("$.data.id", notNullValue()))
                 .andExpect(jsonPath("$.data.roomTotalPrice", greaterThan(0)));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Khách hàng điều chỉnh booking PENDING_DEPOSIT thành công")
+    void adjustBookingPendingDepositSuccess() throws Exception {
+        LocalDate checkIn = findFreeCheckInDate(5);
+        CreateBookingRequest req = bookingRequest(checkIn, 2, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        // Điều chỉnh sang 3 đêm và ngày mới
+        LocalDate newCheckIn = checkIn.plusDays(1);
+        LocalDate newCheckOut = checkIn.plusDays(4);
+        CustomerAdjustBookingRequest adjustReq = new CustomerAdjustBookingRequest(
+                newCheckIn, newCheckOut, 2, null);
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.bookingId", is(bookingId.intValue())))
+                .andExpect(jsonPath("$.data.status", is("PENDING_DEPOSIT")))
+                .andExpect(jsonPath("$.data.checkInDate", is(newCheckIn.toString())))
+                .andExpect(jsonPath("$.data.checkOutDate", is(newCheckOut.toString())))
+                .andExpect(jsonPath("$.data.guestCount", is(2)))
+                .andExpect(jsonPath("$.data.roomTotalPrice", greaterThan(0)))
+                .andExpect(jsonPath("$.data.depositAmount", greaterThan(0)));
+
+        List<BookingRoomNight> nights = bookingRoomNightRepository.findByBookingId(bookingId);
+        assertEquals(3, nights.size());
+        assertTrue(nights.stream().allMatch(n -> !n.getId().getStayDate().isBefore(newCheckIn) && n.getId().getStayDate().isBefore(newCheckOut)));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Khách hàng điều chỉnh booking CONFIRMED trước hạn quy định thành công")
+    void adjustBookingConfirmedSuccess() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(10);
+        while (!roomRepository.findUnavailableStayDates(room.getId(), checkIn, checkIn.plusDays(5)).isEmpty()) {
+            checkIn = checkIn.plusDays(5);
+        }
+        CreateBookingRequest req = bookingRequest(checkIn, 2, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        // Chuyển trạng thái sang CONFIRMED
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setApprovedBy(customer.getId());
+        booking.setApprovedAt(Instant.now());
+        bookingRepository.saveAndFlush(booking);
+
+        LocalDate newCheckIn = checkIn.plusDays(1);
+        LocalDate newCheckOut = checkIn.plusDays(3);
+        CustomerAdjustBookingRequest adjustReq = new CustomerAdjustBookingRequest(
+                newCheckIn, newCheckOut, 2, null);
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.status", is("CONFIRMED")))
+                .andExpect(jsonPath("$.data.checkInDate", is(newCheckIn.toString())))
+                .andExpect(jsonPath("$.data.checkOutDate", is(newCheckOut.toString())));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Khách hàng điều chỉnh danh sách phòng (roomIds) thành công")
+    void adjustBookingChangeRoomsSuccess() throws Exception {
+        LocalDate checkIn = findFreeCheckInDate(3);
+        CreateBookingRequest req = bookingRequest(checkIn, 1, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        Room room2 = new Room();
+        room2.setHomestayId(room.getHomestayId());
+        room2.setRoomTypeId(room.getRoomTypeId());
+        room2.setName("Phòng test đổi phòng " + UUID.randomUUID().toString().substring(0, 5));
+        room2.setMaxGuests((byte) 3);
+        room2.setStatus(RoomStatus.ACTIVE);
+        Room savedRoom2 = roomRepository.saveAndFlush(room2);
+
+        PriceRule baseRule2 = new PriceRule();
+        baseRule2.setHomestayId(room.getHomestayId());
+        baseRule2.setRoomId(savedRoom2.getId());
+        baseRule2.setName("Giá cơ bản phòng 2");
+        baseRule2.setRuleType(PriceRule.RuleType.BASE);
+        baseRule2.setBasePrice(400_000L);
+        baseRule2.setPriority((short) 1);
+        baseRule2.setStatus(PriceRule.Status.ACTIVE);
+        baseRule2.setCreatedAt(Instant.now());
+        baseRule2.setUpdatedAt(Instant.now());
+        priceRuleRepository.saveAndFlush(baseRule2);
+
+        CustomerAdjustBookingRequest adjustReq = new CustomerAdjustBookingRequest(
+                checkIn, checkIn.plusDays(1), 5, List.of(room.getId(), savedRoom2.getId()));
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.roomIds", hasSize(2)))
+                .andExpect(jsonPath("$.data.guestCount", is(5)));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Từ chối điều chỉnh booking của người khác (BOOKING_NOT_OWNED)")
+    void adjustBookingRejectsNotOwned() throws Exception {
+        LocalDate checkIn = findFreeCheckInDate(2);
+        CreateBookingRequest req = bookingRequest(checkIn, 1, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        User otherCustomer = userRepository.saveAndFlush(User.builder()
+                .email("other-" + UUID.randomUUID() + "@example.com")
+                .passwordHash("test-hash")
+                .fullName("Khách hàng khác")
+                .phone("0912999888")
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .build());
+        String otherToken = jwtService.generateAccessToken(otherCustomer);
+
+        CustomerAdjustBookingRequest adjustReq = new CustomerAdjustBookingRequest(
+                checkIn.plusDays(1), checkIn.plusDays(2), 2, null);
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId)
+                        .header("Authorization", "Bearer " + otherToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code", is("BOOKING_NOT_OWNED")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Từ chối điều chỉnh đơn đang chờ duyệt cọc PENDING_APPROVAL (BOOKING_STATE_CONFLICT)")
+    void adjustBookingRejectsPendingApproval() throws Exception {
+        LocalDate checkIn = findFreeCheckInDate(2);
+        CreateBookingRequest req = bookingRequest(checkIn, 1, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
+        booking.setStatus(BookingStatus.PENDING_APPROVAL);
+        bookingRepository.saveAndFlush(booking);
+
+        CustomerAdjustBookingRequest adjustReq = new CustomerAdjustBookingRequest(
+                checkIn.plusDays(1), checkIn.plusDays(2), 2, null);
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("BOOKING_STATE_CONFLICT")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Từ chối điều chỉnh đơn CONFIRMED khi sát ngày nhận phòng < adjust_min_days_before (ADJUSTMENT_WINDOW_CLOSED)")
+    void adjustBookingRejectsConfirmedPastAdjustmentWindow() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(1);
+        while (!roomRepository.findUnavailableStayDates(room.getId(), checkIn, checkIn.plusDays(2)).isEmpty()) {
+            checkIn = checkIn.plusDays(10);
+        }
+        CreateBookingRequest req = bookingRequest(checkIn, 1, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setApprovedBy(customer.getId());
+        booking.setApprovedAt(Instant.now());
+        booking.setCheckInDate(LocalDate.now().plusDays(1));
+        booking.setCheckOutDate(LocalDate.now().plusDays(2));
+        bookingRepository.saveAndFlush(booking);
+
+        CustomerAdjustBookingRequest adjustReq = new CustomerAdjustBookingRequest(
+                LocalDate.now().plusDays(10), LocalDate.now().plusDays(12), 2, null);
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("ADJUSTMENT_WINDOW_CLOSED")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Từ chối điều chỉnh khi phòng trùng lịch với đơn khác (ROOM_NOT_AVAILABLE)")
+    void adjustBookingRejectsConflictingDatesWithAnotherBooking() throws Exception {
+        LocalDate dateA = findFreeCheckInDate(10);
+        LocalDate dateB = dateA.plusDays(5);
+
+        CreateBookingRequest req1 = bookingRequest(dateA, 2, 2);
+        mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req1)))
+                .andExpect(status().isCreated());
+
+        CreateBookingRequest req2 = bookingRequest(dateB, 2, 2);
+        String responseJson2 = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req2)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId2 = objectMapper.readTree(responseJson2).path("data").path("id").asLong();
+
+        CustomerAdjustBookingRequest conflictAdjust = new CustomerAdjustBookingRequest(
+                dateA, dateA.plusDays(2), 2, null);
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId2)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(conflictAdjust)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("ROOM_NOT_AVAILABLE")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Từ chối điều chỉnh khi số khách vượt quá sức chứa phòng (ROOM_CAPACITY_EXCEEDED)")
+    void adjustBookingRejectsCapacityExceeded() throws Exception {
+        LocalDate checkIn = findFreeCheckInDate(2);
+        CreateBookingRequest req = bookingRequest(checkIn, 1, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        CustomerAdjustBookingRequest adjustReq = new CustomerAdjustBookingRequest(
+                checkIn, checkIn.plusDays(1), Byte.toUnsignedInt(room.getMaxGuests()) + 10, null);
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("ROOM_CAPACITY_EXCEEDED")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-09: Từ chối điều chỉnh khi khoảng ngày không hợp lệ (INVALID_DATE_RANGE)")
+    void adjustBookingRejectsInvalidDateRange() throws Exception {
+        LocalDate checkIn = findFreeCheckInDate(3);
+        CreateBookingRequest req = bookingRequest(checkIn, 1, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        CustomerAdjustBookingRequest adjustReq = new CustomerAdjustBookingRequest(
+                checkIn.plusDays(5), checkIn.plusDays(4), 2, null);
+
+        mockMvc.perform(patch("/api/v1/customer/bookings/" + bookingId)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("INVALID_DATE_RANGE")));
     }
 
     private CreateBookingRequest bookingRequest(LocalDate checkInDate, int guestCount) {

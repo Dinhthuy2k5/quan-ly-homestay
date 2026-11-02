@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -6,18 +6,22 @@ import {
   Building,
   Calendar,
   Check,
+  CheckCircle2,
   Compass,
   Copy,
   CreditCard,
   DoorOpen,
+  Edit3,
   FileText,
   MapPin,
   RefreshCw,
   ShieldCheck,
   Tag,
   Users,
+  X,
 } from 'lucide-react';
 import { fetchCustomerBookingDetailApi } from '../api';
+import CustomerAdjustBookingModal from '../components/CustomerAdjustBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
@@ -32,6 +36,31 @@ export default function CustomerBookingDetailPage() {
   const [error, setError] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+  const [adjustSuccessMsg, setAdjustSuccessMsg] = useState('');
+
+  const [todayTimestamp] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  });
+  const [nowTimestamp] = useState(() => Date.now());
+
+  const canAdjust = useMemo(() => {
+    if (!booking) return false;
+    if (booking.status === 'PENDING_DEPOSIT') {
+      if (!booking.holdExpiresAt) return true;
+      return new Date(booking.holdExpiresAt).getTime() > nowTimestamp;
+    }
+    if (booking.status === 'CONFIRMED') {
+      if (!booking.checkInDate) return false;
+      const [year, month, day] = booking.checkInDate.split('-').map(Number);
+      const checkInTime = new Date(year, month - 1, day).getTime();
+      const diffDays = Math.round((checkInTime - todayTimestamp) / (1000 * 60 * 60 * 24));
+      return diffDays >= 3;
+    }
+    return false;
+  }, [booking, nowTimestamp, todayTimestamp]);
 
   useEffect(() => {
     let active = true;
@@ -150,7 +179,42 @@ export default function CustomerBookingDetailPage() {
             Thời điểm khởi tạo đơn: {formatDateTime(booking.createdAt)}
           </p>
         </div>
+
+        {canAdjust && (
+          <button
+            type="button"
+            onClick={() => {
+              setAdjustSuccessMsg('');
+              setAdjustModalOpen(true);
+            }}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-bold text-[var(--color-ink)] shadow-xs hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all"
+          >
+            <Edit3 className="h-4 w-4 text-[var(--color-primary)]" />
+            <span>Điều chỉnh đặt phòng</span>
+          </button>
+        )}
       </div>
+
+      {/* Thông báo điều chỉnh thành công */}
+      {adjustSuccessMsg && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 shadow-xs animate-in fade-in"
+        >
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+            <p className="font-medium">{adjustSuccessMsg}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAdjustSuccessMsg('')}
+            className="shrink-0 rounded-lg p-1 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-950 transition-colors"
+            aria-label="Đóng thông báo"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Cảnh báo giữ phòng khi chờ đặt cọc */}
       {isPendingDeposit && booking.holdExpiresAt && (
@@ -538,6 +602,20 @@ export default function CustomerBookingDetailPage() {
           </div>
         </div>
       </div>
+
+      {adjustModalOpen && (
+        <CustomerAdjustBookingModal
+          booking={booking}
+          onClose={() => setAdjustModalOpen(false)}
+          onSuccess={(updated) => {
+            setAdjustModalOpen(false);
+            setAdjustSuccessMsg(
+              `Đã cập nhật đơn đặt #${updated.bookingCode || booking.code} thành công!`
+            );
+            handleRefresh();
+          }}
+        />
+      )}
     </div>
   );
 }

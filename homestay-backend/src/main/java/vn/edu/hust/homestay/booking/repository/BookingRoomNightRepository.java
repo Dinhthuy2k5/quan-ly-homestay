@@ -25,5 +25,22 @@ public interface BookingRoomNightRepository extends JpaRepository<BookingRoomNig
             @Param("checkOutDate") LocalDate checkOutDate
     );
 
+    @Query(value = """
+            SELECT room_id, stay_date
+            FROM booking_room_nights
+            WHERE room_id IN (:roomIds)
+              AND stay_date >= :checkInDate
+              AND stay_date < :checkOutDate
+              AND booking_id != :excludeBookingId
+            """, nativeQuery = true)
+    List<Object[]> findExistingNightsExcludingBooking(
+            @Param("roomIds") Collection<Long> roomIds,
+            @Param("checkInDate") LocalDate checkInDate,
+            @Param("checkOutDate") LocalDate checkOutDate,
+            @Param("excludeBookingId") Long excludeBookingId
+    );
+
+    List<BookingRoomNight> findByBookingId(Long bookingId);
+
     List<BookingRoomNight> findByBookingIdOrderByIdRoomIdAscIdStayDateAsc(Long bookingId);
 }

@@ -29,3 +29,14 @@ export async function fetchCustomerBookingDetailApi(bookingId) {
   return res.data?.data || null;
 }
 
+/**
+ * API-CUS-09: Điều chỉnh thông tin đặt phòng cá nhân.
+ * @param {number|string} bookingId
+ * @param {{ checkInDate?: string, checkOutDate?: string, guestCount?: number, roomIds?: number[] }} data
+ */
+export async function adjustCustomerBookingApi(bookingId, data) {
+  const res = await apiClient.patch(`/customer/bookings/${bookingId}`, data);
+  return res.data?.data || null;
+}
+
+

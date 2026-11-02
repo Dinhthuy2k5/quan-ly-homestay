@@ -10,6 +10,8 @@ import org.springframework.data.domain.Pageable;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingRequest;
+import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerBookingDetailResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.entity.Booking;
@@ -40,6 +42,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -247,6 +250,174 @@ public class CustomerBookingService {
                 booking.getCreatedAt(),
                 roomDetails,
                 instruction
+        );
+    }
+
+    @Transactional
+    public CustomerAdjustBookingResponse adjustBooking(UserPrincipal principal, Long bookingId, CustomerAdjustBookingRequest request) {
+        boolean bookingExists = bookingRepository.existsById(bookingId);
+        Booking booking = bookingRepository.findByIdAndCustomerId(bookingId, principal.getId())
+                .orElseThrow(() -> bookingExists
+                        ? BusinessException.forbidden("BOOKING_NOT_OWNED", "Đây không phải đơn đặt phòng của bạn")
+                        : BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+
+        // 1. Kiểm tra trạng thái
+        if (booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Không thể điều chỉnh đơn đang chờ quản lý duyệt đặt cọc");
+        }
+        if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT && booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng ở trạng thái hiện tại không được phép điều chỉnh");
+        }
+
+        LocalDate today = LocalDate.now(BUSINESS_TIME_ZONE);
+
+        if (booking.getStatus() == BookingStatus.PENDING_DEPOSIT) {
+            LocalDateTime nowUtc = LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC);
+            if (booking.getHoldExpiresAt() != null && booking.getHoldExpiresAt().isBefore(nowUtc)) {
+                throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng đã hết thời hạn giữ chỗ");
+            }
+        } else if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            int adjustMinDaysBefore = policySettingRepository
+                    .findByPolicyGroupAndPolicyKey("BOOKING", "adjust_min_days_before")
+                    .map(ps -> {
+                        try {
+                            return Integer.parseInt(ps.getPolicyValue().trim());
+                        } catch (Exception e) {
+                            return 3;
+                        }
+                    }).orElse(3);
+
+            long daysUntilCheckIn = ChronoUnit.DAYS.between(today, booking.getCheckInDate());
+            if (daysUntilCheckIn < adjustMinDaysBefore) {
+                throw BusinessException.badRequest("ADJUSTMENT_WINDOW_CLOSED",
+                        "Chỉ được điều chỉnh đơn nếu còn ít nhất " + adjustMinDaysBefore + " ngày trước ngày nhận phòng");
+            }
+        }
+
+        // 2. Xác định giá trị mới
+        LocalDate newCheckInDate = request.getCheckInDate() != null ? request.getCheckInDate() : booking.getCheckInDate();
+        LocalDate newCheckOutDate = request.getCheckOutDate() != null ? request.getCheckOutDate() : booking.getCheckOutDate();
+        Integer newGuestCount = request.getGuestCount() != null ? request.getGuestCount() : (int) booking.getGuestCount();
+
+        List<BookingRoom> currentBookingRooms = bookingRoomRepository.findByBookingId(booking.getId());
+        List<Long> currentRoomIds = currentBookingRooms.stream().map(BookingRoom::getRoomId).sorted().toList();
+
+        List<Long> effectiveRoomIds;
+        if (request.getRoomIds() != null) {
+            if (request.getRoomIds().isEmpty()) {
+                throw BusinessException.badRequest("BOOKING_POLICY_VIOLATION", "Danh sách phòng không được để trống");
+            }
+            if (request.getRoomIds().size() != new HashSet<>(request.getRoomIds()).size()) {
+                throw BusinessException.badRequest("DUPLICATE_ROOM_ID", "Danh sách phòng không được chứa phòng trùng lặp");
+            }
+            effectiveRoomIds = request.getRoomIds().stream().sorted().toList();
+        } else {
+            effectiveRoomIds = currentRoomIds;
+        }
+
+        // 3. Kiểm tra ngày & chính sách đặt phòng
+        if (newCheckInDate == null || newCheckOutDate == null || !newCheckOutDate.isAfter(newCheckInDate)) {
+            throw BusinessException.badRequest("INVALID_DATE_RANGE", "Ngày trả phòng phải sau ngày nhận phòng");
+        }
+        if (newCheckInDate.isBefore(today)) {
+            throw BusinessException.badRequest("INVALID_DATE_RANGE", "Ngày nhận phòng không được ở trong quá khứ");
+        }
+
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            int adjustMinDaysBefore = policySettingRepository
+                    .findByPolicyGroupAndPolicyKey("BOOKING", "adjust_min_days_before")
+                    .map(ps -> {
+                        try {
+                            return Integer.parseInt(ps.getPolicyValue().trim());
+                        } catch (Exception e) {
+                            return 3;
+                        }
+                    }).orElse(3);
+            long daysUntilNewCheckIn = ChronoUnit.DAYS.between(today, newCheckInDate);
+            if (daysUntilNewCheckIn < adjustMinDaysBefore) {
+                throw BusinessException.badRequest("ADJUSTMENT_WINDOW_CLOSED",
+                        "Ngày nhận phòng mới phải cách ngày hiện tại ít nhất " + adjustMinDaysBefore + " ngày");
+            }
+        }
+
+        BookingPolicy policy = loadPolicy(newCheckInDate, newCheckOutDate);
+
+        // 4. Khóa và kiểm tra các phòng
+        List<Room> rooms = roomRepository.findAllByIdInForUpdate(effectiveRoomIds);
+        if (rooms.size() != effectiveRoomIds.size()) {
+            throw BusinessException.badRequest("ROOM_NOT_AVAILABLE", "Một hoặc nhiều phòng không tồn tại hoặc không hợp lệ");
+        }
+        int totalCapacity = 0;
+        for (Room room : rooms) {
+            if (!booking.getHomestayId().equals(room.getHomestayId())) {
+                throw BusinessException.badRequest("ROOM_NOT_AVAILABLE", "Phòng không thuộc homestay của đơn đặt phòng");
+            }
+            if (room.getStatus() != RoomStatus.ACTIVE) {
+                throw BusinessException.conflict("ROOM_LOCKED", "Một hoặc nhiều phòng hiện không nhận đặt");
+            }
+            totalCapacity += Byte.toUnsignedInt(room.getMaxGuests());
+        }
+        if (newGuestCount > totalCapacity) {
+            throw BusinessException.badRequest("ROOM_CAPACITY_EXCEEDED", "Số khách vượt quá tổng sức chứa của các phòng đã chọn");
+        }
+
+        // 5. Kiểm tra phòng trống (loại trừ chính booking hiện tại)
+        List<Object[]> conflicts = bookingRoomNightRepository.findExistingNightsExcludingBooking(
+                effectiveRoomIds, newCheckInDate, newCheckOutDate, booking.getId());
+        if (!conflicts.isEmpty()) {
+            throw BusinessException.conflict("ROOM_NOT_AVAILABLE", "Một hoặc nhiều phòng không còn trống trong khoảng thời gian đã chọn");
+        }
+
+        // 6. Tính toán giá mới
+        List<BookingRoomNight> newRoomNights = buildRoomNights(booking.getHomestayId(), rooms, newCheckInDate, newCheckOutDate);
+        long newTotalPrice = newRoomNights.stream().mapToLong(BookingRoomNight::getNightlyPrice).reduce(0L, Math::addExact);
+        if (newTotalPrice <= 0) {
+            throw BusinessException.badRequest("BOOKING_POLICY_VIOLATION", "Tổng tiền phòng phải lớn hơn 0");
+        }
+        long newDepositAmount = BigDecimal.valueOf(newTotalPrice)
+                .multiply(BigDecimal.valueOf(policy.depositPercent()))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.CEILING)
+                .longValueExact();
+
+        // 7. Cập nhật booking_room_nights và booking_rooms
+        List<BookingRoomNight> oldNights = bookingRoomNightRepository.findByBookingId(booking.getId());
+        bookingRoomNightRepository.deleteAll(oldNights);
+        bookingRoomNightRepository.flush();
+
+        if (request.getRoomIds() != null) {
+            bookingRoomRepository.deleteAll(currentBookingRooms);
+            bookingRoomRepository.flush();
+            bookingRoomRepository.saveAllAndFlush(rooms.stream()
+                    .map(r -> new BookingRoom(booking.getId(), booking.getHomestayId(), r.getId()))
+                    .toList());
+        }
+
+        newRoomNights.forEach(night -> night.setBookingId(booking.getId()));
+        try {
+            bookingRoomNightRepository.saveAllAndFlush(newRoomNights);
+        } catch (DataIntegrityViolationException exception) {
+            throw BusinessException.conflict("ROOM_NOT_AVAILABLE", "Phòng vừa được đặt bởi khách khác. Hãy chọn ngày hoặc phòng khác");
+        }
+
+        // 8. Cập nhật booking
+        booking.setCheckInDate(newCheckInDate);
+        booking.setCheckOutDate(newCheckOutDate);
+        booking.setGuestCount(newGuestCount.shortValue());
+        booking.setRoomTotalPrice(newTotalPrice);
+        booking.setDepositAmount(newDepositAmount);
+        booking.setPolicySnapshot(serializePolicySnapshot(policy));
+        Booking savedBooking = bookingRepository.saveAndFlush(booking);
+
+        return new CustomerAdjustBookingResponse(
+                savedBooking.getId(),
+                savedBooking.getCode(),
+                savedBooking.getStatus(),
+                savedBooking.getCheckInDate(),
+                savedBooking.getCheckOutDate(),
+                (int) savedBooking.getGuestCount(),
+                effectiveRoomIds,
+                savedBooking.getRoomTotalPrice(),
+                savedBooking.getDepositAmount()
         );
     }
 
