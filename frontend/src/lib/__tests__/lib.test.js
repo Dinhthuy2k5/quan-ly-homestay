@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatVnd, formatDate, formatDateTime, nightsBetween } from '../format.js';
+import { formatVnd, formatDate, formatDateTime, nightsBetween, getNextDate } from '../format.js';
 import { getStatusInfo } from '../status.js';
 import { getErrorMessage, ERROR_MESSAGES } from '../errors.js';
 import { validateEmail, validatePhone } from '../validation.js';
@@ -31,6 +31,14 @@ test('nightsBetween calculates days accurately', () => {
   assert.equal(nightsBetween('2026-10-10', '2026-10-12'), 2);
   assert.equal(nightsBetween('2026-10-10', '2026-10-11'), 1);
   assert.equal(nightsBetween('2026-10-10', '2026-10-10'), 0);
+});
+
+test('getNextDate returns next day string accurately', () => {
+  assert.equal(getNextDate('2026-11-04'), '2026-11-05');
+  assert.equal(getNextDate('2026-12-31'), '2027-01-01');
+  assert.equal(getNextDate('2024-02-28'), '2024-02-29');
+  assert.equal(getNextDate(''), '');
+  assert.equal(getNextDate(null), '');
 });
 
 test('getStatusInfo maps room status to label and color', () => {

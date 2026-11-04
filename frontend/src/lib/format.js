@@ -69,3 +69,21 @@ export function nightsBetween(checkInDate, checkOutDate) {
   const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
   return Math.max(0, diffDays);
 }
+
+/**
+ * Lấy ngày kế tiếp (YYYY-MM-DD) từ một ngày YYYY-MM-DD.
+ * Đảm bảo tính toán an toàn không bị lệch múi giờ.
+ * @param {string} dateStr "YYYY-MM-DD"
+ * @param {number} days số ngày cần cộng (mặc định 1)
+ * @returns {string}
+ */
+export function getNextDate(dateStr, days = 1) {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return '';
+  const [year, month, day] = parts.map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return '';
+  const d = new Date(year, month - 1, day);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}

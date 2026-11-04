@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   Calendar,
@@ -14,10 +14,12 @@ import {
   RefreshCw,
   Search,
   User,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react';
 import { getManagerBookingsApi } from '../api';
+import ManagerCreateBookingModal from '../components/ManagerCreateBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
 
@@ -78,6 +80,8 @@ export default function ManagerBookingsPage() {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [copiedCode, setCopiedCode] = useState(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createdBookingToast, setCreatedBookingToast] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -194,17 +198,56 @@ export default function ManagerBookingsPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setReloadKey((k) => k + 1)}
-          disabled={loading}
-          className="inline-flex items-center gap-2 self-start sm:self-auto rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3.5 py-2 text-sm font-medium text-[var(--color-body)] shadow-xs hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] transition-colors disabled:opacity-50"
-          title="Tải lại dữ liệu"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-[var(--color-primary)]' : ''}`} />
-          <span>Làm mới</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setCreateModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-[var(--color-primary-hover)] transition-colors"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>Đặt phòng hộ khách</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-3.5 py-2 text-sm font-medium text-[var(--color-body)] shadow-xs hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] transition-colors disabled:opacity-50"
+            title="Tải lại dữ liệu"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-[var(--color-primary)]' : ''}`} />
+            <span>Làm mới</span>
+          </button>
+        </div>
       </div>
+
+      {/* Success notification banner */}
+      {createdBookingToast && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 shadow-xs flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <div className="font-semibold flex items-center gap-2">
+              <Check className="h-4 w-4 text-emerald-600" />
+              <span>Tạo đơn đặt phòng thành công!</span>
+            </div>
+            <p className="text-xs text-emerald-800">
+              Mã đơn: <strong className="font-mono text-emerald-950 font-bold">{createdBookingToast.code}</strong> • Tiền phòng: <strong>{formatVnd(createdBookingToast.roomTotalPrice)}</strong> • Tiền cọc yêu cầu: <strong>{formatVnd(createdBookingToast.depositAmount)}</strong>
+            </p>
+            {createdBookingToast.holdExpiresAt && (
+              <p className="text-xs text-emerald-700">
+                Hạn thanh toán cọc giữ phòng: <span className="font-medium">{formatDateTime(createdBookingToast.holdExpiresAt)}</span>
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setCreatedBookingToast(null)}
+            className="rounded-lg p-1 text-emerald-700 hover:bg-emerald-100 transition-colors"
+            title="Đóng thông báo"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Status filter tabs */}
       <div className="flex overflow-x-auto border-b border-[var(--color-border)] no-scrollbar gap-1">
@@ -440,6 +483,14 @@ export default function ManagerBookingsPage() {
 
                   <div className="flex items-center gap-2">
                     <StatusBadge type="booking" status={booking.status} />
+                    <Link
+                      to={`/manager/bookings/${booking.id}`}
+                      className="inline-flex items-center gap-1 rounded-xl bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white transition-colors"
+                      title="Xem toàn bộ thông tin chi tiết đơn đặt phòng"
+                    >
+                      <span>Xem chi tiết</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Link>
                   </div>
                 </div>
 
@@ -576,6 +627,18 @@ export default function ManagerBookingsPage() {
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
+      )}
+      {/* Create Booking Modal */}
+      {createModalOpen && (
+        <ManagerCreateBookingModal
+          homestay={homestay}
+          onClose={() => setCreateModalOpen(false)}
+          onSuccess={(created) => {
+            setCreateModalOpen(false);
+            setCreatedBookingToast(created);
+            setReloadKey((k) => k + 1);
+          }}
+        />
       )}
     </div>
   );

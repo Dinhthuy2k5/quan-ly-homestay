@@ -23,7 +23,7 @@ import ErrorBanner from '../../../components/ui/ErrorBanner';
 import HomestayLocationMap from '../components/HomestayLocationMap';
 import MultiRoomBookingModal from '../components/MultiRoomBookingModal';
 import { getAmenityMeta } from '../../../lib/amenities';
-import { formatVnd, nightsBetween } from '../../../lib/format';
+import { formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
 
 function DetailSkeleton() {
   return (
@@ -152,7 +152,7 @@ export function HomestayDetailPage() {
     setAvailabilityError('');
     setSelectedRoomIds(new Set());
     if (!checkInDate || !checkOutDate || checkOutDate <= checkInDate) {
-      setAvailabilityError('Chọn ngày nhận phòng và ngày trả phòng hợp lệ để tìm phòng.');
+      setAvailabilityError('Ngày trả phòng phải sau ngày nhận phòng ít nhất 1 đêm.');
       return;
     }
     setAvailabilityLoading(true);
@@ -263,10 +263,46 @@ export function HomestayDetailPage() {
         <section id="rooms" aria-labelledby="rooms-title" className="scroll-mt-28">
           <form onSubmit={handleAvailabilitySearch} className="mb-6 grid gap-3 rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-1)] sm:grid-cols-[1fr_1fr_0.7fr_auto] sm:items-end">
             <label className="grid gap-1 text-xs font-semibold text-[var(--color-body)]">Ngày nhận phòng
-              <input type="date" required min={todayDate} value={checkInDate} onChange={(event) => setCheckInDate(event.target.value)} className="min-h-11 rounded-xl border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)]" />
+              <input
+                type="date"
+                required
+                min={todayDate}
+                value={checkInDate}
+                onChange={(event) => {
+                  const nextIn = event.target.value;
+                  setCheckInDate(nextIn);
+                  const minOut = getNextDate(nextIn);
+                  if (checkOutDate && checkOutDate < minOut) {
+                    setCheckOutDate('');
+                    setAvailableRooms(null);
+                    setSelectedRoomIds(new Set());
+                    setAvailabilityError('Ngày trả phòng phải sau ngày nhận phòng ít nhất 1 đêm.');
+                  } else {
+                    setAvailabilityError('');
+                  }
+                }}
+                className="min-h-11 rounded-xl border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)]"
+              />
             </label>
             <label className="grid gap-1 text-xs font-semibold text-[var(--color-body)]">Ngày trả phòng
-              <input type="date" required min={checkInDate || todayDate} value={checkOutDate} onChange={(event) => setCheckOutDate(event.target.value)} className="min-h-11 rounded-xl border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)]" />
+              <input
+                type="date"
+                required
+                min={checkInDate ? getNextDate(checkInDate) : todayDate}
+                value={checkOutDate}
+                onChange={(event) => {
+                  const nextOut = event.target.value;
+                  setCheckOutDate(nextOut);
+                  if (checkInDate && nextOut <= checkInDate) {
+                    setAvailabilityError('Ngày trả phòng phải sau ngày nhận phòng ít nhất 1 đêm.');
+                    setAvailableRooms(null);
+                    setSelectedRoomIds(new Set());
+                  } else {
+                    setAvailabilityError('');
+                  }
+                }}
+                className="min-h-11 rounded-xl border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)]"
+              />
             </label>
             <label className="grid gap-1 text-xs font-semibold text-[var(--color-body)]">Số khách dự kiến
               <input type="number" min="1" max="50" required value={guestCount} onChange={(event) => setGuestCount(Math.max(1, Number(event.target.value)))} className="min-h-11 rounded-xl border border-[var(--color-border)] px-3 text-sm text-[var(--color-ink)]" />

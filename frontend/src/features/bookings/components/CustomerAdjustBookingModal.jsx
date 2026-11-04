@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { adjustCustomerBookingApi } from '../api';
 import { searchAvailableRooms } from '../../homestays/api';
-import { formatDate, formatVnd, nightsBetween } from '../../../lib/format';
+import { formatDate, formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -263,11 +263,15 @@ export default function CustomerAdjustBookingModal({
                 min={minCheckInStr}
                 value={checkInDate}
                 onChange={(e) => {
-                  setCheckInDate(e.target.value);
-                  if (checkOutDate && e.target.value >= checkOutDate) {
+                  const nextIn = e.target.value;
+                  setCheckInDate(nextIn);
+                  const minOut = getNextDate(nextIn);
+                  if (checkOutDate && checkOutDate < minOut) {
                     setCheckOutDate('');
+                    setError('Ngày trả phòng phải sau ngày nhận phòng ít nhất 1 đêm.');
+                  } else {
+                    setError('');
                   }
-                  setError('');
                 }}
                 className="w-full rounded-xl border border-[var(--color-border)] px-3.5 py-2.5 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] focus:outline-hidden"
               />
@@ -282,11 +286,16 @@ export default function CustomerAdjustBookingModal({
               <input
                 type="date"
                 required
-                min={checkInDate || minCheckInStr}
+                min={checkInDate ? getNextDate(checkInDate) : minCheckInStr}
                 value={checkOutDate}
                 onChange={(e) => {
-                  setCheckOutDate(e.target.value);
-                  setError('');
+                  const nextOut = e.target.value;
+                  setCheckOutDate(nextOut);
+                  if (checkInDate && nextOut <= checkInDate) {
+                    setError('Ngày trả phòng phải sau ngày nhận phòng ít nhất 1 đêm.');
+                  } else {
+                    setError('');
+                  }
                 }}
                 className="w-full rounded-xl border border-[var(--color-border)] px-3.5 py-2.5 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] focus:outline-hidden"
               />

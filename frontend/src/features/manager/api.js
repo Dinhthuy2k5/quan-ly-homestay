@@ -209,6 +209,41 @@ export async function getManagerBookingsApi({
 }
 
 /**
+ * API-MGR-BOOK-02: Đặt phòng hộ khách
+ */
+export async function createManagerBookingApi({
+  contactName,
+  contactPhone,
+  contactEmail,
+  roomIds,
+  checkInDate,
+  checkOutDate,
+  guestCount,
+  note,
+}) {
+  const payload = {
+    contactName: contactName?.trim(),
+    contactPhone: contactPhone?.trim(),
+    contactEmail: contactEmail?.trim() || null,
+    roomIds: (roomIds || []).map(Number),
+    checkInDate,
+    checkOutDate,
+    guestCount: Number(guestCount),
+    note: note?.trim() || null,
+  };
+  const res = await apiClient.post('/manager/bookings', payload);
+  return res.data?.data;
+}
+
+/**
+ * API-MGR-BOOK-03: Chi tiết đơn đặt phòng cho Manager
+ */
+export async function fetchManagerBookingDetailApi(bookingId) {
+  const res = await apiClient.get(`/manager/bookings/${bookingId}`);
+  return res.data?.data;
+}
+
+/**
  * API-MEDIA-01: upload một file media; để Axios tự tạo multipart boundary.
  */
 export async function uploadManagerMediaApi({ ownerType, ownerId, file, caption, sortOrder }) {

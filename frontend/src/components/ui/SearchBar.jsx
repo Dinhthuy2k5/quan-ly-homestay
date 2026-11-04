@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CalendarDays, MapPin, Search, Users, X } from 'lucide-react';
+import { getNextDate } from '../../lib/format';
 
 const TODAY_LOCAL = (() => {
   const date = new Date();
@@ -81,7 +82,23 @@ export function SearchBar({
         <label htmlFor={`${idPrefix}-checkin`} className="mb-0.5 block text-xs font-semibold text-[var(--color-ink)]">Nhận phòng</label>
         <div className="flex items-center gap-1.5">
           <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-muted)]" />
-          <input id={`${idPrefix}-checkin`} aria-label="Ngày nhận phòng" type="date" min={TODAY_LOCAL} value={checkInDate} onChange={(event) => { setCheckInDate(event.target.value); setDateError(''); }} className="min-w-0 w-full bg-transparent text-xs text-[var(--color-ink)] focus-visible:outline-none" />
+          <input
+            id={`${idPrefix}-checkin`}
+            aria-label="Ngày nhận phòng"
+            type="date"
+            min={TODAY_LOCAL}
+            value={checkInDate}
+            onChange={(event) => {
+              const nextIn = event.target.value;
+              setCheckInDate(nextIn);
+              const minOut = getNextDate(nextIn);
+              if (checkOutDate && checkOutDate < minOut) {
+                setCheckOutDate('');
+              }
+              setDateError('');
+            }}
+            className="min-w-0 w-full bg-transparent text-xs text-[var(--color-ink)] focus-visible:outline-none"
+          />
         </div>
       </div>
       <span aria-hidden="true" className="h-9 w-px bg-[var(--color-border)]" />
@@ -89,7 +106,23 @@ export function SearchBar({
         <label htmlFor={`${idPrefix}-checkout`} className="mb-0.5 block text-xs font-semibold text-[var(--color-ink)]">Trả phòng</label>
         <div className="flex items-center gap-1.5">
           <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-muted)]" />
-          <input id={`${idPrefix}-checkout`} aria-label="Ngày trả phòng" type="date" min={checkInDate || TODAY_LOCAL} value={checkOutDate} onChange={(event) => { setCheckOutDate(event.target.value); setDateError(''); }} className="min-w-0 w-full bg-transparent text-xs text-[var(--color-ink)] focus-visible:outline-none" />
+          <input
+            id={`${idPrefix}-checkout`}
+            aria-label="Ngày trả phòng"
+            type="date"
+            min={checkInDate ? getNextDate(checkInDate) : TODAY_LOCAL}
+            value={checkOutDate}
+            onChange={(event) => {
+              const nextOut = event.target.value;
+              setCheckOutDate(nextOut);
+              if (checkInDate && nextOut <= checkInDate) {
+                setDateError('Ngày trả phòng phải sau ngày nhận phòng ít nhất 1 đêm.');
+              } else {
+                setDateError('');
+              }
+            }}
+            className="min-w-0 w-full bg-transparent text-xs text-[var(--color-ink)] focus-visible:outline-none"
+          />
         </div>
       </div>
       <span aria-hidden="true" className="h-9 w-px bg-[var(--color-border)]" />
