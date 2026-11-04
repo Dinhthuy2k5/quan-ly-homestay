@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.edu.hust.homestay.auth.entity.User;
 import vn.edu.hust.homestay.auth.repository.UserRepository;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
+import vn.edu.hust.homestay.booking.dto.ManagerAdjustBookingRequest;
+import vn.edu.hust.homestay.booking.dto.ManagerAdjustBookingResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingDetailResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse.BookingRoomSummary;
@@ -443,6 +445,205 @@ public class ManagerBookingService {
                 instruction,
                 List.of(),
                 List.of()
+        );
+    }
+
+    /**
+     * API-MGR-BOOK-04: Điều chỉnh booking (ngày nhận/trả, số khách hoặc phòng) khi booking còn đủ điều kiện theo chính sách.
+     * Backend kiểm tra khả dụng theo đêm và tính lại giá/cọc trong cùng transaction.
+     */
+    @Transactional
+    public ManagerAdjustBookingResponse adjustBooking(UserPrincipal principal, Long bookingId, ManagerAdjustBookingRequest request) {
+        Long homestayId = validateAndGetHomestayId(principal);
+
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+
+        if (!booking.getHomestayId().equals(homestayId)) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+
+        // 1. Kiểm tra trạng thái booking
+        if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT
+                && booking.getStatus() != BookingStatus.PENDING_APPROVAL
+                && booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng ở trạng thái hiện tại không được phép điều chỉnh");
+        }
+
+        LocalDate today = LocalDate.now(BUSINESS_TIME_ZONE);
+
+        if (booking.getStatus() == BookingStatus.PENDING_DEPOSIT) {
+            LocalDateTime nowUtc = LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC);
+            if (booking.getHoldExpiresAt() != null && booking.getHoldExpiresAt().isBefore(nowUtc)) {
+                throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng đã hết thời hạn giữ chỗ");
+            }
+        } else if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            int adjustMinDaysBefore = policySettingRepository
+                    .findByPolicyGroupAndPolicyKey("BOOKING", "adjust_min_days_before")
+                    .map(ps -> {
+                        try {
+                            return Integer.parseInt(ps.getPolicyValue().trim());
+                        } catch (Exception e) {
+                            return 3;
+                        }
+                    }).orElse(3);
+
+            long daysUntilCheckIn = java.time.temporal.ChronoUnit.DAYS.between(today, booking.getCheckInDate());
+            if (daysUntilCheckIn < adjustMinDaysBefore) {
+                throw BusinessException.badRequest("ADJUSTMENT_WINDOW_CLOSED",
+                        "Chỉ được điều chỉnh đơn nếu còn ít nhất " + adjustMinDaysBefore + " ngày trước ngày nhận phòng");
+            }
+        }
+
+        // 2. Xác định các giá trị mới
+        LocalDate newCheckInDate = request.checkInDate() != null ? request.checkInDate() : booking.getCheckInDate();
+        LocalDate newCheckOutDate = request.checkOutDate() != null ? request.checkOutDate() : booking.getCheckOutDate();
+        Integer newGuestCount = request.guestCount() != null ? request.guestCount() : (int) booking.getGuestCount();
+
+        List<BookingRoom> currentBookingRooms = bookingRoomRepository.findByBookingId(booking.getId());
+        List<Long> currentRoomIds = currentBookingRooms.stream().map(BookingRoom::getRoomId).sorted().toList();
+
+        List<Long> effectiveRoomIds;
+        if (request.roomIds() != null) {
+            if (request.roomIds().isEmpty()) {
+                throw BusinessException.badRequest("BOOKING_POLICY_VIOLATION", "Danh sách phòng không được để trống");
+            }
+            if (request.roomIds().size() != new HashSet<>(request.roomIds()).size()) {
+                throw BusinessException.badRequest("DUPLICATE_ROOM_ID", "Danh sách phòng không được chứa phòng trùng lặp");
+            }
+            effectiveRoomIds = request.roomIds().stream().sorted().toList();
+        } else {
+            effectiveRoomIds = currentRoomIds;
+        }
+
+        // 3. Kiểm tra ngày nhận/trả & chính sách
+        if (newCheckInDate == null || newCheckOutDate == null || !newCheckOutDate.isAfter(newCheckInDate)) {
+            throw BusinessException.badRequest("INVALID_DATE_RANGE", "Ngày trả phòng phải sau ngày nhận phòng");
+        }
+        if (newCheckInDate.isBefore(today)) {
+            throw BusinessException.badRequest("INVALID_DATE_RANGE", "Ngày nhận phòng không được ở trong quá khứ");
+        }
+
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            int adjustMinDaysBefore = policySettingRepository
+                    .findByPolicyGroupAndPolicyKey("BOOKING", "adjust_min_days_before")
+                    .map(ps -> {
+                        try {
+                            return Integer.parseInt(ps.getPolicyValue().trim());
+                        } catch (Exception e) {
+                            return 3;
+                        }
+                    }).orElse(3);
+            long daysUntilNewCheckIn = java.time.temporal.ChronoUnit.DAYS.between(today, newCheckInDate);
+            if (daysUntilNewCheckIn < adjustMinDaysBefore) {
+                throw BusinessException.badRequest("ADJUSTMENT_WINDOW_CLOSED",
+                        "Ngày nhận phòng mới phải cách ngày hiện tại ít nhất " + adjustMinDaysBefore + " ngày");
+            }
+        }
+
+        BookingPolicy policy = loadPolicy(newCheckInDate, newCheckOutDate);
+
+        // 4. Khóa các phòng theo thứ tự ID để chống deadlock
+        List<Room> rooms = roomRepository.findAllByIdInForUpdate(effectiveRoomIds);
+        if (rooms.size() != effectiveRoomIds.size()) {
+            throw BusinessException.badRequest("ROOM_NOT_AVAILABLE", "Một hoặc nhiều phòng không tồn tại hoặc không hợp lệ");
+        }
+
+        int totalCapacity = 0;
+        for (Room room : rooms) {
+            if (!homestayId.equals(room.getHomestayId())) {
+                throw BusinessException.badRequest("ROOM_NOT_AVAILABLE", "Phòng không thuộc cơ sở homestay của đơn đặt phòng");
+            }
+            if (room.getStatus() != RoomStatus.ACTIVE) {
+                throw BusinessException.conflict("ROOM_LOCKED", "Một hoặc nhiều phòng hiện không nhận đặt");
+            }
+            totalCapacity += Byte.toUnsignedInt(room.getMaxGuests());
+        }
+        if (newGuestCount > totalCapacity) {
+            throw BusinessException.badRequest("ROOM_CAPACITY_EXCEEDED", "Số khách vượt quá tổng sức chứa của các phòng đã chọn");
+        }
+
+        // 5. Kiểm tra phòng trống theo đêm (loại trừ chính booking hiện tại)
+        List<Object[]> conflicts = bookingRoomNightRepository.findExistingNightsExcludingBooking(
+                effectiveRoomIds, newCheckInDate, newCheckOutDate, booking.getId());
+        if (!conflicts.isEmpty()) {
+            throw BusinessException.conflict("ROOM_NOT_AVAILABLE", "Một hoặc nhiều phòng không còn trống trong khoảng thời gian đã chọn");
+        }
+
+        // 6. Tính toán lại giá từng đêm
+        List<BookingRoomNight> newRoomNights = buildRoomNights(homestayId, rooms, newCheckInDate, newCheckOutDate);
+        long newTotalPrice = newRoomNights.stream().mapToLong(BookingRoomNight::getNightlyPrice).reduce(0L, Math::addExact);
+        if (newTotalPrice <= 0) {
+            throw BusinessException.badRequest("PRICE_RECALCULATION_REQUIRED", "Tổng tiền phòng sau khi tính lại phải lớn hơn 0");
+        }
+
+        // Quy tắc tiền cọc:
+        // - PENDING_APPROVAL hoặc CONFIRMED: Khách đã chuyển cọc rồi -> tiền cọc giữ nguyên giá ban đầu, số tiền còn lại tính lúc checkout
+        // - PENDING_DEPOSIT: Khách chưa chuyển cọc -> tính lại cọc theo tổng tiền phòng mới
+        long depositAmountToSet;
+        if (booking.getStatus() == BookingStatus.CONFIRMED || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
+            depositAmountToSet = booking.getDepositAmount();
+        } else {
+            depositAmountToSet = BigDecimal.valueOf(newTotalPrice)
+                    .multiply(BigDecimal.valueOf(policy.depositPercent()))
+                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.CEILING)
+                    .longValueExact();
+        }
+
+        // 7. Cập nhật booking_room_nights và booking_rooms
+        List<BookingRoomNight> oldNights = bookingRoomNightRepository.findByBookingId(booking.getId());
+        bookingRoomNightRepository.deleteAll(oldNights);
+        bookingRoomNightRepository.flush();
+
+        if (request.roomIds() != null) {
+            bookingRoomRepository.deleteAll(currentBookingRooms);
+            bookingRoomRepository.flush();
+            bookingRoomRepository.saveAllAndFlush(rooms.stream()
+                    .map(r -> new BookingRoom(booking.getId(), homestayId, r.getId()))
+                    .toList());
+        }
+
+        newRoomNights.forEach(night -> night.setBookingId(booking.getId()));
+        try {
+            bookingRoomNightRepository.saveAllAndFlush(newRoomNights);
+        } catch (DataIntegrityViolationException exception) {
+            throw BusinessException.conflict("ROOM_NOT_AVAILABLE", "Phòng vừa được đặt bởi khách khác. Hãy chọn ngày hoặc phòng khác");
+        }
+
+        // 8. Cập nhật lý do vào ghi chú nếu có
+        if (request.reason() != null && !request.reason().isBlank()) {
+            String notePrefix = (booking.getNote() != null && !booking.getNote().isBlank()) ? booking.getNote() + " | " : "";
+            String updatedNote = notePrefix + "Điều chỉnh: " + request.reason().trim();
+            if (updatedNote.length() > 500) {
+                updatedNote = updatedNote.substring(0, 497) + "...";
+            }
+            booking.setNote(updatedNote);
+        }
+
+        // 9. Cập nhật booking
+        booking.setCheckInDate(newCheckInDate);
+        booking.setCheckOutDate(newCheckOutDate);
+        booking.setGuestCount(newGuestCount.shortValue());
+        booking.setRoomTotalPrice(newTotalPrice);
+        booking.setDepositAmount(depositAmountToSet);
+        booking.setPolicySnapshot(serializePolicySnapshot(policy));
+        Booking savedBooking = bookingRepository.saveAndFlush(booking);
+
+        OffsetDateTime updatedAtOffset = savedBooking.getUpdatedAt().atOffset(ZoneOffset.UTC)
+                .atZoneSameInstant(BUSINESS_TIME_ZONE).toOffsetDateTime();
+
+        return new ManagerAdjustBookingResponse(
+                savedBooking.getId(),
+                savedBooking.getId(),
+                savedBooking.getCode(),
+                savedBooking.getStatus(),
+                savedBooking.getCheckInDate(),
+                savedBooking.getCheckOutDate(),
+                (int) savedBooking.getGuestCount(),
+                effectiveRoomIds,
+                savedBooking.getRoomTotalPrice(),
+                savedBooking.getDepositAmount(),
+                updatedAtOffset
         );
     }
 

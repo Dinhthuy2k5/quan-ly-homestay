@@ -9,6 +9,7 @@ import {
   Copy,
   CreditCard,
   DoorOpen,
+  Edit3,
   FileText,
   Mail,
   Phone,
@@ -17,9 +18,11 @@ import {
   Tag,
   User,
   UserCheck,
+  X,
   XCircle,
 } from 'lucide-react';
 import { fetchManagerBookingDetailApi } from '../api';
+import ManagerAdjustBookingModal from '../components/ManagerAdjustBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
@@ -34,6 +37,8 @@ export default function ManagerBookingDetailPage() {
   const [error, setError] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [isAdjustOpen, setIsAdjustOpen] = useState(false);
+  const [adjustSuccessToast, setAdjustSuccessToast] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -142,6 +147,18 @@ export default function ManagerBookingDetailPage() {
         </Link>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {(booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
+            <button
+              type="button"
+              onClick={() => setIsAdjustOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary-soft)] border border-[var(--color-primary-disabled)] px-3.5 py-2 text-sm font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white transition-colors shadow-xs"
+              title="Điều chỉnh thời gian, số khách hoặc phòng đặt"
+            >
+              <Edit3 className="h-4 w-4" />
+              <span>Điều chỉnh đơn</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -156,6 +173,23 @@ export default function ManagerBookingDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* Success Toast */}
+      {adjustSuccessToast && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 shadow-xs">
+          <div className="flex items-center gap-2.5 font-medium">
+            <Check className="h-5 w-5 text-emerald-600 shrink-0" />
+            <span>{adjustSuccessToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAdjustSuccessToast('')}
+            className="rounded-lg p-1 text-emerald-700 hover:bg-emerald-100 transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Main Booking Header Card */}
       <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-7 shadow-xs space-y-5">
@@ -621,6 +655,21 @@ export default function ManagerBookingDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Modal điều chỉnh booking */}
+      {isAdjustOpen && (
+        <ManagerAdjustBookingModal
+          booking={booking}
+          onClose={() => setIsAdjustOpen(false)}
+          onSuccess={(updatedData) => {
+            setIsAdjustOpen(false);
+            setAdjustSuccessToast(
+              `Đã điều chỉnh đơn #${updatedData.code || booking.code} thành công! Tổng tiền phòng mới: ${formatVnd(updatedData.roomTotalPrice)}, tiền cọc: ${formatVnd(updatedData.depositAmount)}.`
+            );
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

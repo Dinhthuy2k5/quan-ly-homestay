@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock,
   Copy,
+  Edit3,
   Mail,
   Phone,
   RefreshCw,
@@ -19,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { getManagerBookingsApi } from '../api';
+import ManagerAdjustBookingModal from '../components/ManagerAdjustBookingModal';
 import ManagerCreateBookingModal from '../components/ManagerCreateBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
@@ -82,6 +84,7 @@ export default function ManagerBookingsPage() {
   const [copiedCode, setCopiedCode] = useState(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createdBookingToast, setCreatedBookingToast] = useState(null);
+  const [adjustingBooking, setAdjustingBooking] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -483,6 +486,17 @@ export default function ManagerBookingsPage() {
 
                   <div className="flex items-center gap-2">
                     <StatusBadge type="booking" status={booking.status} />
+                    {(booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
+                      <button
+                        type="button"
+                        onClick={() => setAdjustingBooking(booking)}
+                        className="inline-flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] transition-colors"
+                        title="Điều chỉnh thời gian, số khách hoặc phòng"
+                      >
+                        <Edit3 className="h-3.5 w-3.5 text-[var(--color-muted)]" />
+                        <span>Điều chỉnh</span>
+                      </button>
+                    )}
                     <Link
                       to={`/manager/bookings/${booking.id}`}
                       className="inline-flex items-center gap-1 rounded-xl bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white transition-colors"
@@ -636,6 +650,22 @@ export default function ManagerBookingsPage() {
           onSuccess={(created) => {
             setCreateModalOpen(false);
             setCreatedBookingToast(created);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
+
+      {/* Adjust Booking Modal */}
+      {adjustingBooking && (
+        <ManagerAdjustBookingModal
+          booking={adjustingBooking}
+          onClose={() => setAdjustingBooking(null)}
+          onSuccess={(updated) => {
+            setAdjustingBooking(null);
+            setCreatedBookingToast({
+              code: updated.code || adjustingBooking.code,
+              message: `Đã điều chỉnh đơn #${updated.code || adjustingBooking.code} thành công! Tổng tiền phòng mới: ${formatVnd(updated.roomTotalPrice)}.`,
+            });
             setReloadKey((k) => k + 1);
           }}
         />

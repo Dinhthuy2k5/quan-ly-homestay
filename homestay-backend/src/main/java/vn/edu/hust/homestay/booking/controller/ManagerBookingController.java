@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
+import vn.edu.hust.homestay.booking.dto.ManagerAdjustBookingRequest;
+import vn.edu.hust.homestay.booking.dto.ManagerAdjustBookingResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingDetailResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingRequest;
@@ -110,6 +113,20 @@ public class ManagerBookingController {
             @PathVariable Long bookingId
     ) {
         ManagerBookingDetailResponse response = managerBookingService.getBookingDetail(principal, bookingId);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    /**
+     * API-MGR-BOOK-04 — Điều chỉnh booking
+     */
+    @Operation(summary = "API-MGR-BOOK-04: Điều chỉnh booking")
+    @PatchMapping("/{bookingId}")
+    public ResponseEntity<ApiResponse<ManagerAdjustBookingResponse>> adjustBooking(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @Valid @RequestBody ManagerAdjustBookingRequest request
+    ) {
+        ManagerAdjustBookingResponse response = managerBookingService.adjustBooking(principal, bookingId, request);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 

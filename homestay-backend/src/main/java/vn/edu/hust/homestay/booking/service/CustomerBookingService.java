@@ -374,10 +374,19 @@ public class CustomerBookingService {
         if (newTotalPrice <= 0) {
             throw BusinessException.badRequest("BOOKING_POLICY_VIOLATION", "Tổng tiền phòng phải lớn hơn 0");
         }
-        long newDepositAmount = BigDecimal.valueOf(newTotalPrice)
-                .multiply(BigDecimal.valueOf(policy.depositPercent()))
-                .divide(BigDecimal.valueOf(100), 0, RoundingMode.CEILING)
-                .longValueExact();
+
+        // Quy tắc tiền cọc đối với Customer:
+        // - Khi đã CONFIRMED: Tiền cọc khách đã chuyển giữ nguyên, số tiền còn thiếu thanh toán lúc check-out
+        // - Khi PENDING_DEPOSIT: Khách chưa chuyển cọc, tính lại tiền cọc cần nộp theo giá phòng mới
+        long depositAmountToSet;
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            depositAmountToSet = booking.getDepositAmount();
+        } else {
+            depositAmountToSet = BigDecimal.valueOf(newTotalPrice)
+                    .multiply(BigDecimal.valueOf(policy.depositPercent()))
+                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.CEILING)
+                    .longValueExact();
+        }
 
         // 7. Cập nhật booking_room_nights và booking_rooms
         List<BookingRoomNight> oldNights = bookingRoomNightRepository.findByBookingId(booking.getId());
@@ -404,7 +413,7 @@ public class CustomerBookingService {
         booking.setCheckOutDate(newCheckOutDate);
         booking.setGuestCount(newGuestCount.shortValue());
         booking.setRoomTotalPrice(newTotalPrice);
-        booking.setDepositAmount(newDepositAmount);
+        booking.setDepositAmount(depositAmountToSet);
         booking.setPolicySnapshot(serializePolicySnapshot(policy));
         Booking savedBooking = bookingRepository.saveAndFlush(booking);
 
