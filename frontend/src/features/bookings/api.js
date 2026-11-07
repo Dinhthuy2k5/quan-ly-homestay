@@ -39,4 +39,10 @@ export async function adjustCustomerBookingApi(bookingId, data) {
   return res.data?.data || null;
 }
 
+/** API-CUS-04: Hủy booking của khách hàng theo chính sách hủy đã áp dụng. */
+export async function cancelCustomerBookingApi(bookingId, reason = '') {
+  const res = await apiClient.post(`/customer/bookings/${bookingId}/cancel`, { reason });
+  return res.data?.data || null;
+}
+
 

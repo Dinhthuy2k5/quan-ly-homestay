@@ -28,6 +28,7 @@ export const ERROR_MESSAGES = {
   BOOKING_CONCURRENT_MODIFICATION: 'Booking vừa được người khác cập nhật. Vui lòng tải lại trang.',
   ADJUSTMENT_WINDOW_CLOSED: 'Đã quá thời hạn được phép điều chỉnh booking.',
   CANCELLATION_NOT_ALLOWED: 'Booking này không thể hủy ở trạng thái hiện tại.',
+  CANCELLATION_POLICY_INVALID: 'Chưa thể xử lý hủy đơn do chính sách hoàn tiền chưa được cấu hình hợp lệ. Vui lòng liên hệ homestay.',
   DEPOSIT_AMOUNT_INVALID: 'Số tiền đặt cọc chưa đúng theo chính sách.',
   DEPOSIT_AMOUNT_INSUFFICIENT: 'Số tiền cọc chưa đủ theo yêu cầu.',
   PAYMENT_ALREADY_REVIEWED: 'Khoản thanh toán này đã được xử lý trước đó.',
