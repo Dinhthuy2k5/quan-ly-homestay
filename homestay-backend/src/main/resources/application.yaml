@@ -53,6 +53,9 @@ server:
     context-path: /
 
 app:
+  booking:
+    hold-expiration:
+      fixed-delay-ms: ${BOOKING_HOLD_EXPIRATION_FIXED_DELAY_MS:30000}
   cors:
     allowed-origins: http://localhost:5173,http://localhost:3000
   storage:

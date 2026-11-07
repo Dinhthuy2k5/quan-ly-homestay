@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
+  Ban,
   Building,
   Calendar,
   Check,
@@ -20,7 +21,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { fetchCustomerBookingDetailApi } from '../api';
+import { cancelCustomerBookingApi, fetchCustomerBookingDetailApi } from '../api';
 import CustomerAdjustBookingModal from '../components/CustomerAdjustBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { fileUrl } from '../../../lib/api/client';
@@ -38,6 +39,11 @@ export default function CustomerBookingDetailPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
   const [adjustSuccessMsg, setAdjustSuccessMsg] = useState('');
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelError, setCancelError] = useState('');
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+  const [cancelResult, setCancelResult] = useState(null);
 
   const [todayTimestamp] = useState(() => {
     const d = new Date();
@@ -61,6 +67,8 @@ export default function CustomerBookingDetailPage() {
     }
     return false;
   }, [booking, nowTimestamp, todayTimestamp]);
+
+  const canCancel = ['PENDING_DEPOSIT', 'PENDING_APPROVAL', 'CONFIRMED'].includes(booking?.status);
 
   useEffect(() => {
     let active = true;
@@ -87,6 +95,23 @@ export default function CustomerBookingDetailPage() {
     setLoading(true);
     setError('');
     setRefreshKey((k) => k + 1);
+  };
+
+  const handleCancelBooking = async (event) => {
+    event.preventDefault();
+    setCancelSubmitting(true);
+    setCancelError('');
+    try {
+      const result = await cancelCustomerBookingApi(booking.id, cancelReason.trim());
+      setCancelResult(result);
+      setCancelModalOpen(false);
+      setCancelReason('');
+      handleRefresh();
+    } catch (err) {
+      setCancelError(getErrorMessage(err));
+    } finally {
+      setCancelSubmitting(false);
+    }
   };
 
   const copyToClipboard = (text, key) => {
@@ -180,20 +205,43 @@ export default function CustomerBookingDetailPage() {
           </p>
         </div>
 
-        {canAdjust && (
-          <button
-            type="button"
-            onClick={() => {
-              setAdjustSuccessMsg('');
-              setAdjustModalOpen(true);
-            }}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-bold text-[var(--color-ink)] shadow-xs hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all"
-          >
-            <Edit3 className="h-4 w-4 text-[var(--color-primary)]" />
-            <span>Điều chỉnh đặt phòng</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {canAdjust && (
+            <button
+              type="button"
+              onClick={() => {
+                setAdjustSuccessMsg('');
+                setAdjustModalOpen(true);
+              }}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-bold text-[var(--color-ink)] shadow-xs hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all"
+            >
+              <Edit3 className="h-4 w-4 text-[var(--color-primary)]" />
+              <span>Điều chỉnh đặt phòng</span>
+            </button>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              onClick={() => {
+                setCancelError('');
+                setCancelModalOpen(true);
+              }}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 transition-colors"
+            >
+              <Ban className="h-4 w-4" />
+              <span>Hủy đặt phòng</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {cancelResult && (
+        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Đơn đặt phòng đã được hủy. {cancelResult.refundAmount > 0
+            ? `Số tiền yêu cầu hoàn: ${formatVnd(cancelResult.refundAmount)}. Homestay sẽ xử lý khoản hoàn.`
+            : 'Theo chính sách, đơn này không có khoản hoàn tiền.'}
+        </div>
+      )}
 
       {/* Thông báo điều chỉnh thành công */}
       {adjustSuccessMsg && (
@@ -615,6 +663,60 @@ export default function CustomerBookingDetailPage() {
             handleRefresh();
           }}
         />
+      )}
+
+      {cancelModalOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !cancelSubmitting) setCancelModalOpen(false);
+          }}
+        >
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-booking-title"
+            onSubmit={handleCancelBooking}
+            className="w-full max-w-md space-y-4 rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl sm:p-6"
+          >
+            <div>
+              <h2 id="cancel-booking-title" className="text-lg font-bold text-[var(--color-ink)]">Hủy đơn đặt phòng?</h2>
+              <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
+                Phòng sẽ được mở lại sau khi hủy. Số tiền hoàn (nếu có) được tính theo chính sách áp dụng cho đơn này và sẽ do homestay xử lý.
+              </p>
+            </div>
+            <label htmlFor="cancel-reason" className="block text-sm font-semibold text-[var(--color-ink)]">
+              Lý do hủy <span className="font-normal text-[var(--color-muted)]">(không bắt buộc)</span>
+            </label>
+            <textarea
+              id="cancel-reason"
+              value={cancelReason}
+              onChange={(event) => setCancelReason(event.target.value)}
+              maxLength={255}
+              rows={3}
+              placeholder="Bạn có thể cho homestay biết lý do hủy"
+              className="w-full resize-y rounded-xl border border-[var(--color-border)] px-3 py-2.5 text-sm outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
+            />
+            {cancelError && <p role="alert" className="text-sm text-rose-700">{cancelError}</p>}
+            <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={cancelSubmitting}
+                onClick={() => setCancelModalOpen(false)}
+                className="min-h-10 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] disabled:opacity-50"
+              >
+                Giữ đơn đặt phòng
+              </button>
+              <button
+                type="submit"
+                disabled={cancelSubmitting || cancelReason.length > 255}
+                className="min-h-10 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {cancelSubmitting ? 'Đang hủy...' : 'Xác nhận hủy'}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   );

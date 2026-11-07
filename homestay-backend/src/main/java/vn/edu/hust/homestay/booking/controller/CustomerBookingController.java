@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CancelBookingRequest;
+import vn.edu.hust.homestay.booking.dto.CancelBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerBookingDetailResponse;
@@ -100,6 +102,17 @@ public class CustomerBookingController {
             @Valid @RequestBody CustomerAdjustBookingRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.ok(customerBookingService.adjustBooking(principal, bookingId, request)));
+    }
+
+    @Operation(summary = "API-CUS-04: Hủy booking theo chính sách và giải phóng phòng")
+    @PostMapping("/{bookingId}/cancel")
+    public ResponseEntity<ApiResponse<CancelBookingResponse>> cancelBooking(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @Valid @RequestBody CancelBookingRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                customerBookingService.cancelBooking(principal, bookingId, request.reason())));
     }
 
     private Sort parseSort(String sort) {

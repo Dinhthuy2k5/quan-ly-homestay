@@ -1,5 +1,6 @@
 package vn.edu.hust.homestay.booking.repository;
 
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +12,11 @@ import java.util.Collection;
 import java.util.List;
 
 public interface BookingRoomNightRepository extends JpaRepository<BookingRoomNight, BookingRoomNightId> {
+
+    /** Release every held room night for the expired bookings in the caller's transaction. */
+    @Modifying(flushAutomatically = true)
+    @Query("DELETE FROM BookingRoomNight night WHERE night.bookingId IN :bookingIds")
+    int deleteAllByBookingIdIn(@Param("bookingIds") Collection<Long> bookingIds);
 
     @Query(value = """
             SELECT room_id, stay_date

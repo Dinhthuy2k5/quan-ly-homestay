@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CancelBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerBookingDetailResponse;
@@ -28,6 +29,8 @@ import vn.edu.hust.homestay.media.entity.Media;
 import vn.edu.hust.homestay.media.repository.MediaRepository;
 import vn.edu.hust.homestay.policy.entity.PolicySetting;
 import vn.edu.hust.homestay.policy.repository.PolicySettingRepository;
+import vn.edu.hust.homestay.payment.entity.Payment;
+import vn.edu.hust.homestay.payment.repository.PaymentRepository;
 import vn.edu.hust.homestay.pricing.entity.PriceRule;
 import vn.edu.hust.homestay.pricing.repository.PriceRuleRepository;
 import vn.edu.hust.homestay.room.entity.Room;
@@ -68,6 +71,7 @@ public class CustomerBookingService {
     private final PriceRuleRepository priceRuleRepository;
     private final PolicySettingRepository policySettingRepository;
     private final MediaRepository mediaRepository;
+    private final PaymentRepository paymentRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public CustomerBookingService(
@@ -78,7 +82,8 @@ public class CustomerBookingService {
             RoomRepository roomRepository,
             PriceRuleRepository priceRuleRepository,
             PolicySettingRepository policySettingRepository,
-            MediaRepository mediaRepository
+            MediaRepository mediaRepository,
+            PaymentRepository paymentRepository
     ) {
         this.bookingRepository = bookingRepository;
         this.bookingRoomRepository = bookingRoomRepository;
@@ -88,6 +93,54 @@ public class CustomerBookingService {
         this.priceRuleRepository = priceRuleRepository;
         this.policySettingRepository = policySettingRepository;
         this.mediaRepository = mediaRepository;
+        this.paymentRepository = paymentRepository;
+    }
+
+    @Transactional
+    public CancelBookingResponse cancelBooking(UserPrincipal principal, Long bookingId, String reason) {
+        boolean bookingExists = bookingRepository.existsById(bookingId);
+        Booking booking = bookingRepository.findByIdAndCustomerIdForUpdate(bookingId, principal.getId())
+                .orElseThrow(() -> bookingExists
+                        ? BusinessException.forbidden("BOOKING_NOT_OWNED", "Đây không phải đơn đặt phòng của bạn")
+                        : BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+
+        if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT
+                && booking.getStatus() != BookingStatus.PENDING_APPROVAL
+                && booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw BusinessException.conflict("CANCELLATION_NOT_ALLOWED", "Đơn đặt phòng ở trạng thái hiện tại không thể hủy");
+        }
+
+        int refundPercent = resolveRefundPercent(booking);
+        // CUSTOMER can cancel only before the stay; PAYMENT is collected at checkout and is not refundable here.
+        long paidAmount = paymentRepository.sumConfirmedDeposits(
+                booking.getId(), Payment.PaymentType.DEPOSIT, Payment.PaymentStatus.CONFIRMED);
+        long refundAmount = BigDecimal.valueOf(paidAmount)
+                .multiply(BigDecimal.valueOf(refundPercent))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
+                .longValueExact();
+
+        booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancelledAt(Instant.now());
+        booking.setCancelledBy(principal.getId());
+        booking.setCancelReason(normalize(reason));
+        booking.setRefundAmount(refundAmount);
+        bookingRepository.saveAndFlush(booking);
+        bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
+
+        if (refundAmount > 0) {
+            Payment refund = new Payment();
+            refund.setBookingId(booking.getId());
+            refund.setHomestayId(booking.getHomestayId());
+            refund.setType(Payment.PaymentType.REFUND);
+            refund.setAmount(refundAmount);
+            refund.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+            refund.setStatus(Payment.PaymentStatus.PENDING);
+            refund.setNote("Hoàn tiền theo chính sách hủy booking");
+            refund.setCreatedBy(principal.getId());
+            paymentRepository.save(refund);
+        }
+
+        return new CancelBookingResponse(booking.getId(), booking.getStatus(), refundAmount);
     }
 
     @Transactional
@@ -549,20 +602,82 @@ public class CustomerBookingService {
         int maxAdvanceDays = requiredPolicyInt("BOOKING", "max_advance_days");
         int depositPercent = requiredPolicyInt("PAYMENT", "deposit_percent");
         int holdHours = requiredPolicyInt("PAYMENT", "hold_hours");
+        String refundRules = requiredPolicyValue("CANCELLATION", "refund_rules");
+        validateRefundRules(refundRules);
         if (nights < minNights || nights > maxNights || advanceDays > maxAdvanceDays) {
             throw BusinessException.badRequest("BOOKING_POLICY_VIOLATION", "Thời gian lưu trú không đáp ứng chính sách đặt phòng");
         }
-        return new BookingPolicy(minNights, maxNights, maxAdvanceDays, depositPercent, holdHours);
+        return new BookingPolicy(minNights, maxNights, maxAdvanceDays, depositPercent, holdHours, refundRules);
     }
 
     private int requiredPolicyInt(String policyGroup, String policyKey) {
-        String value = policySettingRepository.findByPolicyGroupAndPolicyKey(policyGroup, policyKey)
-                .map(PolicySetting::getPolicyValue)
-                .orElseThrow(() -> BusinessException.badRequest("BOOKING_POLICY_NOT_CONFIGURED", "Chính sách đặt phòng chưa được cấu hình"));
+        String value = requiredPolicyValue(policyGroup, policyKey);
         try {
             return Integer.parseInt(value.trim());
         } catch (NumberFormatException exception) {
             throw BusinessException.badRequest("BOOKING_POLICY_NOT_CONFIGURED", "Chính sách đặt phòng chưa được cấu hình hợp lệ");
+        }
+    }
+
+    private String requiredPolicyValue(String policyGroup, String policyKey) {
+        return policySettingRepository.findByPolicyGroupAndPolicyKey(policyGroup, policyKey)
+                .map(PolicySetting::getPolicyValue)
+                .orElseThrow(() -> BusinessException.badRequest(
+                        "BOOKING_POLICY_NOT_CONFIGURED", "Chính sách đặt phòng chưa được cấu hình"));
+    }
+
+    private int resolveRefundPercent(Booking booking) {
+        String rulesJson;
+        try {
+            var snapshot = booking.getPolicySnapshot() == null || booking.getPolicySnapshot().isBlank()
+                    ? null : objectMapper.readTree(booking.getPolicySnapshot());
+            var snapshotRules = snapshot == null ? null : snapshot.get("refundRules");
+            rulesJson = snapshotRules != null
+                    ? snapshotRules.toString()
+                    : requiredPolicyValue("CANCELLATION", "refund_rules");
+            validateRefundRules(rulesJson);
+            long daysBeforeCheckIn = ChronoUnit.DAYS.between(
+                    LocalDate.now(BUSINESS_TIME_ZONE), booking.getCheckInDate());
+            int selectedDays = -1;
+            int selectedPercent = -1;
+            for (var rule : objectMapper.readTree(rulesJson)) {
+                int threshold = rule.path("days_before_checkin").asInt(-1);
+                int percent = rule.path("refund_percent").asInt(-1);
+                if (threshold <= daysBeforeCheckIn && threshold > selectedDays) {
+                    selectedDays = threshold;
+                    selectedPercent = percent;
+                }
+            }
+            if (selectedPercent < 0) {
+                throw BusinessException.badRequest("CANCELLATION_POLICY_INVALID", "Chính sách hủy chưa có mốc áp dụng cho booking");
+            }
+            return selectedPercent;
+        } catch (JsonProcessingException exception) {
+            throw BusinessException.badRequest("CANCELLATION_POLICY_INVALID", "Chính sách hủy chưa được cấu hình hợp lệ");
+        }
+    }
+
+    private void validateRefundRules(String rulesJson) {
+        try {
+            var rules = objectMapper.readTree(rulesJson);
+            if (!rules.isArray() || rules.isEmpty()) {
+                throw BusinessException.badRequest("CANCELLATION_POLICY_INVALID", "Chính sách hủy chưa được cấu hình hợp lệ");
+            }
+            Set<Integer> dayThresholds = new HashSet<>();
+            for (var rule : rules) {
+                var daysNode = rule.path("days_before_checkin");
+                var percentNode = rule.path("refund_percent");
+                if (!rule.isObject() || !daysNode.isIntegralNumber() || !percentNode.isIntegralNumber()) {
+                    throw BusinessException.badRequest("CANCELLATION_POLICY_INVALID", "Chính sách hủy chưa được cấu hình hợp lệ");
+                }
+                int days = daysNode.asInt(-1);
+                int percent = percentNode.asInt(-1);
+                if (days < 0 || percent < 0 || percent > 100 || !dayThresholds.add(days)) {
+                    throw BusinessException.badRequest("CANCELLATION_POLICY_INVALID", "Chính sách hủy chưa được cấu hình hợp lệ");
+                }
+            }
+        } catch (JsonProcessingException exception) {
+            throw BusinessException.badRequest("CANCELLATION_POLICY_INVALID", "Chính sách hủy chưa được cấu hình hợp lệ");
         }
     }
 
@@ -639,7 +754,8 @@ public class CustomerBookingService {
                     "maxNights", policy.maxNights(),
                     "maxAdvanceDays", policy.maxAdvanceDays(),
                     "depositPercent", policy.depositPercent(),
-                    "holdHours", policy.holdHours()));
+                    "holdHours", policy.holdHours(),
+                    "refundRules", objectMapper.readTree(policy.refundRules())));
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize booking policy snapshot", exception);
         }
@@ -670,5 +786,5 @@ public class CustomerBookingService {
     }
 
     private record BookingPolicy(int minNights, int maxNights, int maxAdvanceDays,
-                                 int depositPercent, int holdHours) {}
+                                 int depositPercent, int holdHours, String refundRules) {}
 }
