@@ -192,7 +192,7 @@ export async function getManagerBookingsApi({
   toDate,
   keyword,
   page = 0,
-  size = 20,
+  size = 10,
   sort = 'createdAt,desc',
 } = {}) {
   const params = { page, size, sort };

@@ -16,6 +16,13 @@ import vn.edu.hust.homestay.auth.entity.User;
 import vn.edu.hust.homestay.auth.entity.UserStatus;
 import vn.edu.hust.homestay.auth.repository.UserRepository;
 import vn.edu.hust.homestay.auth.security.JwtService;
+import vn.edu.hust.homestay.booking.entity.Booking;
+import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
+import vn.edu.hust.homestay.booking.entity.BookingRoom;
+import vn.edu.hust.homestay.booking.entity.BookingRoomNight;
+import vn.edu.hust.homestay.booking.repository.BookingRepository;
+import vn.edu.hust.homestay.booking.repository.BookingRoomNightRepository;
+import vn.edu.hust.homestay.booking.repository.BookingRoomRepository;
 import vn.edu.hust.homestay.homestay.dto.UpdateManagerHomestayRequest;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
@@ -28,7 +35,12 @@ import vn.edu.hust.homestay.room.entity.RoomType;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
 import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -52,6 +64,15 @@ class ManagerApiTests {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private BookingRepository bookingRepository;
+
+    @Autowired
+    private BookingRoomRepository bookingRoomRepository;
+
+    @Autowired
+    private BookingRoomNightRepository bookingRoomNightRepository;
 
     @Autowired
     private HomestayRepository homestayRepository;
@@ -466,13 +487,45 @@ class ManagerApiTests {
     @Test
     @DisplayName("API-MGR-07: Phòng có lịch đặt trong tương lai khi khóa trả 409 ROOM_HAS_FUTURE_BOOKINGS")
     void testUpdateRoomStatusWithFutureBookingsThrowsConflict() throws Exception {
-        // Phòng 1 (id=1) đã có booking_id=4 trong tương lai tại CSDL seed
+        Room roomWithFutureBooking = new Room();
+        roomWithFutureBooking.setHomestayId(homestay1Id);
+        roomWithFutureBooking.setRoomTypeId(roomType1Id);
+        roomWithFutureBooking.setName("Phòng test có booking " + System.nanoTime());
+        roomWithFutureBooking.setMaxGuests((byte) 2);
+        roomWithFutureBooking.setStatus(RoomStatus.ACTIVE);
+        roomWithFutureBooking = roomRepository.saveAndFlush(roomWithFutureBooking);
+
+        LocalDate checkInDate = LocalDate.now().plusDays(20);
+        Instant now = Instant.now();
+        Booking booking = new Booking();
+        booking.setCode("T07-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        booking.setHomestayId(homestay1Id);
+        booking.setContactName("Khách test API-MGR-07");
+        booking.setContactPhone("0981234567");
+        booking.setCheckInDate(checkInDate);
+        booking.setCheckOutDate(checkInDate.plusDays(1));
+        booking.setGuestCount((short) 2);
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setRoomTotalPrice(500_000L);
+        booking.setDepositAmount(150_000L);
+        booking.setHoldExpiresAt(LocalDateTime.ofInstant(now.plusSeconds(3600), ZoneOffset.UTC));
+        booking.setApprovedBy(manager1.getId());
+        booking.setApprovedAt(now);
+        booking.setCreatedBy(manager1.getId());
+        Booking savedBooking = bookingRepository.saveAndFlush(booking);
+
+        bookingRoomRepository.saveAndFlush(
+                new BookingRoom(savedBooking.getId(), homestay1Id, roomWithFutureBooking.getId()));
+        bookingRoomNightRepository.saveAndFlush(new BookingRoomNight(
+                roomWithFutureBooking.getId(), checkInDate, savedBooking.getId(),
+                homestay1Id, 500_000L, "Giá test"));
+
         UpdateRoomStatusRequest lockReq = UpdateRoomStatusRequest.builder()
                 .status(RoomStatus.LOCKED)
                 .reason("Thử khóa phòng đã được đặt trước")
                 .build();
 
-        mockMvc.perform(patch("/api/v1/manager/rooms/1/status")
+        mockMvc.perform(patch("/api/v1/manager/rooms/" + roomWithFutureBooking.getId() + "/status")
                         .header("Authorization", "Bearer " + tokenMgr1)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(lockReq)))

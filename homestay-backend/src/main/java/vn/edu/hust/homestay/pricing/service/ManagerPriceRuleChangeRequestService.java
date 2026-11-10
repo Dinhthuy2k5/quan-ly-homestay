@@ -212,7 +212,7 @@ public class ManagerPriceRuleChangeRequestService {
                 proposed.setName(proposed.getName().trim());
             }
         } else {
-            // ADJUSTMENT
+            // Quy tắc điều chỉnh (ADJUSTMENT)
             if (proposed.getName() == null || proposed.getName().trim().isEmpty()) {
                 throw BusinessException.badRequest("INVALID_PRICE_RULE", "Tên quy tắc điều chỉnh giá không được để trống");
             }

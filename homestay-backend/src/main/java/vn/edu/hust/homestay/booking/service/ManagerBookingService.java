@@ -63,6 +63,8 @@ import java.util.stream.Collectors;
  * Service xử lý các nghiệp vụ quản lý Booking của Manager:
  * - API-MGR-BOOK-01: Danh sách booking cơ sở
  * - API-MGR-BOOK-02: Đặt phòng hộ khách
+ * - API-MGR-BOOK-03: Chi tiết booking
+ * - API-MGR-BOOK-04: Điều chỉnh booking
  */
 @Service
 public class ManagerBookingService {
@@ -163,9 +165,9 @@ public class ManagerBookingService {
                 ));
 
         List<ManagerBookingSummaryResponse> responses = bookings.stream().map(b -> {
-            OffsetDateTime holdExpiresAt = b.getHoldExpiresAt() == null ? null :
+            OffsetDateTime holdExpiresAt = b.getHoldExpiresAt() == null ? null :  // giờ chuẩn quốc tế
                     b.getHoldExpiresAt().atOffset(ZoneOffset.UTC)
-                            .atZoneSameInstant(BUSINESS_TIME_ZONE).toOffsetDateTime();
+                            .atZoneSameInstant(BUSINESS_TIME_ZONE).toOffsetDateTime(); // chuyển sang giờ VN
 
             return new ManagerBookingSummaryResponse(
                     b.getId(),
@@ -181,6 +183,7 @@ public class ManagerBookingService {
                     b.getDepositAmount(),
                     holdExpiresAt,
                     b.getCreatedAt(),
+                    b.getCustomerId() != null && b.getCustomerId().equals(b.getCreatedBy()) ? "CUSTOMER" : "MANAGER",
                     roomsByBookingId.getOrDefault(b.getId(), List.of())
             );
         }).toList();
@@ -461,6 +464,12 @@ public class ManagerBookingService {
 
         if (!booking.getHomestayId().equals(homestayId)) {
             throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+
+        if (!principal.getId().equals(booking.getCreatedBy())) {
+            throw BusinessException.forbidden(
+                    "BOOKING_NOT_MANAGER_CREATED",
+                    "Quản lý chỉ được điều chỉnh đơn đặt phòng do chính mình tạo hộ");
         }
 
         // 1. Kiểm tra trạng thái booking

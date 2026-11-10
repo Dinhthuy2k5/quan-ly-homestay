@@ -25,6 +25,7 @@ public record ManagerBookingSummaryResponse(
         Long depositAmount,
         OffsetDateTime holdExpiresAt,
         Instant createdAt,
+        String source,
         List<BookingRoomSummary> rooms
 ) {
     public record BookingRoomSummary(

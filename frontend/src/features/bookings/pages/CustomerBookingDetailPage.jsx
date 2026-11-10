@@ -16,12 +16,14 @@ import {
   FileText,
   MapPin,
   RefreshCw,
+  Send,
   ShieldCheck,
   Tag,
+  Upload,
   Users,
   X,
 } from 'lucide-react';
-import { cancelCustomerBookingApi, fetchCustomerBookingDetailApi } from '../api';
+import { cancelCustomerBookingApi, fetchCustomerBookingDetailApi, fetchCustomerDepositProofApi, submitCustomerDepositApi } from '../api';
 import CustomerAdjustBookingModal from '../components/CustomerAdjustBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { fileUrl } from '../../../lib/api/client';
@@ -44,6 +46,13 @@ export default function CustomerBookingDetailPage() {
   const [cancelError, setCancelError] = useState('');
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [cancelResult, setCancelResult] = useState(null);
+  const [depositAmountInput, setDepositAmountInput] = useState('');
+  const [referenceCodeInput, setReferenceCodeInput] = useState('');
+  const [proofFile, setProofFile] = useState(null);
+  const [proofError, setProofError] = useState('');
+  const [proofSubmitting, setProofSubmitting] = useState(false);
+  const [proofSuccess, setProofSuccess] = useState('');
+  const [submittedProofUrl, setSubmittedProofUrl] = useState('');
 
   const [todayTimestamp] = useState(() => {
     const d = new Date();
@@ -51,6 +60,14 @@ export default function CustomerBookingDetailPage() {
     return d.getTime();
   });
   const [nowTimestamp] = useState(() => Date.now());
+
+  const proofPreviewUrl = useMemo(() => proofFile && proofFile.type.startsWith('image/')
+    ? URL.createObjectURL(proofFile)
+    : '', [proofFile]);
+
+  useEffect(() => () => {
+    if (proofPreviewUrl) URL.revokeObjectURL(proofPreviewUrl);
+  }, [proofPreviewUrl]);
 
   const canAdjust = useMemo(() => {
     if (!booking) return false;
@@ -68,7 +85,7 @@ export default function CustomerBookingDetailPage() {
     return false;
   }, [booking, nowTimestamp, todayTimestamp]);
 
-  const canCancel = ['PENDING_DEPOSIT', 'PENDING_APPROVAL', 'CONFIRMED'].includes(booking?.status);
+  const canCancel = ['PENDING_DEPOSIT', 'CONFIRMED'].includes(booking?.status);
 
   useEffect(() => {
     let active = true;
@@ -91,6 +108,33 @@ export default function CustomerBookingDetailPage() {
     };
   }, [bookingId, refreshKey]);
 
+  const depositPaymentId = booking?.latestDepositSubmission?.paymentId;
+  const hasProof = Boolean(booking?.latestDepositSubmission?.proofAvailable);
+
+  useEffect(() => {
+    if (!hasProof || !booking?.id) {
+      return undefined;
+    }
+
+    let active = true;
+    let objectUrl = '';
+    fetchCustomerDepositProofApi(booking.id)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (active) setSubmittedProofUrl(objectUrl);
+        else URL.revokeObjectURL(objectUrl);
+      })
+      .catch(() => {
+        if (active) setSubmittedProofUrl('');
+      });
+
+    return () => {
+      active = false;
+      setSubmittedProofUrl('');
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [booking?.id, depositPaymentId, hasProof]);
+
   const handleRefresh = () => {
     setLoading(true);
     setError('');
@@ -111,6 +155,53 @@ export default function CustomerBookingDetailPage() {
       setCancelError(getErrorMessage(err));
     } finally {
       setCancelSubmitting(false);
+    }
+  };
+
+  const handleProofFileChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setProofError('');
+    setProofFile(null);
+    if (!file) return;
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!allowed.includes(file.type)) {
+      setProofError('Chỉ nhận tệp JPG, PNG, WEBP hoặc PDF.');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setProofError('Tệp chứng từ không được vượt quá 5 MB.');
+      event.target.value = '';
+      return;
+    }
+    setProofFile(file);
+  };
+
+  const handleSubmitProof = async (event) => {
+    event.preventDefault();
+    setProofError('');
+    const amount = Number(depositAmountInput || booking.depositAmount);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      setProofError('Số tiền chuyển phải là số nguyên lớn hơn 0.');
+      return;
+    }
+    if (!proofFile) {
+      setProofError('Vui lòng chọn ảnh hoặc PDF chứng từ chuyển khoản.');
+      return;
+    }
+    setProofSubmitting(true);
+    try {
+      await submitCustomerDepositApi(booking.id, {
+        amount,
+        referenceCode: referenceCodeInput.trim() || booking.paymentInstruction?.transferContent || booking.code,
+        proofFile,
+      });
+      setProofSuccess('Đã gửi chứng từ. Quản lý sẽ xác minh khoản cọc.');
+      handleRefresh();
+    } catch (err) {
+      setProofError(getErrorMessage(err) || 'Không thể gửi chứng từ. Vui lòng thử lại.');
+    } finally {
+      setProofSubmitting(false);
     }
   };
 
@@ -175,6 +266,7 @@ export default function CustomerBookingDetailPage() {
   const nights = nightsBetween(booking.checkInDate, booking.checkOutDate);
   const isPendingDeposit = booking.status === 'PENDING_DEPOSIT';
   const instruction = booking.paymentInstruction;
+  const latestDepositSubmission = booking.latestDepositSubmission;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 py-4 sm:py-6">
@@ -240,6 +332,19 @@ export default function CustomerBookingDetailPage() {
           Đơn đặt phòng đã được hủy. {cancelResult.refundAmount > 0
             ? `Số tiền yêu cầu hoàn: ${formatVnd(cancelResult.refundAmount)}. Homestay sẽ xử lý khoản hoàn.`
             : 'Theo chính sách, đơn này không có khoản hoàn tiền.'}
+        </div>
+      )}
+
+      {proofSuccess && (
+        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {proofSuccess}
+        </div>
+      )}
+
+      {booking.status === 'PENDING_APPROVAL' && (
+        <div role="status" className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" />
+          <div><strong>Đã nhận chứng từ.</strong> Quản lý đang xác minh khoản cọc.</div>
         </div>
       )}
 
@@ -565,7 +670,96 @@ export default function CustomerBookingDetailPage() {
                   Sau khi bạn chuyển khoản, ban quản lý cơ sở sẽ kiểm tra và xác nhận đơn đặt phòng.
                 </span>
               </div>
+
+              <form onSubmit={handleSubmitProof} className="space-y-4 border-t border-[var(--color-border)] pt-4">
+                <div>
+                  <h4 className="text-sm font-bold text-[var(--color-ink)]">Gửi chứng từ chuyển khoản</h4>
+                  <p className="mt-1 text-xs text-[var(--color-muted)]">Quản lý sẽ đối chiếu giao dịch trước khi xác nhận đặt phòng.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs font-semibold text-[var(--color-body)]">
+                    <span>Số tiền đã chuyển (₫)</span>
+                    <input
+                      type="number" min="1" step="1" inputMode="numeric"
+                      value={depositAmountInput || booking.depositAmount}
+                      onChange={(event) => setDepositAmountInput(event.target.value)}
+                      className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]"
+                      required
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-semibold text-[var(--color-body)]">
+                    <span>Nội dung chuyển khoản</span>
+                    <input
+                      value={referenceCodeInput || instruction.transferContent || booking.code}
+                      maxLength={100}
+                      onChange={(event) => setReferenceCodeInput(event.target.value)}
+                      className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]"
+                      required
+                    />
+                  </label>
+                </div>
+                <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-5 text-center hover:border-[var(--color-primary)]">
+                  <Upload className="h-5 w-5 text-[var(--color-muted)]" />
+                  <span className="text-sm font-semibold text-[var(--color-ink)]">{proofFile ? proofFile.name : 'Chọn ảnh hoặc PDF chứng từ'}</span>
+                  <span className="text-xs text-[var(--color-muted)]">JPG, PNG, WEBP hoặc PDF · tối đa 5 MB</span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="sr-only" onChange={handleProofFileChange} />
+                </label>
+                {proofPreviewUrl && <img src={proofPreviewUrl} alt="Xem trước chứng từ" className="max-h-56 rounded-xl border border-[var(--color-border)] object-contain" />}
+                {proofFile?.type === 'application/pdf' && <p className="text-xs text-[var(--color-muted)]">Đã chọn PDF: {proofFile.name}</p>}
+                {proofError && <p role="alert" className="text-sm text-rose-700">{proofError}</p>}
+                <button type="submit" disabled={proofSubmitting || !proofFile} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Send className="h-4 w-4" />
+                  {proofSubmitting ? 'Đang gửi chứng từ…' : 'Gửi chứng từ'}
+                </button>
+              </form>
             </div>
+          )}
+
+          {latestDepositSubmission && (
+            <section className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)] sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] pb-3">
+                <div>
+                  <h3 className="flex items-center gap-2 text-base font-bold text-[var(--color-ink)]">
+                    <FileText className="h-5 w-5 text-[var(--color-primary)]" />
+                    Chứng từ chuyển khoản đã gửi
+                  </h3>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${latestDepositSubmission.status === 'CONFIRMED'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : latestDepositSubmission.status === 'REJECTED'
+                    ? 'bg-rose-50 text-rose-700'
+                    : 'bg-amber-50 text-amber-800'}`}>
+                  {latestDepositSubmission.status === 'CONFIRMED' ? 'Đã xác nhận'
+                    : latestDepositSubmission.status === 'REJECTED' ? 'Bị từ chối' : 'Đang chờ xác nhận'}
+                </span>
+              </div>
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl bg-[var(--color-surface-soft)] p-3">
+                  <dt className="text-xs text-[var(--color-muted)]">Số tiền đã đặt cọc</dt>
+                  <dd className="mt-1 font-semibold text-[var(--color-ink)]">{formatVnd(latestDepositSubmission.amount)}</dd>
+                </div>
+                <div className="rounded-xl bg-[var(--color-surface-soft)] p-3">
+                  <dt className="text-xs text-[var(--color-muted)]">Nội dung chuyển khoản</dt>
+                  <dd className="mt-1 break-all font-mono text-sm font-semibold text-[var(--color-ink)]">
+                    {latestDepositSubmission.referenceCode || '—'}
+                  </dd>
+                </div>
+              </dl>
+              {latestDepositSubmission.proofAvailable && submittedProofUrl && (
+                <div className="mt-4">
+                  {latestDepositSubmission.proofMimeType?.startsWith('image/') ? (
+                    <img src={submittedProofUrl} alt="Chứng từ chuyển khoản đã gửi" className="max-h-72 rounded-xl border border-[var(--color-border)] object-contain" />
+                  ) : (
+                    <a href={submittedProofUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-primary)] hover:bg-[var(--color-surface-soft)]">
+                      <FileText className="h-4 w-4" /> Xem chứng từ PDF
+                    </a>
+                  )}
+                </div>
+              )}
+              {latestDepositSubmission.submittedAt && (
+                <p className="mt-3 text-xs text-[var(--color-muted)]">Đã gửi lúc {formatDateTime(latestDepositSubmission.submittedAt)}</p>
+              )}
+            </section>
           )}
 
           {/* Ghi chú của khách nếu có */}

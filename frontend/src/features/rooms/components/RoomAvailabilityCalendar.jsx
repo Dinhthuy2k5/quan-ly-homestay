@@ -103,7 +103,6 @@ export function RoomAvailabilityCalendar({ room }) {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState('');
-  const [bookingResult, setBookingResult] = useState(null);
   const [bookingNote, setBookingNote] = useState('');
   const [dateError, setDateError] = useState('');
 
@@ -122,7 +121,7 @@ export function RoomAvailabilityCalendar({ room }) {
   const nights = nightsBetween(checkIn, checkOut);
 
   const onSelectDate = (selectedDate) => {
-    setDateError(''); setQuote(null); setQuoteError(''); setBookingResult(null); setBookingError('');
+    setDateError(''); setQuote(null); setQuoteError(''); setBookingError('');
     if (!checkIn || checkOut || selectedDate <= checkIn) {
       setCheckIn(selectedDate); setCheckOut('');
       return;
@@ -137,7 +136,7 @@ export function RoomAvailabilityCalendar({ room }) {
   };
 
   const checkRoom = async () => {
-    setDateError(''); setQuoteError(''); setQuote(null); setBookingResult(null); setBookingError('');
+    setDateError(''); setQuoteError(''); setQuote(null); setBookingError('');
     if (!checkIn || !checkOut || checkOut <= checkIn) {
       setDateError('Chọn ngày nhận phòng và ngày trả phòng để kiểm tra.');
       return;
@@ -187,8 +186,7 @@ export function RoomAvailabilityCalendar({ room }) {
         guestCount,
         note: bookingNote,
       });
-      setBookingResult(result);
-      setQuote(null);
+      navigate(`/customer/bookings/${result.id}`);
     } catch (error) {
       setBookingError(getErrorMessage(error));
     } finally {
@@ -196,7 +194,7 @@ export function RoomAvailabilityCalendar({ room }) {
     }
   };
 
-  const clearDates = () => { setCheckIn(''); setCheckOut(''); setQuote(null); setQuoteError(''); setDateError(''); setBookingResult(null); setBookingError(''); };
+  const clearDates = () => { setCheckIn(''); setCheckOut(''); setQuote(null); setQuoteError(''); setDateError(''); setBookingError(''); };
   const months = [firstMonth, addMonths(firstMonth, 1)];
 
   return (
@@ -229,7 +227,7 @@ export function RoomAvailabilityCalendar({ room }) {
           </div>
           <label className="block rounded-b-lg border border-t-0 border-[var(--color-border)] p-3">
             <span className="text-[10px] font-bold uppercase text-[var(--color-muted)]">Khách</span>
-            <span className="mt-1 flex items-center gap-2"><Users aria-hidden="true" className="h-4 w-4 text-[var(--color-muted)]" /><input type="number" min="1" max={room.maxGuests || 255} value={guestCount} onChange={(event) => { setGuestCount(Math.max(1, Number(event.target.value) || 1)); setQuote(null); setBookingResult(null); setBookingError(''); }} aria-label="Số khách" className="w-full bg-transparent text-sm focus-visible:outline-none" /><span className="shrink-0 text-xs text-[var(--color-muted)]">tối đa {room.maxGuests}</span></span>
+            <span className="mt-1 flex items-center gap-2"><Users aria-hidden="true" className="h-4 w-4 text-[var(--color-muted)]" /><input type="number" min="1" max={room.maxGuests || 255} value={guestCount} onChange={(event) => { setGuestCount(Math.max(1, Number(event.target.value) || 1)); setQuote(null); setBookingError(''); }} aria-label="Số khách" className="w-full bg-transparent text-sm focus-visible:outline-none" /><span className="shrink-0 text-xs text-[var(--color-muted)]">tối đa {room.maxGuests}</span></span>
           </label>
           <button type="button" disabled={quoteLoading || calendarLoading} onClick={checkRoom} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-55">{quoteLoading ? <><LoaderCircle className="h-4 w-4 animate-spin" />Đang kiểm tra…</> : <><Search className="h-4 w-4" />Kiểm tra phòng và giá</>}</button>
           <p className="mt-3 text-center text-xs text-[var(--color-muted)]">Nhận phòng từ {CHECK_IN_TIME} · Trả phòng đến hết {CHECK_OUT_DEADLINE}</p>
@@ -243,22 +241,6 @@ export function RoomAvailabilityCalendar({ room }) {
           {quote && !isAuthenticated && <button type="button" onClick={createBooking} className="mt-4 flex min-h-12 w-full items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white hover:bg-[var(--color-primary-hover)]">Đăng nhập để đặt phòng</button>}
           {quote && isAuthenticated && user?.role !== 'CUSTOMER' && <p className="mt-4 rounded-lg bg-[var(--color-surface-soft)] p-3 text-sm text-[var(--color-muted)]">Chỉ tài khoản khách hàng mới có thể đặt phòng trực tuyến.</p>}
           {bookingError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{bookingError}</p>}
-          {bookingResult && <div role="status" className="mt-4 space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
-            <p className="font-semibold">Đã tạo yêu cầu đặt phòng</p>
-            <p>Mã booking: <strong>{bookingResult.code}</strong></p>
-            <p>Tiền phòng: <strong>{formatVnd(bookingResult.roomTotalPrice)}</strong></p>
-            <p>Tiền cọc cần thanh toán: <strong>{formatVnd(bookingResult.depositAmount)}</strong></p>
-            <p>Giữ phòng đến: <strong>{new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(bookingResult.holdExpiresAt))}</strong></p>
-            {bookingResult.paymentInstruction?.bankAccountNumber ? <div className="border-t border-emerald-200 pt-2"><p>{bookingResult.paymentInstruction.bankName}</p><p>Số tài khoản: <strong>{bookingResult.paymentInstruction.bankAccountNumber}</strong></p><p>Chủ tài khoản: {bookingResult.paymentInstruction.bankAccountHolder}</p><p>Nội dung: <strong>{bookingResult.paymentInstruction.transferContent}</strong></p></div> : <p className="border-t border-emerald-200 pt-2">Thông tin tài khoản nhận cọc chưa được cấu hình. Vui lòng liên hệ homestay.</p>}
-            <Link
-              to="/customer/bookings"
-              className="mt-3 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-[var(--radius-sm)] bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800 transition-colors shadow-xs"
-            >
-              <span>Xem danh sách chuyến đi của bạn</span>
-              <span aria-hidden="true">›</span>
-            </Link>
-          </div>}
-
           {(room.homestay?.id || room.homestayId) && (
             <div className="mt-5 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3.5 text-xs text-[var(--color-muted)]">
               <p className="font-semibold text-[var(--color-ink)]">Cần đặt nhiều phòng cho đoàn hoặc gia đình?</p>

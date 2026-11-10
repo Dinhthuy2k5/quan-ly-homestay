@@ -147,7 +147,7 @@ export default function ManagerBookingDetailPage() {
         </Link>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {(booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
+          {booking.source === 'MANAGER' && (booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
             <button
               type="button"
               onClick={() => setIsAdjustOpen(true)}

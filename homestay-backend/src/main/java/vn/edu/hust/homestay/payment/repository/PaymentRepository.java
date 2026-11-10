@@ -5,8 +5,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import vn.edu.hust.homestay.payment.entity.Payment;
 
+import java.util.Optional;
+
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
+    Optional<Payment> findTopByBookingIdAndTypeOrderByCreatedAtDesc(Long bookingId, Payment.PaymentType type);
+
+    // nếu ko có bản ghi nào, coalesce(sum(), 0) trả về 0
     @Query("""
             SELECT COALESCE(SUM(payment.amount), 0)
             FROM Payment payment

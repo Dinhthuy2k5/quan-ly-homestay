@@ -26,7 +26,7 @@ public class ManagerPriceRuleService {
         this.roomRepository = roomRepository;
     }
 
-    /** API-PRICE-02: View approved base and adjustment rules for the assigned homestay. */
+    /** API-PRICE-02: Xem danh sách quy tắc giá cơ bản và điều chỉnh đã được duyệt cho homestay được phân công. */
     public Page<ManagerPriceRuleResponse> getPriceRules(
             UserPrincipal principal,
             Long roomId,

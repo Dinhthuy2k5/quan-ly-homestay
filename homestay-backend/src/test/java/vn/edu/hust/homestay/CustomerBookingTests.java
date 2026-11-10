@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,8 @@ import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.entity.BookingRoomNight;
 import vn.edu.hust.homestay.booking.repository.BookingRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomNightRepository;
+import vn.edu.hust.homestay.payment.entity.Payment;
+import vn.edu.hust.homestay.payment.repository.PaymentRepository;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
 import vn.edu.hust.homestay.pricing.entity.PriceRule;
@@ -35,7 +38,9 @@ import vn.edu.hust.homestay.room.repository.RoomRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 
@@ -52,6 +57,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class CustomerBookingTests {
 
+    private static final ZoneId BUSINESS_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+
     @Autowired private WebApplicationContext context;
     @Autowired private UserRepository userRepository;
     @Autowired private RoomRepository roomRepository;
@@ -59,6 +66,8 @@ class CustomerBookingTests {
     @Autowired private PriceRuleRepository priceRuleRepository;
     @Autowired private BookingRepository bookingRepository;
     @Autowired private BookingRoomNightRepository bookingRoomNightRepository;
+    @Autowired private PaymentRepository paymentRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private JwtService jwtService;
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
@@ -72,6 +81,13 @@ class CustomerBookingTests {
         mockMvc = MockMvcBuilders.webAppContextSetup(context)
                 .apply(springSecurity())
                 .build();
+        assertEquals(1, jdbcTemplate.update("""
+                UPDATE policy_settings
+                SET policy_value = ?
+                WHERE policy_group = 'CANCELLATION' AND policy_key = 'refund_rules'
+                """, "[{\"days_before_checkin\":7,\"refund_percent\":100},"
+                + "{\"days_before_checkin\":3,\"refund_percent\":50},"
+                + "{\"days_before_checkin\":0,\"refund_percent\":0}]"));
         customer = userRepository.saveAndFlush(User.builder()
                 .email("customer-booking-" + UUID.randomUUID() + "@example.com")
                 .passwordHash("test-hash")
@@ -85,6 +101,156 @@ class CustomerBookingTests {
                 .filter(candidate -> priceRuleRepository.findByRoomIdAndRuleTypeAndStatus(
                         candidate.getId(), PriceRule.RuleType.BASE, PriceRule.Status.ACTIVE).isPresent())
                 .findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("API-CUS-04 hủy booking đã xác nhận: lưu trạng thái, lý do, tiền hoàn và giải phóng đêm trong database")
+    void cancelConfirmedBookingPersistsRefundAndReleasesNights() throws Exception {
+        LocalDate checkInDate = LocalDate.now(BUSINESS_TIME_ZONE).plusDays(5);
+        Booking booking = createConfirmedBookingWithDeposit(checkInDate);
+        long expectedRefund = (booking.getDepositAmount() + 1) / 2;
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "  Đổi kế hoạch  "))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.status", is("CANCELLED")))
+                .andExpect(jsonPath("$.data.refundAmount", is((int) expectedRefund)));
+
+        Map<String, Object> persistedBooking = jdbcTemplate.queryForMap(
+                "SELECT status, refund_amount, cancel_reason, cancelled_by FROM bookings WHERE id = ?", booking.getId());
+        assertEquals("CANCELLED", persistedBooking.get("status"));
+        assertEquals(expectedRefund, ((Number) persistedBooking.get("refund_amount")).longValue());
+        assertEquals("Đổi kế hoạch", persistedBooking.get("cancel_reason"));
+        assertEquals(customer.getId(), ((Number) persistedBooking.get("cancelled_by")).longValue());
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+
+        Map<String, Object> refundPayment = jdbcTemplate.queryForMap("""
+                SELECT type, amount, method, status, created_by
+                FROM payments
+                WHERE booking_id = ? AND type = 'REFUND'
+                """, booking.getId());
+        assertEquals("REFUND", refundPayment.get("type"));
+        assertEquals(expectedRefund, ((Number) refundPayment.get("amount")).longValue());
+        assertEquals("PENDING", refundPayment.get("status"));
+        assertEquals("BANK_TRANSFER", refundPayment.get("method"));
+        assertEquals(customer.getId(), ((Number) refundPayment.get("created_by")).longValue());
+    }
+
+    @Test
+    @DisplayName("API-CUS-04 mốc hủy trong 3 ngày: không tạo payment REFUND khi chính sách cho hoàn 0%")
+    void cancelBookingWithoutRefundDoesNotCreateRefundPayment() throws Exception {
+        Booking booking = createConfirmedBookingWithDeposit(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(2));
+
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "Thay đổi lịch"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status", is("CANCELLED")))
+                .andExpect(jsonPath("$.data.refundAmount", is(0)));
+
+        Map<String, Object> persistedBooking = jdbcTemplate.queryForMap(
+                "SELECT status, refund_amount FROM bookings WHERE id = ?", booking.getId());
+        assertEquals("CANCELLED", persistedBooking.get("status"));
+        assertEquals(0L, ((Number) persistedBooking.get("refund_amount")).longValue());
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE booking_id = ? AND type = 'REFUND'", Integer.class, booking.getId()));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-CUS-04 chỉ chủ booking được hủy; hủy lần hai bị từ chối và không nhân đôi khoản hoàn")
+    void cancelBookingEnforcesOwnershipAndPreventsDuplicateRefund() throws Exception {
+        Booking booking = createConfirmedBookingWithDeposit(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(8));
+        User otherCustomer = userRepository.saveAndFlush(User.builder()
+                .email("cancel-other-" + UUID.randomUUID() + "@example.com")
+                .passwordHash("test-hash")
+                .fullName("Khách khác")
+                .phone("0912999888")
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .build());
+        String otherToken = jwtService.generateAccessToken(otherCustomer);
+        String path = "/api/v1/customer/bookings/" + booking.getId() + "/cancel";
+        String body = objectMapper.writeValueAsString(Map.of("reason", "Không phải chủ đơn"));
+
+        mockMvc.perform(post(path)
+                        .header("Authorization", "Bearer " + otherToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code", is("BOOKING_NOT_OWNED")));
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject(
+                "SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+
+        mockMvc.perform(post(path)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.refundAmount", is(booking.getDepositAmount().intValue())));
+        mockMvc.perform(post(path)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("CANCELLATION_NOT_ALLOWED")));
+
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE booking_id = ? AND type = 'REFUND'", Integer.class, booking.getId()));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-CUS-04 cho phép hủy PENDING_DEPOSIT nhưng chặn PENDING_APPROVAL để bảo vệ khoản cọc chưa xác minh")
+    void cancelPendingDepositButRejectPendingApprovalCancellation() throws Exception {
+        LocalDate today = LocalDate.now(BUSINESS_TIME_ZONE);
+        Booking pendingDeposit = createPendingBooking(today.plusDays(2));
+        Booking pendingApproval = createPendingBooking(today.plusDays(2));
+        pendingApproval.setStatus(BookingStatus.PENDING_APPROVAL);
+        bookingRepository.saveAndFlush(pendingApproval);
+        createPayment(pendingApproval, Payment.PaymentStatus.PENDING, null);
+
+        mockMvc.perform(post("/api/v1/customer/bookings/" + pendingDeposit.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "Khách đổi kế hoạch"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status", is("CANCELLED")))
+                .andExpect(jsonPath("$.data.refundAmount", is(0)));
+
+        assertEquals("CANCELLED", jdbcTemplate.queryForObject(
+                "SELECT status FROM bookings WHERE id = ?", String.class, pendingDeposit.getId()));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, pendingDeposit.getId()));
+
+        mockMvc.perform(post("/api/v1/customer/bookings/" + pendingApproval.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "Khách đổi kế hoạch"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("CANCELLATION_NOT_ALLOWED")));
+
+        assertEquals("PENDING_APPROVAL", jdbcTemplate.queryForObject(
+                "SELECT status FROM bookings WHERE id = ?", String.class, pendingApproval.getId()));
+        assertTrue(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, pendingApproval.getId()) > 0);
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE booking_id = ? AND type = 'REFUND'", Integer.class, pendingApproval.getId()));
+
+        assertEquals("PENDING", jdbcTemplate.queryForObject(
+                "SELECT status FROM payments WHERE booking_id = ? AND type = 'DEPOSIT'", String.class, pendingApproval.getId()));
     }
 
     @Test
@@ -903,6 +1069,76 @@ class CustomerBookingTests {
 
     private CreateBookingRequest bookingRequest(LocalDate checkInDate, int guestCount) {
         return bookingRequest(checkInDate, 1, guestCount);
+    }
+
+    private Booking createConfirmedBookingWithDeposit(LocalDate checkInDate) throws Exception {
+        Booking booking = createPendingBooking(checkInDate);
+        User manager = userRepository.findByEmail("manager.maichau@homestay.vn").orElseThrow();
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setApprovedBy(manager.getId());
+        booking.setApprovedAt(Instant.now());
+        bookingRepository.saveAndFlush(booking);
+        createPayment(booking, Payment.PaymentStatus.CONFIRMED, manager.getId());
+        return booking;
+    }
+
+    private Booking createPendingBooking(LocalDate checkInDate) throws Exception {
+        Room testRoom = createRoomForCancellationTest();
+        CreateBookingRequest request = new CreateBookingRequest();
+        request.setHomestayId(testRoom.getHomestayId());
+        request.setRoomIds(List.of(testRoom.getId()));
+        request.setCheckInDate(checkInDate);
+        request.setCheckOutDate(checkInDate.plusDays(1));
+        request.setGuestCount(1);
+        request.setNote("Booking fixture cho kiểm thử hủy theo nghiệp vụ");
+
+        String response = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(response).path("data").path("id").asLong();
+        return bookingRepository.findById(bookingId).orElseThrow();
+    }
+
+    private Payment createPayment(Booking booking, Payment.PaymentStatus status, Long confirmedBy) {
+        Payment payment = new Payment();
+        payment.setBookingId(booking.getId());
+        payment.setHomestayId(booking.getHomestayId());
+        payment.setType(Payment.PaymentType.DEPOSIT);
+        payment.setAmount(booking.getDepositAmount());
+        payment.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        payment.setStatus(status);
+        payment.setCreatedBy(customer.getId());
+        payment.setConfirmedBy(confirmedBy);
+        if (status == Payment.PaymentStatus.CONFIRMED) {
+            payment.setConfirmedAt(LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC));
+        }
+        return paymentRepository.saveAndFlush(payment);
+    }
+
+    private Room createRoomForCancellationTest() {
+        Room testRoom = new Room();
+        testRoom.setHomestayId(room.getHomestayId());
+        testRoom.setRoomTypeId(room.getRoomTypeId());
+        testRoom.setName("Phòng test hủy " + UUID.randomUUID());
+        testRoom.setMaxGuests((byte) 2);
+        testRoom.setStatus(RoomStatus.ACTIVE);
+        Room savedRoom = roomRepository.saveAndFlush(testRoom);
+
+        PriceRule baseRule = new PriceRule();
+        baseRule.setHomestayId(savedRoom.getHomestayId());
+        baseRule.setRoomId(savedRoom.getId());
+        baseRule.setName("Giá base test hủy " + savedRoom.getId());
+        baseRule.setRuleType(PriceRule.RuleType.BASE);
+        baseRule.setBasePrice(400_000L);
+        baseRule.setPriority((short) 0);
+        baseRule.setStatus(PriceRule.Status.ACTIVE);
+        baseRule.setCreatedAt(Instant.now());
+        baseRule.setUpdatedAt(Instant.now());
+        priceRuleRepository.saveAndFlush(baseRule);
+        return savedRoom;
     }
 
     private CreateBookingRequest bookingRequest(LocalDate checkInDate, int nights, int guestCount) {

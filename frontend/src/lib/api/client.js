@@ -58,6 +58,12 @@ export function refreshSessionTokens() {
 // Request interceptor: tự động đính kèm accessToken nếu có
 apiClient.interceptors.request.use(
   (config) => {
+    // The browser must set multipart/form-data with its generated boundary for FormData.
+    // Remove the instance-wide JSON default so uploads are not sent as application/json.
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      config.headers.delete('Content-Type');
+    }
+
     const token = getAccessToken();
     const url = config.url || '';
     const isPublicEndpoint = url.startsWith('/public/') ||

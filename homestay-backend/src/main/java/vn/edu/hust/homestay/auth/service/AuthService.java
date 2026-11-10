@@ -118,7 +118,7 @@ public class AuthService {
     }
 
     /**
-     * API-AUTH-03: Refresh token
+     * API-AUTH-03: Làm mới access token (Refresh token)
      */
     @Transactional
     public RefreshTokenResponse refresh(RefreshTokenRequest req) {

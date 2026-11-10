@@ -13,7 +13,7 @@ import java.util.List;
 
 public interface BookingRoomNightRepository extends JpaRepository<BookingRoomNight, BookingRoomNightId> {
 
-    /** Release every held room night for the expired bookings in the caller's transaction. */
+    /** Giải phóng tất cả các đêm phòng đang giữ cho danh sách booking hết hạn trong cùng transaction. */
     @Modifying(flushAutomatically = true)
     @Query("DELETE FROM BookingRoomNight night WHERE night.bookingId IN :bookingIds")
     int deleteAllByBookingIdIn(@Param("bookingIds") Collection<Long> bookingIds);

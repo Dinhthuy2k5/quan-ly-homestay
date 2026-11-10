@@ -17,7 +17,7 @@ import java.util.Optional;
 
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
-    /** Lock a bounded batch so expiry cannot race with another booking state transition. */
+    /** Khóa một lô giới hạn để luồng hết hạn không xung đột với các thay đổi trạng thái booking khác. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<Booking> findTop100ByStatusAndHoldExpiresAtLessThanEqualOrderByIdAsc(
             BookingStatus status,

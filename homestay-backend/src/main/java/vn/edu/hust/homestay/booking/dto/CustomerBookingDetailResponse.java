@@ -1,9 +1,12 @@
 package vn.edu.hust.homestay.booking.dto;
 
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
+import vn.edu.hust.homestay.payment.entity.Payment.PaymentMethod;
+import vn.edu.hust.homestay.payment.entity.Payment.PaymentStatus;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -30,8 +33,20 @@ public record CustomerBookingDetailResponse(
         OffsetDateTime holdExpiresAt,
         Instant createdAt,
         List<BookingRoomDetail> rooms,
-        CreateBookingResponse.PaymentInstruction paymentInstruction
+        CreateBookingResponse.PaymentInstruction paymentInstruction,
+        DepositSubmissionDetail latestDepositSubmission
 ) {
+    public record DepositSubmissionDetail(
+            Long paymentId,
+            Long amount,
+            PaymentMethod method,
+            PaymentStatus status,
+            String referenceCode,
+            LocalDateTime submittedAt,
+            boolean proofAvailable,
+            String proofMimeType
+    ) {}
+
     public record BookingRoomDetail(
             Long roomId,
             String roomName,

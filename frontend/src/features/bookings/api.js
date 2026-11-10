@@ -7,7 +7,7 @@ import apiClient from '../../lib/api/client';
 export async function fetchCustomerBookingsApi({
   status,
   page = 0,
-  size = 10,
+  size = 5,
   sort = 'createdAt,desc',
 } = {}) {
   const params = { page, size, sort };
@@ -43,6 +43,26 @@ export async function adjustCustomerBookingApi(bookingId, data) {
 export async function cancelCustomerBookingApi(bookingId, reason = '') {
   const res = await apiClient.post(`/customer/bookings/${bookingId}/cancel`, { reason });
   return res.data?.data || null;
+}
+
+/** API-CUS-05: Gửi thông tin và chứng từ chuyển khoản đặt cọc. */
+export async function submitCustomerDepositApi(bookingId, { amount, referenceCode, proofFile }) {
+  const formData = new FormData();
+  formData.append('amount', String(amount));
+  formData.append('method', 'BANK_TRANSFER');
+  formData.append('referenceCode', referenceCode);
+  formData.append('proofFile', proofFile);
+  // Let Axios/browser add the multipart boundary.
+  const res = await apiClient.post(`/customer/bookings/${bookingId}/deposit-submissions`, formData);
+  return res.data?.data || null;
+}
+
+/** Tải chứng từ đặt cọc riêng tư của booking để chủ booking xem lại. */
+export async function fetchCustomerDepositProofApi(bookingId) {
+  const res = await apiClient.get(`/customer/bookings/${bookingId}/deposit-submissions/latest/proof`, {
+    responseType: 'blob',
+  });
+  return res.data;
 }
 
 

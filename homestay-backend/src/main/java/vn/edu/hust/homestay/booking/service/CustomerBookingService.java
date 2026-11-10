@@ -2,14 +2,26 @@ package vn.edu.hust.homestay.booking.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.DepositSubmissionResponse;
+import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
 import vn.edu.hust.homestay.booking.dto.CancelBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingResponse;
@@ -45,6 +57,11 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -59,6 +76,7 @@ import java.util.stream.Collectors;
 @Service
 public class CustomerBookingService {
 
+    private static final Logger log = LoggerFactory.getLogger(CustomerBookingService.class);
     private static final ZoneId BUSINESS_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final List<String> BANK_POLICY_KEYS = List.of(
             "bank_name", "bank_account_number", "bank_account_holder");
@@ -73,6 +91,7 @@ public class CustomerBookingService {
     private final MediaRepository mediaRepository;
     private final PaymentRepository paymentRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Path privateUploadRoot;
 
     public CustomerBookingService(
             BookingRepository bookingRepository,
@@ -83,7 +102,8 @@ public class CustomerBookingService {
             PriceRuleRepository priceRuleRepository,
             PolicySettingRepository policySettingRepository,
             MediaRepository mediaRepository,
-            PaymentRepository paymentRepository
+            PaymentRepository paymentRepository,
+            @Value("${app.storage.private-upload-dir:storage/private}") String privateUploadDir
     ) {
         this.bookingRepository = bookingRepository;
         this.bookingRoomRepository = bookingRoomRepository;
@@ -94,7 +114,113 @@ public class CustomerBookingService {
         this.policySettingRepository = policySettingRepository;
         this.mediaRepository = mediaRepository;
         this.paymentRepository = paymentRepository;
+        this.privateUploadRoot = Paths.get(privateUploadDir).toAbsolutePath().normalize();
     }
+
+    @Transactional
+    public DepositSubmissionResponse submitDeposit(UserPrincipal principal, Long bookingId, Long amount,
+                                                    String method, String referenceCode, MultipartFile proofFile) {
+        boolean exists = bookingRepository.existsById(bookingId);
+        Booking booking = bookingRepository.findByIdAndCustomerIdForUpdate(bookingId, principal.getId())
+                .orElseThrow(() -> exists
+                        ? BusinessException.forbidden("BOOKING_NOT_OWNED", "Đây không phải đơn đặt phòng của bạn")
+                        : BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+
+        if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT
+                || booking.getHoldExpiresAt() == null
+                || !booking.getHoldExpiresAt().isAfter(LocalDateTime.now(BUSINESS_TIME_ZONE))) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng không còn trong thời hạn nhận chứng từ đặt cọc");
+        }
+        if (amount == null || amount <= 0) {
+            throw BusinessException.badRequest("DEPOSIT_AMOUNT_INVALID", "Số tiền đặt cọc phải lớn hơn 0");
+        }
+        if (!"BANK_TRANSFER".equalsIgnoreCase(method == null ? "" : method.trim())) {
+            throw BusinessException.badRequest("VALIDATION_ERROR", "Phương thức đặt cọc phải là BANK_TRANSFER");
+        }
+        String normalizedReference = referenceCode == null ? "" : referenceCode.trim();
+        if (normalizedReference.isEmpty() || normalizedReference.length() > 100) {
+            throw BusinessException.badRequest("VALIDATION_ERROR", "Mã tham chiếu bắt buộc và không vượt quá 100 ký tự");
+        }
+        if (proofFile == null || proofFile.isEmpty()) {
+            throw BusinessException.badRequest("UNSUPPORTED_MEDIA_TYPE", "Vui lòng tải lên chứng từ chuyển khoản");
+        }
+        if (proofFile.getSize() > 5L * 1024 * 1024) {
+            throw new BusinessException("FILE_TOO_LARGE", "Tệp chứng từ không được vượt quá 5 MB", HttpStatus.PAYLOAD_TOO_LARGE);
+        }
+
+        byte[] bytes;
+        try {
+            bytes = proofFile.getBytes();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Unable to read deposit proof", exception);
+        }
+        DetectedProof proof = detectProof(bytes);
+        String filename = UUID.randomUUID() + proof.extension();
+        Path categoryRoot = privateUploadRoot.resolve("payments").normalize();
+        Path target = categoryRoot.resolve(filename).normalize();
+        if (!categoryRoot.startsWith(privateUploadRoot) || !target.startsWith(categoryRoot)) {
+            throw new IllegalStateException("Generated proof path escaped private upload directory");
+        }
+
+        try {
+            Files.createDirectories(categoryRoot);
+            Files.write(target, bytes);
+        } catch (IOException exception) {
+            deleteQuietly(target);
+            throw new IllegalStateException("Unable to store deposit proof", exception);
+        }
+        cleanupUploadIfTransactionRollsBack(target);
+
+        Payment payment = new Payment();
+        payment.setBookingId(booking.getId());
+        payment.setHomestayId(booking.getHomestayId());
+        payment.setType(Payment.PaymentType.DEPOSIT);
+        payment.setAmount(amount);
+        payment.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        payment.setStatus(Payment.PaymentStatus.PENDING);
+        payment.setReferenceCode(normalizedReference);
+        // Lưu relative key riêng tư; không để lộ URL /files công khai cho chứng từ tài chính.
+        payment.setProofUrl("payments/" + filename);
+        payment.setCreatedBy(principal.getId());
+        Payment saved = paymentRepository.saveAndFlush(payment);
+
+        booking.setStatus(BookingStatus.PENDING_APPROVAL);
+        bookingRepository.save(booking);
+        return new DepositSubmissionResponse(saved.getId(), booking.getId(), saved.getType(), saved.getAmount(),
+                saved.getStatus(), booking.getStatus());
+    }
+
+    private DetectedProof detectProof(byte[] bytes) {
+        if (bytes.length >= 3 && (bytes[0] & 0xff) == 0xff && (bytes[1] & 0xff) == 0xd8 && (bytes[2] & 0xff) == 0xff)
+            return new DetectedProof(".jpg");
+        if (bytes.length >= 8 && (bytes[0] & 0xff) == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4e && bytes[3] == 0x47
+                && bytes[4] == 0x0d && bytes[5] == 0x0a && bytes[6] == 0x1a && bytes[7] == 0x0a)
+            return new DetectedProof(".png");
+        if (bytes.length >= 12 && new String(bytes, 0, 4, StandardCharsets.US_ASCII).equals("RIFF")
+                && new String(bytes, 8, 4, StandardCharsets.US_ASCII).equals("WEBP"))
+            return new DetectedProof(".webp");
+        if (bytes.length >= 5 && new String(bytes, 0, 5, StandardCharsets.US_ASCII).equals("%PDF-"))
+            return new DetectedProof(".pdf");
+        throw new BusinessException("UNSUPPORTED_MEDIA_TYPE", "Chỉ chấp nhận chứng từ JPG, PNG, WEBP hoặc PDF", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    private void cleanupUploadIfTransactionRollsBack(Path target) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) deleteQuietly(target);
+            }
+        });
+    }
+
+    private void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException exception) {
+            log.warn("Could not delete private deposit proof file {}", path, exception);
+        }
+    }
+
+    private record DetectedProof(String extension) {}
 
     @Transactional
     public CancelBookingResponse cancelBooking(UserPrincipal principal, Long bookingId, String reason) {
@@ -105,13 +231,12 @@ public class CustomerBookingService {
                         : BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
 
         if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT
-                && booking.getStatus() != BookingStatus.PENDING_APPROVAL
                 && booking.getStatus() != BookingStatus.CONFIRMED) {
             throw BusinessException.conflict("CANCELLATION_NOT_ALLOWED", "Đơn đặt phòng ở trạng thái hiện tại không thể hủy");
         }
 
         int refundPercent = resolveRefundPercent(booking);
-        // CUSTOMER can cancel only before the stay; PAYMENT is collected at checkout and is not refundable here.
+        // Khách chỉ được hủy trước kỳ lưu trú; thanh toán còn lại thu lúc checkout và không hoàn tiền ở đây.
         long paidAmount = paymentRepository.sumConfirmedDeposits(
                 booking.getId(), Payment.PaymentType.DEPOSIT, Payment.PaymentStatus.CONFIRMED);
         long refundAmount = BigDecimal.valueOf(paidAmount)
@@ -274,7 +399,7 @@ public class CustomerBookingService {
             }
         }
 
-        //TODO fix khi làm api pay 01
+        //TODO fix khi làm api quản lý duyệt cọc
         // paidAmount = 0 cho đến khi module Payment (API-PAY-01+) được triển khai
         long paidAmount = 0L;
         long outstandingAmount = Math.max(0L, booking.getRoomTotalPrice() - paidAmount);
@@ -282,6 +407,15 @@ public class CustomerBookingService {
         OffsetDateTime holdExpiresAt = booking.getHoldExpiresAt() == null ? null :
                 booking.getHoldExpiresAt().atOffset(ZoneOffset.UTC)
                         .atZoneSameInstant(BUSINESS_TIME_ZONE).toOffsetDateTime();
+
+        CustomerBookingDetailResponse.DepositSubmissionDetail latestDepositSubmission =
+                paymentRepository.findTopByBookingIdAndTypeOrderByCreatedAtDesc(
+                                booking.getId(), Payment.PaymentType.DEPOSIT)
+                        .map(payment -> new CustomerBookingDetailResponse.DepositSubmissionDetail(
+                                payment.getId(), payment.getAmount(), payment.getMethod(), payment.getStatus(),
+                                payment.getReferenceCode(), payment.getCreatedAt(), payment.getProofUrl() != null,
+                                mediaTypeForProof(payment.getProofUrl())))
+                        .orElse(null);
 
         return new CustomerBookingDetailResponse(
                 booking.getId(),
@@ -302,8 +436,53 @@ public class CustomerBookingService {
                 holdExpiresAt,
                 booking.getCreatedAt(),
                 roomDetails,
-                instruction
+                instruction,
+                latestDepositSubmission
         );
+    }
+
+    @Transactional(readOnly = true)
+    public CustomerDepositProof getLatestDepositProof(UserPrincipal principal, Long bookingId) {
+        boolean bookingExists = bookingRepository.existsById(bookingId);
+        Booking booking = bookingRepository.findByIdAndCustomerId(bookingId, principal.getId())
+                .orElseThrow(() -> bookingExists
+                        ? BusinessException.forbidden("BOOKING_NOT_OWNED", "Đây không phải đơn đặt phòng của bạn")
+                        : BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+        Payment payment = paymentRepository.findTopByBookingIdAndTypeOrderByCreatedAtDesc(
+                        booking.getId(), Payment.PaymentType.DEPOSIT)
+                .orElseThrow(() -> BusinessException.notFound("DEPOSIT_PROOF_NOT_FOUND", "Booking chưa có chứng từ đặt cọc"));
+
+        String storedKey = payment.getProofUrl();
+        if (storedKey == null || !storedKey.matches("payments/[0-9a-fA-F-]{36}\\.(jpg|png|webp|pdf)")) {
+            throw BusinessException.notFound("DEPOSIT_PROOF_NOT_FOUND", "Không tìm thấy chứng từ đặt cọc");
+        }
+        Path proofPath = privateUploadRoot.resolve(storedKey).normalize();
+        if (!proofPath.startsWith(privateUploadRoot) || !Files.isRegularFile(proofPath)) {
+            throw BusinessException.notFound("DEPOSIT_PROOF_NOT_FOUND", "Không tìm thấy chứng từ đặt cọc");
+        }
+
+        String extension = storedKey.substring(storedKey.lastIndexOf('.') + 1);
+        MediaType mediaType = switch (extension) {
+            case "jpg" -> MediaType.IMAGE_JPEG;
+            case "png" -> MediaType.IMAGE_PNG;
+            case "webp" -> MediaType.parseMediaType("image/webp");
+            case "pdf" -> MediaType.APPLICATION_PDF;
+            default -> MediaType.APPLICATION_OCTET_STREAM;
+        };
+        String filename = "deposit-proof-" + payment.getId() + "." + extension;
+        Resource resource = new FileSystemResource(proofPath);
+        return new CustomerDepositProof(resource, mediaType, filename);
+    }
+
+    private String mediaTypeForProof(String storedKey) {
+        if (storedKey == null) return null;
+        return switch (storedKey.substring(storedKey.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT)) {
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "png" -> "image/png";
+            case "webp" -> "image/webp";
+            case "pdf" -> "application/pdf";
+            default -> null;
+        };
     }
 
     @Transactional
@@ -323,6 +502,7 @@ public class CustomerBookingService {
         }
 
         LocalDate today = LocalDate.now(BUSINESS_TIME_ZONE);
+        Integer adjustMinDaysBefore = null;
 
         if (booking.getStatus() == BookingStatus.PENDING_DEPOSIT) {
             LocalDateTime nowUtc = LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC);
@@ -330,16 +510,7 @@ public class CustomerBookingService {
                 throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng đã hết thời hạn giữ chỗ");
             }
         } else if (booking.getStatus() == BookingStatus.CONFIRMED) {
-            int adjustMinDaysBefore = policySettingRepository
-                    .findByPolicyGroupAndPolicyKey("BOOKING", "adjust_min_days_before")
-                    .map(ps -> {
-                        try {
-                            return Integer.parseInt(ps.getPolicyValue().trim());
-                        } catch (Exception e) {
-                            return 3;
-                        }
-                    }).orElse(3);
-
+            adjustMinDaysBefore = getAdjustMinDaysBefore();
             long daysUntilCheckIn = ChronoUnit.DAYS.between(today, booking.getCheckInDate());
             if (daysUntilCheckIn < adjustMinDaysBefore) {
                 throw BusinessException.badRequest("ADJUSTMENT_WINDOW_CLOSED",
@@ -377,15 +548,6 @@ public class CustomerBookingService {
         }
 
         if (booking.getStatus() == BookingStatus.CONFIRMED) {
-            int adjustMinDaysBefore = policySettingRepository
-                    .findByPolicyGroupAndPolicyKey("BOOKING", "adjust_min_days_before")
-                    .map(ps -> {
-                        try {
-                            return Integer.parseInt(ps.getPolicyValue().trim());
-                        } catch (Exception e) {
-                            return 3;
-                        }
-                    }).orElse(3);
             long daysUntilNewCheckIn = ChronoUnit.DAYS.between(today, newCheckInDate);
             if (daysUntilNewCheckIn < adjustMinDaysBefore) {
                 throw BusinessException.badRequest("ADJUSTMENT_WINDOW_CLOSED",
@@ -481,6 +643,19 @@ public class CustomerBookingService {
                 savedBooking.getRoomTotalPrice(),
                 savedBooking.getDepositAmount()
         );
+    }
+
+    private int getAdjustMinDaysBefore() {
+        return policySettingRepository.findByPolicyGroupAndPolicyKey("BOOKING", "adjust_min_days_before")
+                .map(setting -> {
+                    try {
+                        int value = Integer.parseInt(setting.getPolicyValue().trim());
+                        return value >= 0 ? value : 3;
+                    } catch (NumberFormatException exception) {
+                        return 3;
+                    }
+                })
+                .orElse(3);
     }
 
     @Transactional(readOnly = true)
@@ -602,8 +777,10 @@ public class CustomerBookingService {
         int maxAdvanceDays = requiredPolicyInt("BOOKING", "max_advance_days");
         int depositPercent = requiredPolicyInt("PAYMENT", "deposit_percent");
         int holdHours = requiredPolicyInt("PAYMENT", "hold_hours");
-        String refundRules = requiredPolicyValue("CANCELLATION", "refund_rules");
-        validateRefundRules(refundRules);
+        // Chụp snapshot quy tắc hủy hiện tại mà không kiểm tra lại ở luồng đặt phòng.
+        String refundRules = policySettingRepository.findByPolicyGroupAndPolicyKey("CANCELLATION", "refund_rules")
+                .map(PolicySetting::getPolicyValue)
+                .orElse(null);
         if (nights < minNights || nights > maxNights || advanceDays > maxAdvanceDays) {
             throw BusinessException.badRequest("BOOKING_POLICY_VIOLATION", "Thời gian lưu trú không đáp ứng chính sách đặt phòng");
         }
@@ -632,9 +809,12 @@ public class CustomerBookingService {
             var snapshot = booking.getPolicySnapshot() == null || booking.getPolicySnapshot().isBlank()
                     ? null : objectMapper.readTree(booking.getPolicySnapshot());
             var snapshotRules = snapshot == null ? null : snapshot.get("refundRules");
-            rulesJson = snapshotRules != null
-                    ? snapshotRules.toString()
-                    : requiredPolicyValue("CANCELLATION", "refund_rules");
+            rulesJson = snapshotRules != null && !snapshotRules.isNull()
+                    ? snapshotRules.isTextual() ? snapshotRules.asText() : snapshotRules.toString()
+                    : policySettingRepository.findByPolicyGroupAndPolicyKey("CANCELLATION", "refund_rules")
+                            .map(PolicySetting::getPolicyValue)
+                            .orElseThrow(() -> BusinessException.badRequest(
+                                    "CANCELLATION_POLICY_INVALID", "Chính sách hủy chưa được cấu hình hợp lệ"));
             validateRefundRules(rulesJson);
             long daysBeforeCheckIn = ChronoUnit.DAYS.between(
                     LocalDate.now(BUSINESS_TIME_ZONE), booking.getCheckInDate());
@@ -749,13 +929,21 @@ public class CustomerBookingService {
 
     private String serializePolicySnapshot(BookingPolicy policy) {
         try {
-            return objectMapper.writeValueAsString(Map.of(
-                    "minNights", policy.minNights(),
-                    "maxNights", policy.maxNights(),
-                    "maxAdvanceDays", policy.maxAdvanceDays(),
-                    "depositPercent", policy.depositPercent(),
-                    "holdHours", policy.holdHours(),
-                    "refundRules", objectMapper.readTree(policy.refundRules())));
+            var snapshot = objectMapper.createObjectNode();
+            snapshot.put("minNights", policy.minNights());
+            snapshot.put("maxNights", policy.maxNights());
+            snapshot.put("maxAdvanceDays", policy.maxAdvanceDays());
+            snapshot.put("depositPercent", policy.depositPercent());
+            snapshot.put("holdHours", policy.holdHours());
+            if (policy.refundRules() != null) {
+                try {
+                    snapshot.set("refundRules", objectMapper.readTree(policy.refundRules()));
+                } catch (JsonProcessingException invalidJson) {
+                    // Giữ lại dữ liệu cũ không chuẩn định dạng mà không làm chặn việc tạo booking mới.
+                    snapshot.put("refundRules", policy.refundRules());
+                }
+            }
+            return objectMapper.writeValueAsString(snapshot);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize booking policy snapshot", exception);
         }

@@ -7,10 +7,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.DepositSubmissionResponse;
+import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
 import vn.edu.hust.homestay.booking.dto.CancelBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CancelBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingRequest;
@@ -113,6 +120,34 @@ public class CustomerBookingController {
     ) {
         return ResponseEntity.ok(ApiResponse.ok(
                 customerBookingService.cancelBooking(principal, bookingId, request.reason())));
+    }
+
+    @Operation(summary = "API-CUS-05: Gửi chứng từ chuyển khoản đặt cọc")
+    @PostMapping(value = "/{bookingId}/deposit-submissions", consumes = "multipart/form-data")
+    public ResponseEntity<ApiResponse<DepositSubmissionResponse>> submitDeposit(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @RequestParam Long amount,
+            @RequestParam(defaultValue = "BANK_TRANSFER") String method,
+            @RequestParam String referenceCode,
+            @RequestPart("proofFile") MultipartFile proofFile
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(
+                customerBookingService.submitDeposit(principal, bookingId, amount, method, referenceCode, proofFile)));
+    }
+
+    @Operation(summary = "Lấy chứng từ đặt cọc mới nhất của booking để khách xem lại")
+    @GetMapping("/{bookingId}/deposit-submissions/latest/proof")
+    public ResponseEntity<Resource> getLatestDepositProof(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId
+    ) {
+        CustomerDepositProof proof = customerBookingService.getLatestDepositProof(principal, bookingId);
+        return ResponseEntity.ok()
+                .contentType(proof.mediaType())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        org.springframework.http.ContentDisposition.inline().filename(proof.filename()).build().toString())
+                .body(proof.resource());
     }
 
     private Sort parseSort(String sort) {

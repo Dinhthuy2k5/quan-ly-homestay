@@ -64,7 +64,7 @@ export default function CustomerBookingsPage() {
     fetchCustomerBookingsApi({
       status: currentStatus || undefined,
       page: currentPage,
-      size: 10,
+      size: 5,
     })
       .then((res) => {
         if (!active) return;
@@ -157,11 +157,10 @@ export default function CustomerBookingsPage() {
               key={tab.key}
               type="button"
               onClick={() => handleSelectTab(tab.key)}
-              className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-all ${
-                isActive
-                  ? 'bg-[var(--color-ink)] text-white shadow-xs'
-                  : 'bg-white text-[var(--color-muted)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]'
-              }`}
+              className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-all ${isActive
+                ? 'bg-[var(--color-ink)] text-white shadow-xs'
+                : 'bg-white text-[var(--color-muted)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]'
+                }`}
             >
               {tab.label}
             </button>

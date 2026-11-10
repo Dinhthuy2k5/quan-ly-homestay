@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 
-/** Expires unpaid booking holds and releases their room nights atomically. */
+/** Tự động hết hạn các đơn giữ chỗ chưa thanh toán cọc và giải phóng đêm phòng đồng thời trong transaction. */
 @Service
 public class BookingHoldExpirationService {
 
@@ -34,14 +34,14 @@ public class BookingHoldExpirationService {
         this.bookingRoomNightRepository = bookingRoomNightRepository;
     }
 
-    /** Clean up overdue holds left from before the application started. */
+    /** Dọn dẹp các đơn giữ chỗ quá hạn còn tồn đọng trước khi ứng dụng khởi chạy. */
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void expireOverdueHoldsOnStartup() {
         expireOverdueHolds();
     }
 
-    /** Check frequently because booking hold deadlines can occur at any time of day. */
+    /** Quét định kỳ thường xuyên vì thời hạn giữ chỗ có thể kết thúc ở bất kỳ thời điểm nào trong ngày. */
     @Scheduled(fixedDelayString = "${app.booking.hold-expiration.fixed-delay-ms:30000}")
     @Transactional
     public void expireOverdueHoldsPeriodically() {

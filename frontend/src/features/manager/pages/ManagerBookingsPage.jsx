@@ -95,7 +95,7 @@ export default function ManagerBookingsPage() {
       toDate: currentToDate || undefined,
       keyword: currentKeyword || undefined,
       page: currentPage,
-      size: 20,
+      size: 10,
       sort: 'createdAt,desc',
     })
       .then((res) => {
@@ -261,11 +261,10 @@ export default function ManagerBookingsPage() {
               key={tab.key}
               type="button"
               onClick={() => updateParam('status', tab.key)}
-              className={`shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? 'border-[var(--color-primary)] text-[var(--color-primary)] font-semibold'
-                  : 'border-transparent text-[var(--color-muted)] hover:border-[var(--color-border)] hover:text-[var(--color-ink)]'
-              }`}
+              className={`shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${isActive
+                ? 'border-[var(--color-primary)] text-[var(--color-primary)] font-semibold'
+                : 'border-transparent text-[var(--color-muted)] hover:border-[var(--color-border)] hover:text-[var(--color-ink)]'
+                }`}
             >
               {tab.label}
             </button>
@@ -486,7 +485,7 @@ export default function ManagerBookingsPage() {
 
                   <div className="flex items-center gap-2">
                     <StatusBadge type="booking" status={booking.status} />
-                    {(booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
+                    {booking.source === 'MANAGER' && (booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
                       <button
                         type="button"
                         onClick={() => setAdjustingBooking(booking)}
