@@ -22,6 +22,14 @@ export async function updateAssignedHomestayApi({ name, address, hotlinePhone, d
 }
 
 /**
+ * API-MGR-POLICY-01: Lấy chính sách & quy định áp dụng cho cơ sở của quản lý
+ */
+export async function getManagerHomestayPoliciesApi() {
+  const res = await apiClient.get('/manager/homestay/policies');
+  return res.data?.data;
+}
+
+/**
  * API-MGR-03: Danh sách phòng thuộc homestay của Manager
  */
 export async function getManagerRoomsApi({ status, roomTypeId, keyword, page = 0, size = 20 } = {}) {

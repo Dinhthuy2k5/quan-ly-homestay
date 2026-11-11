@@ -23,10 +23,8 @@ export async function fetchHomestays({ province = '', keyword = '', page = 0, si
 }
 
 /** Tìm phòng còn trống và lấy báo giá theo từng đêm (API-PUB-03). */
-export async function searchAvailableRooms({ province = '', keyword = '', homestayId, checkInDate, checkOutDate, guestCount = 1, page = 0, size = 12 } = {}) {
+export async function searchAvailableRooms({ homestayId, checkInDate, checkOutDate, guestCount = 1, page = 0, size = 12 } = {}) {
   const res = await apiClient.post('/public/availability/search', {
-    province: province.trim() || null,
-    keyword: keyword.trim() || null,
     homestayId: homestayId || null,
     checkInDate,
     checkOutDate,
@@ -84,4 +82,10 @@ export async function fetchHomestayRooms(homestayId, { page = 0, size = 20 } = {
   const result = res.data?.data;
   if (!result || !Array.isArray(result.items)) throw new Error('Máy chủ trả về danh sách phòng không hợp lệ.');
   return result;
+}
+
+/** Lấy chính sách & quy định lưu trú của homestay (API-PUB-POLICY-01). */
+export async function fetchHomestayPolicies(homestayId) {
+  const res = await apiClient.get(`/public/homestays/${homestayId}/policies`);
+  return res.data?.data || null;
 }

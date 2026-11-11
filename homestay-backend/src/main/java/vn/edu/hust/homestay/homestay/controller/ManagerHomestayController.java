@@ -1,5 +1,6 @@
 package vn.edu.hust.homestay.homestay.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -10,11 +11,14 @@ import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.homestay.dto.ManagerHomestayResponse;
 import vn.edu.hust.homestay.homestay.dto.UpdateManagerHomestayRequest;
 import vn.edu.hust.homestay.homestay.service.ManagerHomestayService;
+import vn.edu.hust.homestay.policy.dto.HomestayPolicyResponse;
+import vn.edu.hust.homestay.policy.service.HomestayPolicyService;
 
 /**
  * Controller xử lý các API quản lý thông tin homestay của Manager:
  * - API-MGR-01: GET /api/v1/manager/homestay
  * - API-MGR-02: PATCH /api/v1/manager/homestay
+ * - API-MGR-POLICY-01: GET /api/v1/manager/homestay/policies
  * Ngày thực hiện: 19/10/2026
  */
 @RestController
@@ -23,9 +27,14 @@ import vn.edu.hust.homestay.homestay.service.ManagerHomestayService;
 public class ManagerHomestayController {
 
     private final ManagerHomestayService managerHomestayService;
+    private final HomestayPolicyService homestayPolicyService;
 
-    public ManagerHomestayController(ManagerHomestayService managerHomestayService) {
+    public ManagerHomestayController(
+            ManagerHomestayService managerHomestayService,
+            HomestayPolicyService homestayPolicyService
+    ) {
         this.managerHomestayService = managerHomestayService;
+        this.homestayPolicyService = homestayPolicyService;
     }
 
     /**
@@ -48,6 +57,18 @@ public class ManagerHomestayController {
             @Valid @RequestBody UpdateManagerHomestayRequest request
     ) {
         ManagerHomestayResponse response = managerHomestayService.updateHomestay(principal, request);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    /**
+     * API-MGR-POLICY-01 — Xem chính sách & quy định áp dụng cho cơ sở được giao
+     */
+    @Operation(summary = "API-MGR-POLICY-01: Xem chính sách và quy định áp dụng cho cơ sở quản lý")
+    @GetMapping("/policies")
+    public ResponseEntity<ApiResponse<HomestayPolicyResponse>> getAssignedHomestayPolicies(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        HomestayPolicyResponse response = homestayPolicyService.getAssignedHomestayPolicies(principal);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 }

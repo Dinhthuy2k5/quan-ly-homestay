@@ -14,8 +14,6 @@ import java.time.LocalDate;
 @AllArgsConstructor
 public class AvailabilitySearchRequest {
 
-    private String province;
-    private String keyword;
     private Long homestayId;
     private LocalDate checkInDate;
     private LocalDate checkOutDate;

@@ -56,7 +56,7 @@ export function SearchResultsPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const search = useCallback((page = 0) => hasDates
-    ? searchAvailableRooms({ province, keyword, homestayId: homestayId || undefined, checkInDate: checkIn, checkOutDate: checkOut, guestCount: guests, page, size: PAGE_SIZE })
+    ? searchAvailableRooms({ homestayId: homestayId || undefined, checkInDate: checkIn, checkOutDate: checkOut, guestCount: guests, page, size: PAGE_SIZE })
     : fetchHomestays({ province, keyword, page, size: PAGE_SIZE }),
   [hasDates, province, keyword, homestayId, checkIn, checkOut, guests]);
 

@@ -79,13 +79,8 @@ public class AvailabilitySearchService {
         int pageNumber = Math.max(0, request.getPage() == null ? 0 : request.getPage());
         int pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1,
                 request.getSize() == null ? DEFAULT_PAGE_SIZE : request.getSize()));
-        String province = normalize(request.getProvince());
-        String keyword = normalize(request.getKeyword());
-
         Page<Room> roomPage = roomRepository.searchAvailableRooms(
                 request.getHomestayId(),
-                province,
-                keyword,
                 request.getCheckInDate(),
                 request.getCheckOutDate(),
                 request.getGuestCount(),

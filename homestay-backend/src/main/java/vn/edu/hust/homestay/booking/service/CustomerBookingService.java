@@ -821,6 +821,7 @@ public class CustomerBookingService {
             int selectedDays = -1;
             int selectedPercent = -1;
             for (var rule : objectMapper.readTree(rulesJson)) {
+                // 7 ngày 100%, 3 hoàn 50%, 0 hoàn 0%
                 int threshold = rule.path("days_before_checkin").asInt(-1);
                 int percent = rule.path("refund_percent").asInt(-1);
                 if (threshold <= daysBeforeCheckIn && threshold > selectedDays) {

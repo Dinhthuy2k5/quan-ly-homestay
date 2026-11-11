@@ -4,7 +4,7 @@ import { MapPin, Phone, Home } from 'lucide-react';
 import { fileUrl } from '../../lib/api/client';
 
 /**
- * Thẻ cơ sở Homestay theo phong cách Airbnb (mục 6.3).
+ * Thẻ cơ sở Homestay.
  * Không viền, không đổ bóng, ảnh tỉ lệ 4:3 bo --radius-lg.
  */
 export function PropertyCard({ homestay }) {

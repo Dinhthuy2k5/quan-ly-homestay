@@ -9,6 +9,8 @@ import vn.edu.hust.homestay.common.response.PagedResult;
 import vn.edu.hust.homestay.homestay.dto.HomestayDetailResponse;
 import vn.edu.hust.homestay.homestay.dto.HomestaySummaryResponse;
 import vn.edu.hust.homestay.homestay.service.PublicHomestayService;
+import vn.edu.hust.homestay.policy.dto.HomestayPolicyResponse;
+import vn.edu.hust.homestay.policy.service.HomestayPolicyService;
 import vn.edu.hust.homestay.room.dto.RoomTypePublicResponse;
 import vn.edu.hust.homestay.room.dto.PublicRoomSummaryResponse;
 import vn.edu.hust.homestay.room.service.PublicRoomService;
@@ -27,10 +29,16 @@ public class PublicHomestayController {
 
     private final PublicHomestayService publicHomestayService;
     private final PublicRoomService publicRoomService;
+    private final HomestayPolicyService homestayPolicyService;
 
-    public PublicHomestayController(PublicHomestayService publicHomestayService, PublicRoomService publicRoomService) {
+    public PublicHomestayController(
+            PublicHomestayService publicHomestayService,
+            PublicRoomService publicRoomService,
+            HomestayPolicyService homestayPolicyService
+    ) {
         this.publicHomestayService = publicHomestayService;
         this.publicRoomService = publicRoomService;
+        this.homestayPolicyService = homestayPolicyService;
     }
 
     /**
@@ -100,5 +108,22 @@ public class PublicHomestayController {
     ) {
         PagedResult<PublicRoomSummaryResponse> rooms = publicRoomService.getHomestayRooms(homestayId, page, size);
         return ResponseEntity.ok(ApiResponse.ok(rooms));
+    }
+
+    /**
+     * Mã API: API-PUB-POLICY-01
+     * Tên API: Chính sách và quy định lưu trú của homestay
+     * Phương thức: GET
+     * Đường dẫn: /api/v1/public/homestays/{homestayId}/policies
+     * Quyền truy cập: PUBLIC
+     * Mục đích: Khách hàng và người dùng xem chi tiết các quy định về đặt phòng, thanh toán, cọc, hủy và nội quy.
+     */
+    @Operation(summary = "API-PUB-POLICY-01: Xem chính sách và quy định lưu trú của homestay")
+    @GetMapping("/{homestayId}/policies")
+    public ResponseEntity<ApiResponse<HomestayPolicyResponse>> getHomestayPolicies(
+            @PathVariable Long homestayId
+    ) {
+        HomestayPolicyResponse response = homestayPolicyService.getHomestayPolicies(homestayId);
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 }

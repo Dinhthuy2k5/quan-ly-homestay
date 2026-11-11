@@ -13,7 +13,7 @@ import {
   SlidersHorizontal,
   Users,
 } from 'lucide-react';
-import { fetchHomestayDetail, fetchHomestayRoomTypes, fetchHomestayRooms, searchAvailableRooms } from '../api';
+import { fetchHomestayDetail, fetchHomestayRoomTypes, fetchHomestayRooms, searchAvailableRooms, fetchHomestayPolicies } from '../api';
 import { fileUrl } from '../../../lib/api/client';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { getErrorMessage } from '../../../lib/errors';
@@ -21,6 +21,7 @@ import Button from '../../../components/ui/Button';
 import EmptyState from '../../../components/ui/EmptyState';
 import ErrorBanner from '../../../components/ui/ErrorBanner';
 import HomestayLocationMap from '../components/HomestayLocationMap';
+import HomestayPolicySection from '../components/HomestayPolicySection';
 import MultiRoomBookingModal from '../components/MultiRoomBookingModal';
 import { getAmenityMeta } from '../../../lib/amenities';
 import { formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
@@ -66,6 +67,11 @@ export function HomestayDetailPage() {
   const [selectedRoomIds, setSelectedRoomIds] = useState(new Set());
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
 
+  // Quản lý chính sách & quy định lưu trú của homestay (API-PUB-POLICY-01)
+  const [policies, setPolicies] = useState(null);
+  const [policiesLoading, setPoliciesLoading] = useState(true);
+  const [policiesError, setPoliciesError] = useState('');
+
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [homestayId]);
@@ -109,18 +115,39 @@ export function HomestayDetailPage() {
   useEffect(() => {
     if (!homestayId) return undefined;
     let active = true;
-    Promise.allSettled([fetchHomestayDetail(homestayId), fetchHomestayRoomTypes(homestayId)])
-      .then(([detailResult, typesResult]) => {
+    Promise.allSettled([
+      fetchHomestayDetail(homestayId),
+      fetchHomestayRoomTypes(homestayId),
+      fetchHomestayPolicies(homestayId),
+    ])
+      .then(([detailResult, typesResult, policiesResult]) => {
         if (!active) return;
         if (detailResult.status === 'fulfilled') {
           setHomestay(detailResult.value);
           window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        } else {
+          setError(getErrorMessage(detailResult.reason));
         }
-        else setError(getErrorMessage(detailResult.reason));
-        if (typesResult.status === 'fulfilled') setRoomTypes(typesResult.value || []);
-        else setRoomTypesError(getErrorMessage(typesResult.reason));
+
+        if (typesResult.status === 'fulfilled') {
+          setRoomTypes(typesResult.value || []);
+        } else {
+          setRoomTypesError(getErrorMessage(typesResult.reason));
+        }
+
+        if (policiesResult.status === 'fulfilled') {
+          setPolicies(policiesResult.value);
+          setPoliciesError('');
+        } else {
+          setPoliciesError(getErrorMessage(policiesResult.reason));
+        }
       })
-      .finally(() => { if (active) setLoading(false); });
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+          setPoliciesLoading(false);
+        }
+      });
     return () => { active = false; };
   }, [homestayId, reloadKey]);
 
@@ -141,7 +168,9 @@ export function HomestayDetailPage() {
 
   const retry = () => {
     setLoading(true);
+    setPoliciesLoading(true);
     setError('');
+    setPoliciesError('');
     setRoomTypesError('');
     setRoomsError('');
     setReloadKey((key) => key + 1);
@@ -487,6 +516,14 @@ export function HomestayDetailPage() {
             </div>
           ) : <p className="mt-3 text-sm text-[var(--color-muted)]">Chưa có thông tin loại phòng.</p>}
         </section>
+
+        {/* Chính sách & Quy định lưu trú (API-PUB-POLICY-01) */}
+        <HomestayPolicySection
+          policies={policies}
+          loading={policiesLoading}
+          error={policiesError}
+          className="border-t border-[var(--color-border)] pt-10"
+        />
 
         <aside className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

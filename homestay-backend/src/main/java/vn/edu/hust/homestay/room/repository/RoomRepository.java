@@ -40,6 +40,7 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     Optional<Room> findByIdAndStatus(Long id, RoomStatus status);
 
     /** Khóa các phòng trong transaction tạo booking để tuần tự hóa thao tác giữ đêm. */
+    // DB đặt 1 khóa độc quyền lên tất cả bản ghi phòng có id nằm trong danh sách
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT room FROM Room room WHERE room.id IN :roomIds ORDER BY room.id")
     List<Room> findAllByIdInForUpdate(@Param("roomIds") List<Long> roomIds);
@@ -60,16 +61,6 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
           AND h.status = 'ACTIVE'
           AND r.max_guests >= :guestCount
           AND (:homestayId IS NULL OR h.id = :homestayId)
-          AND (:province IS NULL OR LOWER(h.province) LIKE CONCAT('%', LOWER(:province), '%'))
-          AND (:keyword IS NULL OR (
-                LOWER(h.name) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(h.address) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(h.province) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(COALESCE(h.description, '')) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(r.name) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(COALESCE(r.description, '')) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(rt.name) LIKE CONCAT('%', LOWER(:keyword), '%')
-          ))
           AND EXISTS (
                 SELECT 1 FROM price_rules base_rule
                 WHERE base_rule.homestay_id = h.id
@@ -94,16 +85,6 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
           AND h.status = 'ACTIVE'
           AND r.max_guests >= :guestCount
           AND (:homestayId IS NULL OR h.id = :homestayId)
-          AND (:province IS NULL OR LOWER(h.province) LIKE CONCAT('%', LOWER(:province), '%'))
-          AND (:keyword IS NULL OR (
-                LOWER(h.name) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(h.address) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(h.province) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(COALESCE(h.description, '')) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(r.name) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(COALESCE(r.description, '')) LIKE CONCAT('%', LOWER(:keyword), '%')
-                OR LOWER(rt.name) LIKE CONCAT('%', LOWER(:keyword), '%')
-          ))
           AND EXISTS (
                 SELECT 1 FROM price_rules base_rule
                 WHERE base_rule.homestay_id = h.id
@@ -121,8 +102,6 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
         nativeQuery = true)
     Page<Room> searchAvailableRooms(
             @Param("homestayId") Long homestayId,
-            @Param("province") String province,
-            @Param("keyword") String keyword,
             @Param("checkInDate") LocalDate checkInDate,
             @Param("checkOutDate") LocalDate checkOutDate,
             @Param("guestCount") int guestCount,

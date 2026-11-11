@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Building2, MapPin, Phone, Edit3, CheckCircle2, AlertCircle, Save, X } from 'lucide-react';
-import { getAssignedHomestayApi, updateAssignedHomestayApi } from '../api';
+import { getAssignedHomestayApi, updateAssignedHomestayApi, getManagerHomestayPoliciesApi } from '../api';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import MediaManager from '../components/MediaManager';
+import HomestayPolicySection from '../../homestays/components/HomestayPolicySection';
 
 export function ManagerHomestayPage() {
   const context = useOutletContext();
@@ -20,6 +21,30 @@ export function ManagerHomestayPage() {
     hotlinePhone: '',
     description: '',
   });
+
+  const [policies, setPolicies] = useState(null);
+  const [policiesLoading, setPoliciesLoading] = useState(true);
+  const [policiesError, setPoliciesError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    getManagerHomestayPoliciesApi()
+      .then((data) => {
+        if (!active) return;
+        setPolicies(data);
+        setPoliciesError('');
+      })
+      .catch((err) => {
+        if (!active) return;
+        setPoliciesError(err.response?.data?.error?.message || 'Không thể tải chính sách homestay.');
+      })
+      .finally(() => {
+        if (active) setPoliciesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -302,6 +327,15 @@ export function ManagerHomestayPage() {
         ownerId={homestay.id}
         media={homestay.media || []}
         onChange={(media) => setHomestay((current) => ({ ...current, media }))}
+      />
+
+      {/* Chính sách & Quy định áp dụng tại cơ sở (API-MGR-POLICY-01) */}
+      <HomestayPolicySection
+        policies={policies}
+        loading={policiesLoading}
+        error={policiesError}
+        isManagerView
+        title="Chính sách & Quy định áp dụng tại cơ sở"
       />
     </div>
   );
