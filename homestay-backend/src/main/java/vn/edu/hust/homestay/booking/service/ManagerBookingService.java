@@ -2,6 +2,9 @@ package vn.edu.hust.homestay.booking.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -18,6 +21,13 @@ import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse.BookingRoomSummary;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.DepositReviewRequest;
+import vn.edu.hust.homestay.booking.dto.DepositReviewResponse;
+import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositRequest;
+import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositResponse;
+import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingRequest;
+import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
 import vn.edu.hust.homestay.booking.entity.Booking;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.entity.BookingRoom;
@@ -32,6 +42,8 @@ import vn.edu.hust.homestay.media.entity.Media;
 import vn.edu.hust.homestay.media.repository.MediaRepository;
 import vn.edu.hust.homestay.policy.entity.PolicySetting;
 import vn.edu.hust.homestay.policy.repository.PolicySettingRepository;
+import vn.edu.hust.homestay.payment.entity.Payment;
+import vn.edu.hust.homestay.payment.repository.PaymentRepository;
 import vn.edu.hust.homestay.pricing.entity.PriceRule;
 import vn.edu.hust.homestay.pricing.repository.PriceRuleRepository;
 import vn.edu.hust.homestay.room.entity.Room;
@@ -42,6 +54,9 @@ import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -84,6 +99,9 @@ public class ManagerBookingService {
     private final PriceRuleRepository priceRuleRepository;
     private final PolicySettingRepository policySettingRepository;
     private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
+    private final CancellationRefundPolicyService cancellationRefundPolicyService;
+    private final Path privateUploadRoot;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ManagerBookingService(
@@ -96,7 +114,10 @@ public class ManagerBookingService {
             MediaRepository mediaRepository,
             PriceRuleRepository priceRuleRepository,
             PolicySettingRepository policySettingRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            PaymentRepository paymentRepository,
+            CancellationRefundPolicyService cancellationRefundPolicyService,
+            @Value("${app.storage.private-upload-dir:storage/private}") String privateUploadDir
     ) {
         this.bookingRepository = bookingRepository;
         this.bookingRoomRepository = bookingRoomRepository;
@@ -108,6 +129,9 @@ public class ManagerBookingService {
         this.priceRuleRepository = priceRuleRepository;
         this.policySettingRepository = policySettingRepository;
         this.userRepository = userRepository;
+        this.paymentRepository = paymentRepository;
+        this.cancellationRefundPolicyService = cancellationRefundPolicyService;
+        this.privateUploadRoot = Paths.get(privateUploadDir).toAbsolutePath().normalize();
     }
 
     /**
@@ -402,7 +426,10 @@ public class ManagerBookingService {
             }
         }
 
-        long paidAmount = 0L;
+        // Count only money actually confirmed by staff; pending submissions are not payments received.
+        long paidAmount = paymentRepository.sumConfirmedAmounts(
+                booking.getId(), List.of(Payment.PaymentType.DEPOSIT, Payment.PaymentType.PAYMENT),
+                Payment.PaymentStatus.CONFIRMED);
         long outstandingAmount = Math.max(0L, booking.getRoomTotalPrice() - paidAmount);
         OffsetDateTime holdExpiresAt = booking.getHoldExpiresAt() == null ? null :
                 booking.getHoldExpiresAt().atOffset(ZoneOffset.UTC)
@@ -446,9 +473,253 @@ public class ManagerBookingService {
                 booking.getUpdatedAt(),
                 roomDetails,
                 instruction,
-                List.of(),
+                paymentRepository.findByBookingIdAndTypeInOrderByCreatedAtDesc(
+                                booking.getId(), List.of(Payment.PaymentType.DEPOSIT, Payment.PaymentType.REFUND))
+                        .stream()
+                        .map(payment -> new ManagerBookingDetailResponse.PaymentSummary(
+                                payment.getId(), payment.getType().name(), payment.getAmount(), payment.getStatus().name(),
+                                payment.getMethod().name(), payment.getReferenceCode(), payment.getRejectionReason(),
+                                payment.getCreatedAt() == null ? null : payment.getCreatedAt().toInstant(ZoneOffset.UTC),
+                                payment.getConfirmedAt() == null ? null : payment.getConfirmedAt().toInstant(ZoneOffset.UTC),
+                                payment.getProofUrl() != null, managerProofMimeType(payment.getProofUrl()), payment.getNote()))
+                        .toList(),
                 List.of()
         );
+    }
+
+    /** API-MGR-BOOK-05: Review one pending deposit and update its booking atomically. */
+    @Transactional
+    public DepositReviewResponse reviewDeposit(UserPrincipal principal, Long bookingId, DepositReviewRequest request) {
+        Long homestayId = validateAndGetHomestayId(principal);
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+        if (!homestayId.equals(booking.getHomestayId())) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+        if (booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Booking không ở trạng thái chờ xác nhận đặt cọc");
+        }
+
+        Payment payment = paymentRepository.findByIdAndBookingIdAndHomestayIdForUpdate(
+                        request.paymentId(), bookingId, homestayId)
+                .orElseThrow(() -> BusinessException.notFound("PAYMENT_NOT_FOUND", "Không tìm thấy khoản đặt cọc của booking"));
+        if (payment.getType() != Payment.PaymentType.DEPOSIT) {
+            throw BusinessException.notFound("PAYMENT_NOT_FOUND", "Khoản thanh toán không phải tiền đặt cọc");
+        }
+        if (payment.getStatus() != Payment.PaymentStatus.PENDING) {
+            throw BusinessException.conflict("PAYMENT_ALREADY_REVIEWED", "Khoản đặt cọc đã được xử lý");
+        }
+
+        Instant now = Instant.now();
+        LocalDateTime nowUtc = LocalDateTime.ofInstant(now, ZoneOffset.UTC);
+        if (request.decision() == DepositReviewRequest.DepositReviewDecision.REJECT) {
+            String reason = request.reason() == null ? "" : request.reason().trim();
+            if (reason.isEmpty()) {
+                throw BusinessException.badRequest("VALIDATION_ERROR", "Cần nhập lý do khi từ chối chứng từ đặt cọc");
+            }
+            payment.setStatus(Payment.PaymentStatus.REJECTED);
+            payment.setRejectionReason(reason);
+            paymentRepository.saveAndFlush(payment);
+
+            if (booking.getHoldExpiresAt() != null && booking.getHoldExpiresAt().isAfter(nowUtc)) {
+                booking.setStatus(BookingStatus.PENDING_DEPOSIT);
+            } else {
+                booking.setStatus(BookingStatus.EXPIRED);
+                bookingRepository.saveAndFlush(booking);
+                bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
+            }
+        } else {
+            if (payment.getAmount() == null || payment.getAmount() <= 0) {
+                throw BusinessException.badRequest("DEPOSIT_AMOUNT_INVALID", "Số tiền đặt cọc phải lớn hơn 0");
+            }
+            payment.setStatus(Payment.PaymentStatus.CONFIRMED);
+            payment.setConfirmedBy(principal.getId());
+            payment.setConfirmedAt(nowUtc);
+            payment.setRejectionReason(null);
+            paymentRepository.saveAndFlush(payment);
+
+            long confirmedDeposits = paymentRepository.sumConfirmedDeposits(
+                    booking.getId(), Payment.PaymentType.DEPOSIT, Payment.PaymentStatus.CONFIRMED);
+            if (confirmedDeposits >= booking.getDepositAmount()) {
+                booking.setStatus(BookingStatus.CONFIRMED);
+                booking.setApprovedBy(principal.getId());
+                booking.setApprovedAt(now);
+            } else if (booking.getHoldExpiresAt() != null && booking.getHoldExpiresAt().isAfter(nowUtc)) {
+                booking.setStatus(BookingStatus.PENDING_DEPOSIT);
+            } else {
+                booking.setStatus(BookingStatus.EXPIRED);
+                bookingRepository.saveAndFlush(booking);
+                bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
+            }
+        }
+
+        bookingRepository.saveAndFlush(booking);
+        return new DepositReviewResponse(
+                booking.getId(), booking.getStatus(), payment.getId(), payment.getStatus(),
+                booking.getApprovedAt(), payment.getRejectionReason());
+    }
+
+    /** API-PAY-02: Record cash deposit physically received by the assigned Manager. */
+    @Transactional
+    public ManagerRecordDepositResponse recordDirectDeposit(
+            UserPrincipal principal, Long bookingId, ManagerRecordDepositRequest request
+    ) {
+        Long homestayId = validateAndGetHomestayId(principal);
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+        if (!homestayId.equals(booking.getHomestayId())) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+        if (request.type() != Payment.PaymentType.DEPOSIT) {
+            throw BusinessException.badRequest("PAYMENT_TYPE_NOT_ALLOWED", "API này chỉ ghi nhận tiền đặt cọc");
+        }
+        if (request.method() != Payment.PaymentMethod.CASH) {
+            throw BusinessException.badRequest("PAYMENT_METHOD_NOT_ALLOWED", "API này chỉ ghi nhận khoản tiền mặt nhận trực tiếp tại homestay");
+        }
+        if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Chỉ ghi nhận đặt cọc trực tiếp cho booking đang chờ đặt cọc");
+        }
+
+        LocalDateTime nowUtc = LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC);
+        if (booking.getHoldExpiresAt() == null || !booking.getHoldExpiresAt().isAfter(nowUtc)) {
+            throw BusinessException.conflict("BOOKING_HOLD_EXPIRED", "Thời hạn giữ phòng đã hết; không thể ghi nhận khoản đặt cọc mới");
+        }
+
+        long confirmedDeposits = paymentRepository.sumConfirmedDeposits(
+                bookingId, Payment.PaymentType.DEPOSIT, Payment.PaymentStatus.CONFIRMED);
+        long remainingDeposit = Math.max(0L, booking.getDepositAmount() - confirmedDeposits);
+        if (remainingDeposit == 0) {
+            throw BusinessException.conflict("DEPOSIT_ALREADY_PAID", "Booking đã nhận đủ tiền đặt cọc");
+        }
+        if (request.amount() > remainingDeposit) {
+            throw BusinessException.badRequest("DEPOSIT_AMOUNT_EXCEEDS_REMAINING", "Số tiền ghi nhận không được vượt quá số tiền đặt cọc còn thiếu");
+        }
+
+        Payment payment = new Payment();
+        payment.setBookingId(bookingId);
+        payment.setHomestayId(homestayId);
+        payment.setType(Payment.PaymentType.DEPOSIT);
+        payment.setAmount(request.amount());
+        payment.setMethod(Payment.PaymentMethod.CASH);
+        payment.setStatus(Payment.PaymentStatus.CONFIRMED);
+        payment.setNote(request.note() == null || request.note().isBlank() ? null : request.note().trim());
+        payment.setCreatedBy(principal.getId());
+        payment.setConfirmedBy(principal.getId());
+        payment.setConfirmedAt(nowUtc);
+        Payment saved = paymentRepository.saveAndFlush(payment);
+
+        long totalConfirmedDeposits = confirmedDeposits + saved.getAmount();
+        if (totalConfirmedDeposits >= booking.getDepositAmount()) {
+            Instant approvedAt = Instant.now();
+            booking.setStatus(BookingStatus.CONFIRMED);
+            booking.setApprovedBy(principal.getId());
+            booking.setApprovedAt(approvedAt);
+        }
+        bookingRepository.saveAndFlush(booking);
+
+        return new ManagerRecordDepositResponse(
+                saved.getId(), bookingId, saved.getType(), saved.getAmount(), saved.getMethod(),
+                saved.getStatus(), booking.getStatus());
+    }
+
+    /** API-MGR-BOOK-06: Cancel only eligible bookings at this manager's assigned homestay. */
+    @Transactional
+    public ManagerCancelBookingResponse cancelBooking(
+            UserPrincipal principal, Long bookingId, ManagerCancelBookingRequest request
+    ) {
+        if (request == null || request.reason() == null || request.reason().isBlank()) {
+            throw BusinessException.badRequest("CANCELLATION_REASON_REQUIRED", "Cần chọn hoặc nhập lý do hủy booking");
+        }
+        if (request.requestedByCustomer() == null) {
+            throw BusinessException.badRequest("CANCELLATION_SOURCE_REQUIRED", "Cần chọn nguồn yêu cầu hủy booking");
+        }
+        Long homestayId = validateAndGetHomestayId(principal);
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+        if (!homestayId.equals(booking.getHomestayId())) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+        if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT && booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Booking ở trạng thái hiện tại không thể hủy");
+        }
+
+        int refundPercent = cancellationRefundPolicyService.resolveRefundPercent(booking);
+        // Refund the confirmed deposit only; remaining PAYMENT is collected at checkout.
+        long paidDeposit = paymentRepository.sumConfirmedDeposits(
+                booking.getId(), Payment.PaymentType.DEPOSIT, Payment.PaymentStatus.CONFIRMED);
+        long refundAmount = BigDecimal.valueOf(paidDeposit)
+                .multiply(BigDecimal.valueOf(refundPercent))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
+                .longValueExact();
+
+        String reason = request.reason().trim();
+        booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancelledAt(Instant.now());
+        booking.setCancelledBy(principal.getId());
+        booking.setCancelReason((Boolean.TRUE.equals(request.requestedByCustomer()) ? "Khách yêu cầu: " : "Sự cố homestay: ") + reason);
+        booking.setRefundAmount(refundAmount);
+        bookingRepository.saveAndFlush(booking);
+        bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
+
+        if (refundAmount > 0) {
+            Payment refund = new Payment();
+            refund.setBookingId(booking.getId());
+            refund.setHomestayId(homestayId);
+            refund.setType(Payment.PaymentType.REFUND);
+            refund.setAmount(refundAmount);
+            refund.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+            refund.setStatus(Payment.PaymentStatus.PENDING);
+            refund.setNote("Hoàn tiền theo chính sách hủy booking");
+            refund.setCreatedBy(principal.getId());
+            paymentRepository.save(refund);
+        }
+        return new ManagerCancelBookingResponse(booking.getId(), booking.getStatus(), refundAmount, refundAmount > 0);
+    }
+
+    /** Authenticated proof delivery for Manager review; never expose private uploads under /files/**. */
+    @Transactional(readOnly = true)
+    public CustomerDepositProof getDepositProof(UserPrincipal principal, Long bookingId, Long paymentId) {
+        Long homestayId = validateAndGetHomestayId(principal);
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+        if (!homestayId.equals(booking.getHomestayId())) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+        Payment payment = paymentRepository.findByIdAndBookingIdAndHomestayId(paymentId, bookingId, homestayId)
+                .orElseThrow(() -> BusinessException.notFound("PAYMENT_NOT_FOUND", "Không tìm thấy khoản đặt cọc của booking"));
+        if (payment.getType() != Payment.PaymentType.DEPOSIT) {
+            throw BusinessException.notFound("PAYMENT_NOT_FOUND", "Khoản thanh toán không phải tiền đặt cọc");
+        }
+        String key = payment.getProofUrl();
+        if (key == null || !key.matches("payments/[0-9a-fA-F-]{36}\\.(jpg|png|webp|pdf)")) {
+            throw BusinessException.notFound("DEPOSIT_PROOF_NOT_FOUND", "Không tìm thấy chứng từ đặt cọc");
+        }
+        Path path = privateUploadRoot.resolve(key).normalize();
+        Path paymentFolder = privateUploadRoot.resolve("payments").normalize();
+        if (!paymentFolder.startsWith(privateUploadRoot) || !path.startsWith(paymentFolder) || !Files.isRegularFile(path)) {
+            throw BusinessException.notFound("DEPOSIT_PROOF_NOT_FOUND", "Không tìm thấy chứng từ đặt cọc");
+        }
+        String extension = key.substring(key.lastIndexOf('.') + 1);
+        org.springframework.http.MediaType mediaType = switch (extension) {
+            case "jpg" -> org.springframework.http.MediaType.IMAGE_JPEG;
+            case "png" -> org.springframework.http.MediaType.IMAGE_PNG;
+            case "webp" -> org.springframework.http.MediaType.parseMediaType("image/webp");
+            case "pdf" -> org.springframework.http.MediaType.APPLICATION_PDF;
+            default -> org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
+        };
+        return new CustomerDepositProof(new FileSystemResource(path), mediaType,
+                "deposit-proof-" + paymentId + "." + extension);
+    }
+
+    private String managerProofMimeType(String key) {
+        if (key == null) return null;
+        return switch (key.substring(key.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT)) {
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "png" -> "image/png";
+            case "webp" -> "image/webp";
+            case "pdf" -> "application/pdf";
+            default -> null;
+        };
     }
 
     /**

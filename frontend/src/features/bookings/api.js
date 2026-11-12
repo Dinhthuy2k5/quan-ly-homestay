@@ -57,9 +57,12 @@ export async function submitCustomerDepositApi(bookingId, { amount, referenceCod
   return res.data?.data || null;
 }
 
-/** Tải chứng từ đặt cọc riêng tư của booking để chủ booking xem lại. */
-export async function fetchCustomerDepositProofApi(bookingId) {
-  const res = await apiClient.get(`/customer/bookings/${bookingId}/deposit-submissions/latest/proof`, {
+/** Tải chứng từ đặt cọc / thanh toán của booking để chủ booking xem lại. */
+export async function fetchCustomerDepositProofApi(bookingId, paymentId) {
+  const url = paymentId
+    ? `/customer/bookings/${bookingId}/payments/${paymentId}/proof`
+    : `/customer/bookings/${bookingId}/deposit-submissions/latest/proof`;
+  const res = await apiClient.get(url, {
     responseType: 'blob',
   });
   return res.data;

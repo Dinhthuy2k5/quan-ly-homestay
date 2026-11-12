@@ -211,7 +211,7 @@ export default function ManagerCreateBookingModal({ homestay, onClose, onSuccess
       aria-labelledby="create-booking-title"
       className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="relative my-8 w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative my-8 w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-2)] animate-in fade-in zoom-in-95 duration-150">
         {/* Header Modal */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface-soft)] px-6 py-4.5">
           <div className="flex items-center gap-2.5">

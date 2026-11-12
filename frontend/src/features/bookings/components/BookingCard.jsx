@@ -35,7 +35,7 @@ export default function BookingCard({ booking, onOpenPayment }) {
   const isPendingDeposit = booking.status === 'PENDING_DEPOSIT';
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-1)] transition-all hover:border-[var(--color-border-strong)] hover:shadow-md">
+    <article className="group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-1)] transition-all hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-1)]">
       {/* Header đơn đặt phòng */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-soft)] px-5 py-3.5 sm:px-6">
         <div className="flex flex-wrap items-center gap-2.5">
@@ -85,7 +85,7 @@ export default function BookingCard({ booking, onOpenPayment }) {
               <img
                 src={fileUrl(primaryRoom.coverImageUrl)}
                 alt={primaryRoom.roomName || 'Phòng nghỉ'}
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                className="h-full w-full object-cover"
                 loading="lazy"
               />
             ) : (

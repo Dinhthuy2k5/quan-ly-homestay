@@ -26,7 +26,7 @@ export default function PaymentInstructionModal({ booking, onClose }) {
       aria-labelledby="payment-instruction-title"
       className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
     >
-      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-2)] animate-in fade-in zoom-in-95 duration-150">
         {/* Header modal */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-4.5 bg-[var(--color-surface-soft)]">
           <div className="flex items-center gap-2.5">

@@ -52,7 +52,9 @@ export default function CustomerBookingDetailPage() {
   const [proofError, setProofError] = useState('');
   const [proofSubmitting, setProofSubmitting] = useState(false);
   const [proofSuccess, setProofSuccess] = useState('');
-  const [submittedProofUrl, setSubmittedProofUrl] = useState('');
+  const [previewProofPayment, setPreviewProofPayment] = useState(null);
+  const [previewProofUrl, setPreviewProofUrl] = useState('');
+  const [previewProofError, setPreviewProofError] = useState('');
 
   const [todayTimestamp] = useState(() => {
     const d = new Date();
@@ -108,32 +110,36 @@ export default function CustomerBookingDetailPage() {
     };
   }, [bookingId, refreshKey]);
 
-  const depositPaymentId = booking?.latestDepositSubmission?.paymentId;
-  const hasProof = Boolean(booking?.latestDepositSubmission?.proofAvailable);
-
   useEffect(() => {
-    if (!hasProof || !booking?.id) {
+    if (!previewProofPayment?.proofAvailable || !booking?.id) {
       return undefined;
     }
 
     let active = true;
     let objectUrl = '';
-    fetchCustomerDepositProofApi(booking.id)
+
+    fetchCustomerDepositProofApi(booking.id, previewProofPayment.id)
       .then((blob) => {
         objectUrl = URL.createObjectURL(blob);
-        if (active) setSubmittedProofUrl(objectUrl);
-        else URL.revokeObjectURL(objectUrl);
+        if (active) {
+          setPreviewProofUrl(objectUrl);
+        } else {
+          URL.revokeObjectURL(objectUrl);
+        }
       })
       .catch(() => {
-        if (active) setSubmittedProofUrl('');
+        if (active) {
+          setPreviewProofError('Không thể tải chứng từ. Vui lòng thử lại sau.');
+        }
       });
 
     return () => {
       active = false;
-      setSubmittedProofUrl('');
+      setPreviewProofUrl('');
+      setPreviewProofError('');
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [booking?.id, depositPaymentId, hasProof]);
+  }, [booking?.id, previewProofPayment?.id, previewProofPayment?.proofAvailable]);
 
   const handleRefresh = () => {
     setLoading(true);
@@ -216,7 +222,7 @@ export default function CustomerBookingDetailPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-5xl space-y-6 py-6 animate-pulse">
+      <div className="mx-auto max-w-6xl space-y-6 py-6 animate-pulse">
         <div className="h-4 w-48 rounded bg-[var(--color-surface-soft)]" />
         <div className="h-10 w-80 rounded-xl bg-[var(--color-surface-soft)]" />
         <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
@@ -266,10 +272,9 @@ export default function CustomerBookingDetailPage() {
   const nights = nightsBetween(booking.checkInDate, booking.checkOutDate);
   const isPendingDeposit = booking.status === 'PENDING_DEPOSIT';
   const instruction = booking.paymentInstruction;
-  const latestDepositSubmission = booking.latestDepositSubmission;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 py-4 sm:py-6">
+    <div className="mx-auto max-w-6xl space-y-6 py-4 sm:py-6">
       {/* Breadcrumb */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
         <Link to="/" className="hover:text-[var(--color-ink)] transition-colors">
@@ -715,52 +720,121 @@ export default function CustomerBookingDetailPage() {
             </div>
           )}
 
-          {latestDepositSubmission && (
-            <section className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)] sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] pb-3">
-                <div>
-                  <h3 className="flex items-center gap-2 text-base font-bold text-[var(--color-ink)]">
-                    <FileText className="h-5 w-5 text-[var(--color-primary)]" />
-                    Chứng từ chuyển khoản đã gửi
-                  </h3>
-                </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${latestDepositSubmission.status === 'CONFIRMED'
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : latestDepositSubmission.status === 'REJECTED'
-                    ? 'bg-rose-50 text-rose-700'
-                    : 'bg-amber-50 text-amber-800'}`}>
-                  {latestDepositSubmission.status === 'CONFIRMED' ? 'Đã xác nhận'
-                    : latestDepositSubmission.status === 'REJECTED' ? 'Bị từ chối' : 'Đang chờ xác nhận'}
+          {/* Lịch sử đặt cọc & thanh toán */}
+          <section className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)] sm:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3">
+              <h3 className="flex items-center gap-2 text-base font-bold text-[var(--color-ink)]">
+                <CreditCard className="h-5 w-5 text-[var(--color-primary)]" />
+                <span>Lịch sử đặt cọc & thanh toán</span>
+              </h3>
+              {booking.status === 'PENDING_APPROVAL' && (
+                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+                  Đang chờ quản lý xác nhận cọc
                 </span>
+              )}
+            </div>
+
+            {booking.payments && booking.payments.length > 0 ? (
+              <div className="divide-y divide-[var(--color-border)]">
+                {booking.payments.map((payment) => {
+                  const isDeposit = payment.paymentType === 'DEPOSIT';
+                  const isRefund = payment.paymentType === 'REFUND';
+                  const title = isDeposit ? 'Tiền đặt cọc' : isRefund ? 'Khoản hoàn tiền' : 'Khoản thanh toán';
+
+                  return (
+                    <div
+                      key={payment.id}
+                      className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
+                    >
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-sm sm:text-base text-[var(--color-ink)]">
+                            {title}
+                          </span>
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                              payment.status === 'CONFIRMED'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : payment.status === 'REJECTED'
+                                ? 'bg-rose-50 text-rose-700'
+                                : 'bg-amber-50 text-amber-800'
+                            }`}
+                          >
+                            {payment.status === 'CONFIRMED'
+                              ? 'Đã xác nhận'
+                              : payment.status === 'REJECTED'
+                              ? 'Bị từ chối'
+                              : 'Đang chờ xác nhận'}
+                          </span>
+                          <span className="text-xs text-[var(--color-muted)]">
+                            · {payment.paymentMethod === 'BANK_TRANSFER' ? 'Chuyển khoản' : 'Tiền mặt'}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+                          <span className="text-xs text-[var(--color-muted)]">Số tiền:</span>
+                          <span className="font-bold text-base text-[var(--color-ink)]">
+                            {formatVnd(payment.amount)}
+                          </span>
+                        </div>
+
+                        {payment.referenceCode && (
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-[var(--color-muted)]">Nội dung CK:</span>
+                            <span className="break-all font-mono font-semibold text-[var(--color-ink)] bg-[var(--color-surface-soft)] px-2 py-0.5 rounded border border-[var(--color-border)]">
+                              {payment.referenceCode}
+                            </span>
+                          </div>
+                        )}
+
+                        {payment.rejectionReason && (
+                          <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-800 space-y-0.5">
+                            <p className="font-bold">Lý do từ chối từ homestay:</p>
+                            <p>{payment.rejectionReason}</p>
+                          </div>
+                        )}
+
+                        {payment.note && (
+                          <p className="text-xs text-[var(--color-muted)]">
+                            Ghi chú: {payment.note}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
+                          {payment.createdAt && (
+                            <span>Gửi lúc: {formatDateTime(payment.createdAt)}</span>
+                          )}
+                          {payment.confirmedAt && (
+                            <span>· Xác nhận lúc: {formatDateTime(payment.confirmedAt)}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {payment.proofAvailable && (
+                        <div className="shrink-0 pt-1 sm:pt-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewProofError('');
+                              setPreviewProofPayment(payment);
+                            }}
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-surface-soft)] shadow-2xs transition-colors"
+                          >
+                            <FileText className="h-4 w-4" />
+                            <span>Xem chứng từ</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl bg-[var(--color-surface-soft)] p-3">
-                  <dt className="text-xs text-[var(--color-muted)]">Số tiền đã đặt cọc</dt>
-                  <dd className="mt-1 font-semibold text-[var(--color-ink)]">{formatVnd(latestDepositSubmission.amount)}</dd>
-                </div>
-                <div className="rounded-xl bg-[var(--color-surface-soft)] p-3">
-                  <dt className="text-xs text-[var(--color-muted)]">Nội dung chuyển khoản</dt>
-                  <dd className="mt-1 break-all font-mono text-sm font-semibold text-[var(--color-ink)]">
-                    {latestDepositSubmission.referenceCode || '—'}
-                  </dd>
-                </div>
-              </dl>
-              {latestDepositSubmission.proofAvailable && submittedProofUrl && (
-                <div className="mt-4">
-                  {latestDepositSubmission.proofMimeType?.startsWith('image/') ? (
-                    <img src={submittedProofUrl} alt="Chứng từ chuyển khoản đã gửi" className="max-h-72 rounded-xl border border-[var(--color-border)] object-contain" />
-                  ) : (
-                    <a href={submittedProofUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-primary)] hover:bg-[var(--color-surface-soft)]">
-                      <FileText className="h-4 w-4" /> Xem chứng từ PDF
-                    </a>
-                  )}
-                </div>
-              )}
-              {latestDepositSubmission.submittedAt && (
-                <p className="mt-3 text-xs text-[var(--color-muted)]">Đã gửi lúc {formatDateTime(latestDepositSubmission.submittedAt)}</p>
-              )}
-            </section>
-          )}
+            ) : (
+              <p className="text-sm text-[var(--color-muted)]">
+                Chưa có khoản đặt cọc hoặc thanh toán nào được ghi nhận.
+              </p>
+            )}
+          </section>
 
           {/* Ghi chú của khách nếu có */}
           {booking.note && (
@@ -871,7 +945,7 @@ export default function CustomerBookingDetailPage() {
             aria-modal="true"
             aria-labelledby="cancel-booking-title"
             onSubmit={handleCancelBooking}
-            className="w-full max-w-md space-y-4 rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl sm:p-6"
+            className="w-full max-w-md space-y-4 rounded-t-2xl bg-white p-5 shadow-[var(--shadow-2)] sm:rounded-2xl sm:p-6"
           >
             <div>
               <h2 id="cancel-booking-title" className="text-lg font-bold text-[var(--color-ink)]">Hủy đơn đặt phòng?</h2>
@@ -910,6 +984,106 @@ export default function CustomerBookingDetailPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {previewProofPayment && (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPreviewProofPayment(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proof-preview-title"
+            className="max-h-[92vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-[var(--shadow-2)] sm:rounded-2xl sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] pb-3">
+              <div>
+                <h2 id="proof-preview-title" className="text-lg font-bold text-[var(--color-ink)]">
+                  Chứng từ thanh toán / đặt cọc
+                </h2>
+                <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+                  Đơn đặt #{booking.code} · Khoản {previewProofPayment.paymentType === 'DEPOSIT' ? 'cọc' : previewProofPayment.paymentType === 'REFUND' ? 'hoàn' : 'thanh toán'} #{previewProofPayment.id}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewProofPayment(null)}
+                className="rounded-lg p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-soft)]"
+                aria-label="Đóng"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-3 rounded-xl bg-[var(--color-surface-soft)] p-3.5 sm:grid-cols-2 text-sm">
+              <div>
+                <span className="text-xs text-[var(--color-muted)]">Số tiền giao dịch</span>
+                <p className="mt-0.5 font-bold text-[var(--color-ink)]">{formatVnd(previewProofPayment.amount)}</p>
+              </div>
+              <div>
+                <span className="text-xs text-[var(--color-muted)]">Nội dung chuyển khoản</span>
+                <p className="mt-0.5 break-all font-mono text-xs font-semibold text-[var(--color-ink)]">
+                  {previewProofPayment.referenceCode || '—'}
+                </p>
+              </div>
+            </div>
+
+            <div className="min-h-36 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3">
+              {previewProofUrl ? (
+                previewProofPayment.proofMimeType?.startsWith('image/') ? (
+                  <img
+                    src={previewProofUrl}
+                    alt="Chứng từ chuyển khoản"
+                    className="mx-auto max-h-[60vh] rounded-lg object-contain shadow-xs"
+                  />
+                ) : (
+                  <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-center p-4">
+                    <FileText className="h-10 w-10 text-[var(--color-muted)]" />
+                    <p className="text-sm font-medium text-[var(--color-ink)]">Tệp chứng từ PDF</p>
+                    <a
+                      href={previewProofUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                    >
+                      <FileText className="h-4 w-4" />
+                      <span>Mở xem chứng từ PDF</span>
+                    </a>
+                  </div>
+                )
+              ) : previewProofError ? (
+                <div className="py-8 text-center text-sm text-rose-600">
+                  {previewProofError}
+                </div>
+              ) : (
+                <div className="flex min-h-32 flex-col items-center justify-center gap-2 py-8 text-center text-sm text-[var(--color-muted)]">
+                  <RefreshCw className="h-5 w-5 animate-spin text-[var(--color-primary)]" />
+                  <span>Đang tải chứng từ…</span>
+                </div>
+              )}
+            </div>
+
+            {previewProofPayment.rejectionReason && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                <strong className="font-semibold">Lý do từ chối từ homestay:</strong>{' '}
+                {previewProofPayment.rejectionReason}
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewProofPayment(null)}
+                className="min-h-10 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
+          </section>
         </div>
       )}
     </div>

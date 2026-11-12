@@ -110,7 +110,7 @@ export default function CustomerBookingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-7 py-4 sm:py-6">
+    <div className="mx-auto max-w-6xl space-y-7 py-4 sm:py-6">
       {/* Breadcrumb */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
         <Link to="/" className="hover:text-[var(--color-ink)] transition-colors">

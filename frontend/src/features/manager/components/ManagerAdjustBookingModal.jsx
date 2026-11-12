@@ -218,7 +218,7 @@ export default function ManagerAdjustBookingModal({
       aria-labelledby="manager-adjust-booking-title"
       className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="relative my-8 w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative my-8 w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-2)] animate-in fade-in zoom-in-95 duration-150">
         {/* Header Modal */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface-soft)] px-6 py-4.5">
           <div className="flex items-center gap-3">
@@ -247,15 +247,15 @@ export default function ManagerAdjustBookingModal({
         {/* Form điều chỉnh */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Thông tin chính sách */}
-          <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-xs sm:text-sm text-blue-900 flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 shrink-0 text-blue-700 mt-0.5" />
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-xs sm:text-sm text-[var(--color-ink)] flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-[var(--color-body)] mt-0.5" />
             <div className="space-y-1">
               <p className="font-bold">
                 {isConfirmed
                   ? 'Quy tắc điều chỉnh đơn đã xác nhận (CONFIRMED):'
                   : 'Quy tắc điều chỉnh đơn chờ duyệt (PENDING_APPROVAL) / chờ cọc (PENDING_DEPOSIT):'}
               </p>
-              <p className="text-blue-800 leading-relaxed text-xs sm:text-sm">
+              <p className="text-[var(--color-body)] leading-relaxed text-xs sm:text-sm">
                 {isConfirmed
                   ? 'Quản lý có thể thay đổi ngày lưu trú hoặc đổi/thêm/bớt phòng nếu còn ít nhất 3 ngày trước ngày nhận phòng. Tiền cọc khách đã chuyển được GIỮ NGUYÊN; hệ thống tính lại tổng tiền phòng mới, số tiền thừa/thiếu còn lại sẽ được quyết toán toàn bộ lúc khách Check-out.'
                   : 'Quản lý có thể thay đổi ngày, số khách hoặc đổi/thêm/bớt phòng cho khách. Tổng tiền phòng và số tiền cọc cần thu sẽ được tự động tính toán lại theo giá các đêm lưu trú mới.'}

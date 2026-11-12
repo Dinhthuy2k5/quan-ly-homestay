@@ -20,7 +20,7 @@ export function PropertyCard({ homestay }) {
             src={fullCoverUrl}
             alt={name}
             loading="lazy"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out"
+            className="w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none';
               const fallback = e.currentTarget.nextElementSibling;

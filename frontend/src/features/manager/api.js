@@ -266,6 +266,44 @@ export async function adjustManagerBookingApi(bookingId, { checkInDate, checkOut
   return res.data?.data;
 }
 
+/** API-MGR-BOOK-05: Duyệt hoặc từ chối một khoản DEPOSIT đang chờ xác minh. */
+export async function reviewManagerDepositApi(bookingId, { paymentId, decision, reason }) {
+  const res = await apiClient.post(`/manager/bookings/${bookingId}/deposit-review`, {
+    paymentId: Number(paymentId),
+    decision,
+    reason: reason?.trim() || null,
+  });
+  return res.data?.data || null;
+}
+
+/** API-PAY-02: Ghi nhận tiền đặt cọc tiền mặt đã nhận trực tiếp tại homestay. */
+export async function recordManagerDirectDepositApi(bookingId, { amount, note }) {
+  const res = await apiClient.post(`/manager/bookings/${bookingId}/payments`, {
+    type: 'DEPOSIT',
+    amount: Number(amount),
+    method: 'CASH',
+    note: note?.trim() || null,
+  });
+  return res.data?.data || null;
+}
+
+/** API-MGR-BOOK-06: Cancel a booking and calculate any refund from its cancellation policy. */
+export async function cancelManagerBookingApi(bookingId, { reason, requestedByCustomer }) {
+  const res = await apiClient.post(`/manager/bookings/${bookingId}/cancel`, {
+    reason: reason?.trim(),
+    requestedByCustomer: Boolean(requestedByCustomer),
+  });
+  return res.data?.data || null;
+}
+
+/** Tải riêng tư chứng từ đặt cọc để Manager đối chiếu giao dịch. */
+export async function fetchManagerDepositProofApi(bookingId, paymentId) {
+  const res = await apiClient.get(`/manager/bookings/${bookingId}/payments/${paymentId}/proof`, {
+    responseType: 'blob',
+  });
+  return res.data;
+}
+
 /**
  * API-MEDIA-01: upload một file media; để Axios tự tạo multipart boundary.
  */

@@ -86,7 +86,13 @@ public record ManagerBookingDetailResponse(
             Long amount,
             String status,
             String paymentMethod,
-            Instant createdAt
+            String referenceCode,
+            String rejectionReason,
+            Instant createdAt,
+            Instant confirmedAt,
+            boolean proofAvailable,
+            String proofMimeType,
+            String note
     ) {}
 
     public record ServiceSummary(

@@ -28,7 +28,7 @@ import { formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
 
 function DetailSkeleton() {
   return (
-    <div aria-label="Đang tải thông tin homestay" className="mx-auto max-w-6xl animate-pulse space-y-6">
+    <div aria-label="Đang tải thông tin homestay" className="mx-auto max-w-7xl animate-pulse space-y-6">
       <div className="h-8 w-1/2 rounded bg-[var(--color-surface-soft)]" />
       <div className="aspect-[16/7] rounded-[var(--radius-lg)] bg-[var(--color-surface-soft)]" />
       <div className="h-24 rounded bg-[var(--color-surface-soft)]" />
@@ -250,7 +250,7 @@ export function HomestayDetailPage() {
   const nights = checkInDate && checkOutDate ? nightsBetween(checkInDate, checkOutDate) : 0;
 
   return (
-    <article className="mx-auto max-w-6xl space-y-8 sm:space-y-10 pb-28">
+    <article className="mx-auto max-w-7xl space-y-8 sm:space-y-10 pb-28">
       <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
         <Link to="/" className="rounded-sm hover:text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-ink)]">Khám phá</Link>
         <span aria-hidden="true">›</span>
@@ -382,7 +382,7 @@ export function HomestayDetailPage() {
                   <article
                     key={roomId}
                     className={`group min-w-0 rounded-2xl p-3 border transition-all duration-200 flex flex-col justify-between ${isSelected
-                      ? 'border-[var(--color-primary)] bg-emerald-50/20 shadow-md ring-2 ring-[var(--color-primary)]/20'
+                      ? 'border-[var(--color-primary)] bg-emerald-50/20 shadow-[var(--shadow-1)] ring-2 ring-[var(--color-primary)]/20'
                       : 'border-[var(--color-border)] bg-white hover:border-[var(--color-border-strong)]'
                       }`}
                   >
@@ -400,7 +400,7 @@ export function HomestayDetailPage() {
                               src={fileUrl(room.coverImageUrl)}
                               alt={room.roomName || room.name}
                               loading="lazy"
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                              className="h-full w-full object-cover"
                             />
                           ) : (
                             <div className="flex h-full items-center justify-center text-[var(--color-muted)]">
@@ -545,7 +545,7 @@ export function HomestayDetailPage() {
       {/* Thanh cố định dưới màn hình khi có phòng được chọn */}
       {selectedRooms.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--color-border)] bg-white/95 p-3.5 sm:p-4 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] animate-in slide-in-from-bottom-3 duration-200">
-          <div className="mx-auto flex max-w-6xl flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+          <div className="mx-auto flex max-w-7xl flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
             <div className="flex flex-wrap items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-sm font-bold text-[var(--color-primary)]">
                 {selectedRooms.length}

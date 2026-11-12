@@ -1,18 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { CalendarCheck, ChevronDown, Home, LogIn, LogOut, Menu, User as UserIcon } from 'lucide-react';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../lib/constants';
 import { useAuth } from '../features/auth/context/useAuth';
 
 const ROLE_BADGES = {
-  CUSTOMER: { label: 'Khách hàng', className: 'bg-white text-[var(--color-body)] border-[var(--color-border)]' },
-  MANAGER: { label: 'Quản lý cơ sở', className: 'bg-[var(--color-primary-soft)] text-[var(--color-primary)] border-[var(--color-primary-disabled)]' },
-  DIRECTOR: { label: 'Giám đốc', className: 'bg-amber-50 text-amber-800 border-amber-200' },
-  ADMIN: { label: 'Quản trị viên', className: 'bg-purple-50 text-purple-700 border-purple-200' },
+  CUSTOMER: { label: 'Khách hàng', className: 'bg-[var(--color-surface-soft)] text-[var(--color-body)] border-[var(--color-border)]' },
+  MANAGER: { label: 'Quản lý cơ sở', className: 'bg-[var(--color-surface-soft)] text-[var(--color-body)] border-[var(--color-border)]' },
+  DIRECTOR: { label: 'Giám đốc', className: 'bg-[var(--color-surface-soft)] text-[var(--color-body)] border-[var(--color-border)]' },
+  ADMIN: { label: 'Quản trị viên', className: 'bg-[var(--color-surface-soft)] text-[var(--color-body)] border-[var(--color-border)]' },
 };
 
 export function PublicLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isManagerRoute = location.pathname.startsWith('/manager');
   const { user, isAuthenticated, logout } = useAuth();
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -47,7 +49,7 @@ export function PublicLayout() {
   return (
     <div className="flex min-h-screen flex-col bg-[var(--color-surface)] text-[var(--color-ink)]">
       <header className="sticky top-0 z-[var(--z-sticky)] border-b border-[var(--color-border)] bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between gap-3 px-4 sm:h-20 sm:px-6">
+        <div className={`mx-auto flex h-16 ${isManagerRoute ? 'max-w-[1760px]' : 'max-w-[1440px]'} items-center justify-between gap-3 px-4 sm:h-20 sm:px-6`}>
           <Link to="/" aria-label="Homestay — Trang chủ" className="flex shrink-0 items-center gap-2 text-lg font-bold tracking-tight text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)] sm:text-xl">
             <span className="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
               <Home aria-hidden="true" className="h-5 w-5" />
@@ -63,13 +65,12 @@ export function PublicLayout() {
                 onClick={() => setMenuOpen((open) => !open)}
                 aria-expanded={menuOpen}
                 aria-label="Mở menu tài khoản cá nhân"
-                className="flex h-11 sm:h-12 items-center gap-2.5 rounded-full border border-[var(--color-border)] bg-white py-1.5 pl-3 pr-2.5 shadow-[var(--shadow-1)] transition-all hover:border-[var(--color-border-strong)] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)]"
+                className="flex h-11 sm:h-12 items-center gap-2.5 rounded-full border border-[var(--color-border)] bg-white py-1.5 pl-3 pr-2.5 shadow-[var(--shadow-1)] transition-all hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-1)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)]"
               >
                 <Menu aria-hidden="true" className="h-4 w-4 text-[var(--color-body)]" />
 
-                {/* Avatar nổi bật với màu thương hiệu primary */}
                 <span
-                  className="grid h-8 w-8 sm:h-9 sm:w-9 place-items-center rounded-full bg-[var(--color-primary)] text-xs sm:text-sm font-bold text-white shadow-xs"
+                  className="grid h-8 w-8 sm:h-9 sm:w-9 place-items-center rounded-full bg-[var(--color-surface-soft)] text-xs sm:text-sm font-semibold text-[var(--color-ink)]"
                   aria-hidden="true"
                 >
                   {getInitials(user?.fullName)}
@@ -170,7 +171,7 @@ export function PublicLayout() {
                       <Link
                         to="/director"
                         onClick={() => setMenuOpen(false)}
-                        className="block rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors"
+                        className="block rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] transition-colors"
                       >
                         Khu vực Giám đốc
                       </Link>
@@ -179,7 +180,7 @@ export function PublicLayout() {
                       <Link
                         to="/admin/users"
                         onClick={() => setMenuOpen(false)}
-                        className="block rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-semibold text-purple-700 hover:bg-purple-50 transition-colors"
+                        className="block rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] transition-colors"
                       >
                         Quản trị hệ thống
                       </Link>
@@ -262,12 +263,12 @@ export function PublicLayout() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-6 sm:py-8">
+      <main className={`mx-auto w-full ${isManagerRoute ? 'max-w-[1760px]' : 'customer-area max-w-[1440px]'} flex-1 px-4 py-6 sm:px-6 sm:py-8`}>
         <Outlet />
       </main>
 
       <footer className="mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface-soft)]">
-        <div className="mx-auto grid max-w-[1280px] gap-8 px-4 py-8 text-sm sm:grid-cols-3 sm:px-6">
+        <div className={`mx-auto grid ${isManagerRoute ? 'max-w-[1760px]' : 'max-w-[1440px]'} gap-8 px-4 py-8 text-sm sm:grid-cols-3 sm:px-6`}>
           <div>
             <h2 className="font-semibold text-[var(--color-ink)]">Khám phá</h2>
             <Link to="/search" className="mt-3 inline-block text-[var(--color-body)] hover:underline">Xem tất cả homestay</Link>

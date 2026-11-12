@@ -178,7 +178,7 @@ export default function ManagerPriceRulesPage() {
       {/* Toast thông báo */}
       {toast.message && (
         <div
-          className={`fixed bottom-6 right-6 z-[var(--z-toast)] flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl transition-all ${
+          className={`fixed bottom-6 right-6 z-[var(--z-toast)] flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-[var(--shadow-2)] transition-all ${
             toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
           }`}
         >

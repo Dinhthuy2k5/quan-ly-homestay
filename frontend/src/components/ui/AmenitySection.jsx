@@ -43,7 +43,7 @@ function AmenitiesModal({ amenities, onClose }) {
       />
 
       {/* Nội dung Modal */}
-      <div className="relative z-10 flex w-full max-w-2xl flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl max-h-[90dvh] sm:max-h-[85dvh] overflow-hidden">
+      <div className="relative z-10 flex w-full max-w-2xl flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-[var(--shadow-2)] max-h-[90dvh] sm:max-h-[85dvh] overflow-hidden">
         {/* Thanh tiêu đề sticky */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white/95 px-6 py-4 backdrop-blur">
           <button

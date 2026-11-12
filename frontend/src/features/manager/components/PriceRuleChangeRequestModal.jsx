@@ -293,7 +293,7 @@ export default function PriceRuleChangeRequestModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="price-request-modal-title"
-        className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-[var(--shadow-2)] space-y-5 my-8 max-h-[90vh] overflow-y-auto"
       >
         {/* Header */}
         <div className="flex items-start justify-between border-b border-gray-100 pb-4">

@@ -306,7 +306,7 @@ export function ManagerRoomsPage() {
     <div className="space-y-6">
       {/* Toast thông báo */}
       {successToast && (
-        <div className="fixed bottom-6 right-6 z-[var(--z-toast)] flex items-center gap-2.5 rounded-2xl bg-emerald-600 px-5 py-3.5 text-sm font-semibold text-white shadow-2xl transition-all">
+        <div className="fixed bottom-6 right-6 z-[var(--z-toast)] flex items-center gap-2.5 rounded-2xl bg-emerald-600 px-5 py-3.5 text-sm font-semibold text-white shadow-[var(--shadow-2)] transition-all">
           <CheckCircle2 className="h-5 w-5 shrink-0" />
           <span>{successToast}</span>
         </div>
@@ -366,7 +366,7 @@ export function ManagerRoomsPage() {
                 setModalError('');
                 setCreateModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-[var(--color-primary-hover)] transition-all active:scale-[0.98]"
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 py-2.5 text-sm font-bold text-white shadow-[var(--shadow-1)] hover:bg-[var(--color-primary-hover)] transition-all active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" />
               <span>Thêm phòng mới</span>
@@ -478,11 +478,11 @@ export function ManagerRoomsPage() {
               <div
                 key={room.id}
                 onClick={() => navigate(`/manager/rooms/${room.id}`)}
-                className="group flex flex-col cursor-pointer transition-transform duration-200"
+                className="group flex flex-col cursor-pointer"
               >
                 {/* Photo container */}
                 <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-gray-100 shadow-sm border border-gray-100">
-                  <RoomCoverImage room={room} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  <RoomCoverImage room={room} className="h-full w-full object-cover" />
                   {/* Status Badge floating on top right */}
                   <div className="absolute top-3 right-3">
                     <StatusBadge type="room" status={room.status} />
@@ -685,7 +685,7 @@ export function ManagerRoomsPage() {
       {/* MODAL: TẠO PHÒNG MỚI (API-MGR-04) */}
       {createModalOpen && (
         <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-[var(--shadow-2)]">
             <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
               <h3 className="text-xl font-bold text-gray-900">Thêm phòng mới cho homestay</h3>
               <button
@@ -876,7 +876,7 @@ export function ManagerRoomsPage() {
       {/* MODAL: CHỈNH SỬA PHÒNG (API-MGR-06) */}
       {editModalOpen && (
         <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-[var(--shadow-2)]">
             <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
               <h3 className="text-xl font-bold text-gray-900">Chỉnh sửa thông tin phòng</h3>
               <button
@@ -1009,7 +1009,7 @@ export function ManagerRoomsPage() {
       {/* MODAL: ĐỔI TRẠNG THÁI (API-MGR-07) */}
       {statusModalOpen && statusTargetRoom && (
         <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-[var(--shadow-2)]">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
                 <PowerOff className="h-5 w-5 text-amber-600" />

@@ -60,13 +60,13 @@ function PhotoGallery({ roomName, media }) {
 
       <div className="relative hidden h-[420px] grid-cols-4 gap-2 overflow-hidden rounded-[var(--radius-lg)] md:grid">
         <button type="button" onClick={() => { setActiveIndex(0); setLightboxOpen(true); }} aria-label="Mở ảnh chính toàn màn hình" className={`${count > 1 ? 'col-span-2' : 'col-span-4'} overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--color-ink)]`}>
-          <img src={fileUrl(media[0].url)} alt={media[0].caption || roomName} fetchPriority="high" className="h-full w-full object-cover transition-transform duration-200 hover:scale-[1.02]" />
+          <img src={fileUrl(media[0].url)} alt={media[0].caption || roomName} fetchPriority="high" className="h-full w-full object-cover" />
         </button>
         {count > 1 && (
           <div className="col-span-2 grid grid-cols-2 grid-rows-2 gap-2">
             {media.slice(1, 5).map((photo, index) => (
               <button key={photo.id || photo.url || index} type="button" onClick={() => { setActiveIndex(index + 1); setLightboxOpen(true); }} aria-label={`Mở ảnh ${index + 2}`} className="min-h-0 overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--color-ink)]">
-                <img src={fileUrl(photo.url)} alt={photo.caption || `${roomName}, ảnh ${index + 2}`} loading="lazy" className="h-full w-full object-cover transition-transform duration-200 hover:scale-[1.02]" />
+                <img src={fileUrl(photo.url)} alt={photo.caption || `${roomName}, ảnh ${index + 2}`} loading="lazy" className="h-full w-full object-cover" />
               </button>
             ))}
             {count < 5 && Array.from({ length: 5 - count }).map((_, index) => <div key={`empty-${index}`} className="bg-[var(--color-surface-soft)]" />)}
@@ -96,7 +96,7 @@ function PhotoGallery({ roomName, media }) {
 
 function RoomSkeleton() {
   return (
-    <div aria-label="Đang tải thông tin phòng" className="mx-auto max-w-6xl animate-pulse space-y-6">
+    <div aria-label="Đang tải thông tin phòng" className="mx-auto max-w-7xl animate-pulse space-y-6">
       <div className="h-8 w-1/2 rounded bg-[var(--color-surface-soft)]" />
       <div className="aspect-[16/7] rounded-[var(--radius-lg)] bg-[var(--color-surface-soft)]" />
       <div className="h-40 rounded bg-[var(--color-surface-soft)]" />
@@ -154,7 +154,7 @@ export function RoomDetailPage() {
   const description = [room.description, roomType.description].filter(Boolean).join('\n\n');
 
   return (
-    <article className="mx-auto max-w-6xl space-y-7 pb-24 sm:space-y-9 lg:pb-0">
+    <article className="mx-auto max-w-7xl space-y-7 pb-24 sm:space-y-9 lg:pb-0">
       <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-muted)]">
         <Link to="/" className="hover:text-[var(--color-ink)]">Khám phá</Link><span aria-hidden="true">›</span>
         {homestay.id ? <Link to={`/homestays/${homestay.id}`} className="max-w-[50vw] truncate hover:text-[var(--color-ink)]">{homestay.name}</Link> : <span>Homestay</span>}

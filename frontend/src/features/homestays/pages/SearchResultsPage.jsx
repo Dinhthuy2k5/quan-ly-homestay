@@ -20,7 +20,7 @@ function AvailableRoomCard({ room, checkIn, checkOut, guests }) {
   return (
     <Link to={`/rooms/${room.roomId}?${detailQuery}`} className="group block rounded-[var(--radius-md)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-ink)] focus-visible:outline-offset-2">
       <div className="relative aspect-[4/3] overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface-soft)]">
-        {room.coverImageUrl ? <img src={fileUrl(room.coverImageUrl)} alt={room.roomName} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" /> : <div className="grid h-full place-items-center text-[var(--color-muted)]"><BedDouble className="h-12 w-12 stroke-[1.2]" /></div>}
+        {room.coverImageUrl ? <img src={fileUrl(room.coverImageUrl)} alt={room.roomName} loading="lazy" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-[var(--color-muted)]"><BedDouble className="h-12 w-12 stroke-[1.2]" /></div>}
       </div>
       <div className="mt-3 space-y-1">
         <div className="flex items-start justify-between gap-3">

@@ -205,7 +205,7 @@ export default function CustomerAdjustBookingModal({
       aria-labelledby="adjust-booking-title"
       className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="relative my-8 w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative my-8 w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-2)] animate-in fade-in zoom-in-95 duration-150">
         {/* Header Modal */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface-soft)] px-6 py-4.5">
           <div className="flex items-center gap-2.5">
@@ -234,15 +234,15 @@ export default function CustomerAdjustBookingModal({
         {/* Form điều chỉnh */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Thông tin chính sách */}
-          <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-900 flex items-start gap-2.5">
-            <AlertCircle className="h-4 w-4 shrink-0 text-blue-700 mt-0.5" />
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3.5 text-xs text-[var(--color-ink)] flex items-start gap-2.5">
+            <AlertCircle className="h-4 w-4 shrink-0 text-[var(--color-body)] mt-0.5" />
             <div className="space-y-1">
               <p className="font-semibold">
                 {isConfirmed
                   ? 'Chính sách điều chỉnh đơn đã xác nhận (CONFIRMED):'
                   : 'Điều chỉnh đơn đang chờ đặt cọc (PENDING DEPOSIT):'}
               </p>
-              <p className="text-blue-800 leading-relaxed">
+              <p className="text-[var(--color-body)] leading-relaxed">
                 {isConfirmed
                   ? 'Bạn có thể thay đổi ngày hoặc đổi/bỏ/thêm phòng nếu còn ít nhất 3 ngày trước ngày nhận phòng. Các khoản tiền bạn đã thanh toán được giữ nguyên và trừ vào tổng tiền mới khi đối soát.'
                   : 'Bạn có thể thay đổi ngày, số khách hoặc đổi/bỏ/thêm phòng. Tổng tiền phòng và khoản cọc cần thanh toán sẽ được tự động tính lại theo phòng và thời gian mới.'}
@@ -397,7 +397,7 @@ export default function CustomerAdjustBookingModal({
                             </span>
                           )}
                           {isOriginal ? (
-                            <span className="ml-2 inline-flex items-center rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 border border-blue-200">
+                            <span className="ml-2 inline-flex items-center rounded-md bg-[var(--color-surface-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-body)] border border-[var(--color-border)]">
                               Phòng hiện tại
                             </span>
                           ) : (
@@ -444,15 +444,15 @@ export default function CustomerAdjustBookingModal({
                     <div
                       key={r.roomId}
                       onClick={() => handleAddRoom(r.roomId)}
-                      className="flex cursor-pointer items-center justify-between rounded-xl border border-dashed border-blue-200 bg-blue-50/40 p-2.5 text-sm hover:border-[var(--color-primary)] transition-all"
+                      className="flex cursor-pointer items-center justify-between rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2.5 text-sm hover:border-[var(--color-primary)] transition-all"
                     >
                       <div>
                         <p className="font-semibold text-[var(--color-ink)]">{r.roomName}</p>
-                        <p className="text-xs text-blue-700">Phòng ban đầu trong đơn (đang bỏ chọn)</p>
+                        <p className="text-xs text-[var(--color-body)]">Phòng ban đầu trong đơn (đang bỏ chọn)</p>
                       </div>
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors"
+                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border-strong)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-body)] hover:bg-[var(--color-primary-hover)] hover:text-white transition-colors"
                       >
                         <Plus className="h-3.5 w-3.5" />
                         <span>Chọn lại</span>

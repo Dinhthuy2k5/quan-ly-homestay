@@ -150,6 +150,21 @@ public class CustomerBookingController {
                 .body(proof.resource());
     }
 
+    @Operation(summary = "Lấy chứng từ thanh toán/đặt cọc theo paymentId để khách xem lại")
+    @GetMapping("/{bookingId}/payments/{paymentId}/proof")
+    public ResponseEntity<Resource> getPaymentProof(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @PathVariable Long paymentId
+    ) {
+        CustomerDepositProof proof = customerBookingService.getPaymentProof(principal, bookingId, paymentId);
+        return ResponseEntity.ok()
+                .contentType(proof.mediaType())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        org.springframework.http.ContentDisposition.inline().filename(proof.filename()).build().toString())
+                .body(proof.resource());
+    }
+
     private Sort parseSort(String sort) {
         String[] parts = sort == null ? new String[0] : sort.trim().split(",", 2);
         String property = parts.length > 0 ? parts[0].trim() : "";

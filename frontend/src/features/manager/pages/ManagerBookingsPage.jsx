@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Calendar,
   CalendarCheck,
+  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -275,73 +276,84 @@ export default function ManagerBookingsPage() {
       {/* Search and Date filter controls */}
       <form
         onSubmit={handleSearchSubmit}
-        className="rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-xs space-y-3"
+        className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-2 shadow-[var(--shadow-1)] space-y-2"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-1 items-stretch">
           {/* Keyword Search */}
-          <div className="lg:col-span-5 space-y-1">
-            <label htmlFor="search-keyword" className="block text-xs font-semibold text-[var(--color-muted)]">
+          <div className="relative rounded-[var(--radius-md)] px-4 py-2 transition-colors hover:bg-[var(--color-surface-soft)] focus-within:bg-[var(--color-surface-soft)] lg:col-span-5">
+            <label htmlFor="search-keyword" className="block text-xs font-semibold text-[var(--color-ink)]">
               Từ khóa tìm kiếm
             </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-muted)]" />
+            <div className="flex min-w-0 items-center gap-2">
+              <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-muted)]" />
               <input
                 id="search-keyword"
                 type="text"
                 placeholder="Mã đơn (VD: BK-...), SĐT, tên khách..."
                 value={keywordInput}
                 onChange={(e) => setKeywordInput(e.target.value)}
-                className="w-full rounded-xl border border-[var(--color-border)] bg-white pl-9 pr-3 py-2 text-sm text-[var(--color-ink)] placeholder-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                className="min-w-0 w-full bg-transparent py-0.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:outline-none"
               />
               {keywordInput && (
                 <button
                   type="button"
                   onClick={() => setKeywordInput('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-ink)]"
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-white hover:text-[var(--color-ink)]"
                   title="Xóa từ khóa"
+                  aria-label="Xóa từ khóa tìm kiếm"
                 >
                   <X className="h-4 w-4" />
                 </button>
               )}
             </div>
+            <span aria-hidden="true" className="absolute right-0 top-3 hidden h-9 w-px bg-[var(--color-border)] lg:block" />
           </div>
 
           {/* From Date */}
-          <div className="lg:col-span-3 space-y-1">
-            <label htmlFor="filter-from-date" className="block text-xs font-semibold text-[var(--color-muted)]">
+          <div className="relative rounded-[var(--radius-md)] px-4 py-2 transition-colors hover:bg-[var(--color-surface-soft)] focus-within:bg-[var(--color-surface-soft)] lg:col-span-3">
+            <label htmlFor="filter-from-date" className="block text-xs font-semibold text-[var(--color-ink)]">
               Nhận phòng từ ngày
             </label>
-            <input
-              id="filter-from-date"
-              type="date"
-              value={fromDateInput}
-              onChange={(e) => setFromDateInput(e.target.value)}
-              className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-            />
+            <div className="flex items-center gap-2">
+              <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-muted)]" />
+              <input
+                id="filter-from-date"
+                type="date"
+                value={fromDateInput}
+                onChange={(e) => setFromDateInput(e.target.value)}
+                className="min-w-0 w-full bg-transparent py-0.5 text-sm text-[var(--color-ink)] focus:outline-none"
+              />
+            </div>
+            <span aria-hidden="true" className="absolute right-0 top-3 hidden h-9 w-px bg-[var(--color-border)] lg:block" />
           </div>
 
           {/* To Date */}
-          <div className="lg:col-span-3 space-y-1">
-            <label htmlFor="filter-to-date" className="block text-xs font-semibold text-[var(--color-muted)]">
+          <div className="rounded-[var(--radius-md)] px-4 py-2 transition-colors hover:bg-[var(--color-surface-soft)] focus-within:bg-[var(--color-surface-soft)] lg:col-span-3">
+            <label htmlFor="filter-to-date" className="block text-xs font-semibold text-[var(--color-ink)]">
               Đến ngày
             </label>
-            <input
-              id="filter-to-date"
-              type="date"
-              value={toDateInput}
-              onChange={(e) => setToDateInput(e.target.value)}
-              className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-            />
+            <div className="flex items-center gap-2">
+              <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-muted)]" />
+              <input
+                id="filter-to-date"
+                type="date"
+                value={toDateInput}
+                onChange={(e) => setToDateInput(e.target.value)}
+                className="min-w-0 w-full bg-transparent py-0.5 text-sm text-[var(--color-ink)] focus:outline-none"
+              />
+            </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="lg:col-span-1 flex gap-2">
+          <div className="flex gap-2 sm:col-span-2 lg:col-span-1 lg:items-center">
             <button
               type="submit"
-              className="w-full inline-flex items-center justify-center rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-[var(--color-primary-hover)] transition-colors"
+              aria-label="Tìm kiếm booking"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-pill)] bg-[var(--color-primary)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)] lg:w-11 lg:px-0"
               title="Tìm kiếm"
             >
               <Search className="h-4 w-4" />
+              <span className="lg:hidden">Tìm kiếm</span>
             </button>
           </div>
         </div>

@@ -45,3 +45,66 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Improve readability across guest-facing pages without changing manager screens. */
+.customer-area {
+  --color-body: #42474d;
+  --color-muted: #626970;
+  font-family: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-optical-sizing: auto;
+  letter-spacing: 0.005em;
+}
+
+.customer-area :where(h1, h2, h3) {
+  letter-spacing: -0.02em;
+  text-wrap: pretty;
+}
+
+.customer-area :where(.text-xs) {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+::selection {
+  color: var(--color-ink);
+  background: var(--color-primary-soft);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+button,
+a {
+  transition-duration: 160ms;
+}
+
+input,
+select,
+textarea {
+  accent-color: var(--color-primary);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-color: var(--color-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

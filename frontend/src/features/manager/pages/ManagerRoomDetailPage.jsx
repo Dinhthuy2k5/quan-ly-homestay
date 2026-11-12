@@ -220,7 +220,7 @@ export function ManagerRoomDetailPage() {
       {/* Toast thông báo */}
       {toast.message && (
         <div
-          className={`fixed bottom-6 right-6 z-[var(--z-toast)] flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl transition-all ${
+          className={`fixed bottom-6 right-6 z-[var(--z-toast)] flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-[var(--shadow-2)] transition-all ${
             toast.type === 'success'
               ? 'bg-emerald-600 text-white'
               : 'bg-rose-600 text-white'
@@ -334,7 +334,7 @@ export function ManagerRoomDetailPage() {
             {mediaList[0]?.mimeType?.startsWith('video/') ? (
               <video src={fileUrl(mediaList[0].url)} muted controls className="h-full w-full object-cover" aria-label={mediaList[0].caption || room.name} />
             ) : (
-              <img src={fileUrl(mediaList[0]?.url)} alt={mediaList[0]?.caption || room.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              <img src={fileUrl(mediaList[0]?.url)} alt={mediaList[0]?.caption || room.name} className="h-full w-full object-cover" />
             )}
             <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
           </div>
@@ -350,7 +350,7 @@ export function ManagerRoomDetailPage() {
                 {photo.mimeType?.startsWith('video/') ? (
                   <video src={fileUrl(photo.url)} muted controls className="h-full w-full object-cover" aria-label={photo.caption || `Video ${index + 2}`} />
                 ) : (
-                  <img src={fileUrl(photo.url)} alt={photo.caption || `${room.name} ảnh ${index + 2}`} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  <img src={fileUrl(photo.url)} alt={photo.caption || `${room.name} ảnh ${index + 2}`} className="h-full w-full object-cover" />
                 )}
                 <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
               </div>
@@ -368,7 +368,7 @@ export function ManagerRoomDetailPage() {
         {mediaList.length > 0 && <button
           type="button"
           onClick={() => setGalleryModalOpen(true)}
-          className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-xl bg-white/95 px-4 py-2 text-xs font-bold text-gray-900 backdrop-blur-md shadow-md hover:bg-white transition-all"
+          className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-xl bg-white/95 px-4 py-2 text-xs font-bold text-gray-900 backdrop-blur-md shadow-[var(--shadow-1)] hover:bg-white transition-all"
         >
           <span>Xem tất cả {mediaList.length} ảnh</span>
         </button>}
@@ -447,7 +447,7 @@ export function ManagerRoomDetailPage() {
 
         {/* Right Column: Sticky Management Card */}
         <div className="lg:col-span-1">
-          <div className="sticky top-6 rounded-3xl border border-gray-200 bg-white p-6 shadow-xl space-y-6">
+          <div className="sticky top-6 rounded-3xl border border-gray-200 bg-white p-6 shadow-[var(--shadow-1)] space-y-6">
             <div>
               <div className="flex items-baseline justify-between">
                 <div>
@@ -507,7 +507,7 @@ export function ManagerRoomDetailPage() {
                   setModalError('');
                   setEditModalOpen(true);
                 }}
-                className="w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-bold text-white hover:bg-[var(--color-primary-hover)] transition-all shadow-md active:scale-[0.98]"
+                className="w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-bold text-white hover:bg-[var(--color-primary-hover)] transition-all shadow-[var(--shadow-1)] active:scale-[0.98]"
               >
                 Chỉnh sửa thông tin phòng
               </button>
@@ -552,7 +552,7 @@ export function ManagerRoomDetailPage() {
       {/* MODAL: CHỈNH SỬA PHÒNG (API-MGR-06) */}
       {editModalOpen && (
         <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-[var(--shadow-2)]">
             <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
               <h3 className="text-xl font-bold text-gray-900">Chỉnh sửa thông tin phòng</h3>
               <button
@@ -691,7 +691,7 @@ export function ManagerRoomDetailPage() {
       {/* MODAL: ĐỔI TRẠNG THÁI (API-MGR-07) */}
       {statusModalOpen && (
         <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-[var(--shadow-2)]">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
                 <PowerOff className="h-5 w-5 text-amber-600" />
@@ -803,7 +803,7 @@ export function ManagerRoomDetailPage() {
       {/* MODAL: XEM BỘ SƯU TẬP ẢNH */}
       {galleryModalOpen && (
         <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-[var(--shadow-2)]">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-lg font-bold text-gray-900">Hình ảnh chỗ ở ({mediaList.length} ảnh)</h3>
               <button

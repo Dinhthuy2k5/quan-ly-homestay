@@ -184,7 +184,7 @@ export default function MediaManager({ ownerType, ownerId, media = [], onChange 
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-media-title"
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-5"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-[var(--shadow-2)] space-y-5"
           >
             <div className="flex items-start gap-4">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-rose-50 text-rose-600">

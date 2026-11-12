@@ -87,7 +87,7 @@ export function HomestayPolicySection({
         <div className="flex flex-col justify-between rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)] transition-all hover:border-[var(--color-border-strong)]">
           <div>
             <div className="flex items-center gap-2.5 text-[var(--color-ink)]">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-blue-600">
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-surface-soft)] text-[var(--color-muted)]">
                 <Clock className="h-5 w-5" />
               </div>
               <h3 className="font-semibold">Thời gian nhận & trả phòng</h3>
@@ -113,7 +113,7 @@ export function HomestayPolicySection({
           </div>
 
           <p className="mt-4 flex items-center gap-1.5 text-xs text-[var(--color-muted)] border-t border-[var(--color-border)] pt-3">
-            <Info className="h-4 w-4 shrink-0 text-blue-500" />
+            <Info className="h-4 w-4 shrink-0 text-[var(--color-muted)]" />
             <span>Liên hệ hotline của homestay nếu bạn có nhu cầu check-in sớm hoặc check-out trễ.</span>
           </p>
         </div>
@@ -174,7 +174,7 @@ export function HomestayPolicySection({
         <div className="flex flex-col justify-between rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)] transition-all hover:border-[var(--color-border-strong)]">
           <div>
             <div className="flex items-center gap-2.5 text-[var(--color-ink)]">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-purple-50 text-purple-600">
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-surface-soft)] text-[var(--color-muted)]">
                 <RotateCcw className="h-5 w-5" />
               </div>
               <h3 className="font-semibold">Chính sách hủy phòng & Hoàn cọc</h3>
@@ -218,7 +218,7 @@ export function HomestayPolicySection({
           </div>
 
           <p className="mt-4 flex items-center gap-1.5 text-xs text-[var(--color-muted)] border-t border-[var(--color-border)] pt-3">
-            <Info className="h-4 w-4 shrink-0 text-purple-500" />
+            <Info className="h-4 w-4 shrink-0 text-[var(--color-muted)]" />
             <span>Tiền hoàn lại sẽ được kế toán xử lý chuyển khoản sau khi yêu cầu hủy được xác nhận.</span>
           </p>
         </div>

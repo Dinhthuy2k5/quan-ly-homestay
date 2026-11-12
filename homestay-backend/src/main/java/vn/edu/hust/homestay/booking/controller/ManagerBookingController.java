@@ -8,7 +8,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +28,13 @@ import vn.edu.hust.homestay.booking.dto.ManagerBookingDetailResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.DepositReviewRequest;
+import vn.edu.hust.homestay.booking.dto.DepositReviewResponse;
+import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingRequest;
+import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
+import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositRequest;
+import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositResponse;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.service.ManagerBookingService;
 import vn.edu.hust.homestay.common.exception.BusinessException;
@@ -128,6 +137,53 @@ public class ManagerBookingController {
     ) {
         ManagerAdjustBookingResponse response = managerBookingService.adjustBooking(principal, bookingId, request);
         return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    @Operation(summary = "API-MGR-BOOK-05: Duyệt hoặc từ chối chứng từ đặt cọc")
+    @PostMapping("/{bookingId}/deposit-review")
+    public ResponseEntity<ApiResponse<DepositReviewResponse>> reviewDeposit(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @Valid @RequestBody DepositReviewRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(managerBookingService.reviewDeposit(principal, bookingId, request)));
+    }
+
+    /** API-PAY-02 — Ghi nhận tiền đặt cọc tiền mặt quản lý nhận trực tiếp */
+    @Operation(summary = "API-PAY-02: Ghi nhận khoản đặt cọc nhận trực tiếp tại homestay")
+    @PostMapping("/{bookingId}/payments")
+    public ResponseEntity<ApiResponse<ManagerRecordDepositResponse>> recordDirectDeposit(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @Valid @RequestBody ManagerRecordDepositRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok(managerBookingService.recordDirectDeposit(principal, bookingId, request)));
+    }
+
+    @Operation(summary = "API-MGR-BOOK-06: Hủy booking và tính khoản hoàn theo chính sách")
+    @PostMapping("/{bookingId}/cancel")
+    public ResponseEntity<ApiResponse<ManagerCancelBookingResponse>> cancelBooking(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @Valid @RequestBody ManagerCancelBookingRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(managerBookingService.cancelBooking(principal, bookingId, request)));
+    }
+
+    @Operation(summary = "Lấy chứng từ đặt cọc của booking để Manager đối chiếu")
+    @GetMapping("/{bookingId}/payments/{paymentId}/proof")
+    public ResponseEntity<Resource> getDepositProof(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @PathVariable Long paymentId
+    ) {
+        CustomerDepositProof proof = managerBookingService.getDepositProof(principal, bookingId, paymentId);
+        return ResponseEntity.ok()
+                .contentType(proof.mediaType())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        org.springframework.http.ContentDisposition.inline().filename(proof.filename()).build().toString())
+                .body(proof.resource());
     }
 
     private Sort parseSort(String sort) {

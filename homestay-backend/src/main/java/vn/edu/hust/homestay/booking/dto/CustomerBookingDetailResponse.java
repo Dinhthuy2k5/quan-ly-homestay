@@ -1,18 +1,16 @@
 package vn.edu.hust.homestay.booking.dto;
 
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
-import vn.edu.hust.homestay.payment.entity.Payment.PaymentMethod;
-import vn.edu.hust.homestay.payment.entity.Payment.PaymentStatus;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
  * Response cho API-CUS-03: Chi tiết booking của khách hàng.
- * Bao gồm đầy đủ phòng, các đêm lưu trú, tổng tiền và hướng dẫn chuyển khoản.
+ * Bao gồm đầy đủ phòng, các đêm lưu trú, tổng tiền, hướng dẫn chuyển khoản
+ * và danh sách tất cả các khoản thanh toán / đặt cọc.
  */
 public record CustomerBookingDetailResponse(
         Long id,
@@ -34,17 +32,21 @@ public record CustomerBookingDetailResponse(
         Instant createdAt,
         List<BookingRoomDetail> rooms,
         CreateBookingResponse.PaymentInstruction paymentInstruction,
-        DepositSubmissionDetail latestDepositSubmission
+        List<PaymentSummary> payments
 ) {
-    public record DepositSubmissionDetail(
-            Long paymentId,
+    public record PaymentSummary(
+            Long id,
+            String paymentType,
             Long amount,
-            PaymentMethod method,
-            PaymentStatus status,
+            String status,
+            String paymentMethod,
             String referenceCode,
-            LocalDateTime submittedAt,
+            String rejectionReason,
+            Instant createdAt,
+            Instant confirmedAt,
             boolean proofAvailable,
-            String proofMimeType
+            String proofMimeType,
+            String note
     ) {}
 
     public record BookingRoomDetail(
