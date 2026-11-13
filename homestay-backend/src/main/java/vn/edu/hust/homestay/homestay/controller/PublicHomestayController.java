@@ -14,6 +14,7 @@ import vn.edu.hust.homestay.policy.service.HomestayPolicyService;
 import vn.edu.hust.homestay.room.dto.RoomTypePublicResponse;
 import vn.edu.hust.homestay.room.dto.PublicRoomSummaryResponse;
 import vn.edu.hust.homestay.room.service.PublicRoomService;
+import vn.edu.hust.homestay.service.dto.PublicServiceResponse;
 
 import java.util.List;
 
@@ -96,6 +97,15 @@ public class PublicHomestayController {
     ) {
         List<RoomTypePublicResponse> roomTypes = publicHomestayService.getHomestayRoomTypes(homestayId);
         return ResponseEntity.ok(ApiResponse.ok(roomTypes));
+    }
+
+    /** API-PUB-04 — Dịch vụ công khai của homestay */
+    @Operation(summary = "API-PUB-04: Xem danh mục dịch vụ đang cung cấp của homestay")
+    @GetMapping("/{homestayId}/services")
+    public ResponseEntity<ApiResponse<List<PublicServiceResponse>>> getServices(
+            @PathVariable Long homestayId
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(publicHomestayService.getActiveServices(homestayId)));
     }
 
     /** API-PUB-07: Danh sách phòng ACTIVE để khách duyệt tại homestay. */

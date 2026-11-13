@@ -17,6 +17,10 @@ import vn.edu.hust.homestay.media.entity.Media.OwnerType;
 import vn.edu.hust.homestay.media.repository.MediaRepository;
 import vn.edu.hust.homestay.room.dto.RoomTypePublicResponse;
 import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
+import vn.edu.hust.homestay.service.dto.PublicServiceResponse;
+import vn.edu.hust.homestay.service.entity.ServiceOffering;
+import vn.edu.hust.homestay.service.entity.ServiceOffering.ServiceStatus;
+import vn.edu.hust.homestay.service.repository.ServiceOfferingRepository;
 
 import java.util.List;
 
@@ -32,15 +36,18 @@ public class PublicHomestayService {
     private final HomestayRepository homestayRepository;
     private final MediaRepository mediaRepository;
     private final RoomTypeRepository roomTypeRepository;
+    private final ServiceOfferingRepository serviceOfferingRepository;
 
     public PublicHomestayService(
             HomestayRepository homestayRepository,
             MediaRepository mediaRepository,
-            RoomTypeRepository roomTypeRepository
+            RoomTypeRepository roomTypeRepository,
+            ServiceOfferingRepository serviceOfferingRepository
     ) {
         this.homestayRepository = homestayRepository;
         this.mediaRepository = mediaRepository;
         this.roomTypeRepository = roomTypeRepository;
+        this.serviceOfferingRepository = serviceOfferingRepository;
     }
 
     /**
@@ -138,6 +145,19 @@ public class PublicHomestayService {
         return roomTypeRepository.findByHomestayIdOrderByNameAsc(homestayId)
                 .stream()
                 .map(RoomTypePublicResponse::from)
+                .toList();
+    }
+
+    /** API-PUB-04: Public catalog of currently active services at an active homestay. */
+    public List<PublicServiceResponse> getActiveServices(Long homestayId) {
+        homestayRepository.findByIdAndStatus(homestayId, HomestayStatus.ACTIVE)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "HOMESTAY_NOT_FOUND", "Không tìm thấy homestay đang hoạt động"));
+
+        return serviceOfferingRepository
+                .findByHomestayIdAndStatusOrderByNameAsc(homestayId, ServiceStatus.ACTIVE)
+                .stream()
+                .map(PublicServiceResponse::from)
                 .toList();
     }
 }

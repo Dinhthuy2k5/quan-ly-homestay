@@ -12,5 +12,10 @@ public record ManagerRecordDepositResponse(
         Long amount,
         PaymentMethod method,
         PaymentStatus status,
-        BookingStatus bookingStatus
-) {}
+        BookingStatus bookingStatus,
+        String referenceCode
+) {
+    public ManagerRecordDepositResponse(Long paymentId, Long bookingId, PaymentType type, Long amount, PaymentMethod method, PaymentStatus status, BookingStatus bookingStatus) {
+        this(paymentId, bookingId, type, amount, method, status, bookingStatus, null);
+    }
+}

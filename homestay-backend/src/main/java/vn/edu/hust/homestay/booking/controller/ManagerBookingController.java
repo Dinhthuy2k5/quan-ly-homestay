@@ -149,8 +149,8 @@ public class ManagerBookingController {
         return ResponseEntity.ok(ApiResponse.ok(managerBookingService.reviewDeposit(principal, bookingId, request)));
     }
 
-    /** API-PAY-02 — Ghi nhận tiền đặt cọc tiền mặt quản lý nhận trực tiếp */
-    @Operation(summary = "API-PAY-02: Ghi nhận khoản đặt cọc nhận trực tiếp tại homestay")
+    /** API-PAY-02 — Ghi nhận khoản đặt cọc cho đơn do quản lý đặt hộ */
+    @Operation(summary = "API-PAY-02: Ghi nhận khoản đặt cọc cho đơn do quản lý đặt hộ (tiền mặt hoặc chuyển khoản)")
     @PostMapping("/{bookingId}/payments")
     public ResponseEntity<ApiResponse<ManagerRecordDepositResponse>> recordDirectDeposit(
             @AuthenticationPrincipal UserPrincipal principal,

@@ -89,3 +89,11 @@ export async function fetchHomestayPolicies(homestayId) {
   const res = await apiClient.get(`/public/homestays/${homestayId}/policies`);
   return res.data?.data || null;
 }
+
+/** API-PUB-04: Danh mục dịch vụ ACTIVE đang cung cấp tại homestay. */
+export async function fetchHomestayServices(homestayId) {
+  const res = await apiClient.get(`/public/homestays/${homestayId}/services`);
+  const result = res.data?.data;
+  if (!Array.isArray(result)) throw new Error('Máy chủ trả về danh sách dịch vụ không hợp lệ.');
+  return result;
+}

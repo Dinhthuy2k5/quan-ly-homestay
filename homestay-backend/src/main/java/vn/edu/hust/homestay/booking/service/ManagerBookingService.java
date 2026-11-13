@@ -559,7 +559,7 @@ public class ManagerBookingService {
                 booking.getApprovedAt(), payment.getRejectionReason());
     }
 
-    /** API-PAY-02: Record cash deposit physically received by the assigned Manager. */
+    /** API-PAY-02: Ghi nhận khoản đặt cọc cho đơn do quản lý đặt hộ (tiền mặt hoặc chuyển khoản). */
     @Transactional
     public ManagerRecordDepositResponse recordDirectDeposit(
             UserPrincipal principal, Long bookingId, ManagerRecordDepositRequest request
@@ -570,14 +570,22 @@ public class ManagerBookingService {
         if (!homestayId.equals(booking.getHomestayId())) {
             throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
         }
+
+        // Nghiệp vụ: API-PAY-02 chỉ áp dụng cho đơn do Quản lý đặt hộ
+        boolean isManagerCreated = !(booking.getCustomerId() != null && booking.getCreatedBy().equals(booking.getCustomerId()));
+        if (!isManagerCreated) {
+            throw BusinessException.badRequest("BOOKING_NOT_MANAGER_CREATED",
+                    "Chỉ có thể ghi nhận tiền đặt cọc cho đơn đặt phòng do quản lý tạo hộ. Đơn do khách hàng tự đặt trực tuyến phải gửi chứng từ qua cổng khách hàng");
+        }
+
         if (request.type() != Payment.PaymentType.DEPOSIT) {
             throw BusinessException.badRequest("PAYMENT_TYPE_NOT_ALLOWED", "API này chỉ ghi nhận tiền đặt cọc");
         }
-        if (request.method() != Payment.PaymentMethod.CASH) {
-            throw BusinessException.badRequest("PAYMENT_METHOD_NOT_ALLOWED", "API này chỉ ghi nhận khoản tiền mặt nhận trực tiếp tại homestay");
+        if (request.method() != Payment.PaymentMethod.CASH && request.method() != Payment.PaymentMethod.BANK_TRANSFER) {
+            throw BusinessException.badRequest("PAYMENT_METHOD_NOT_ALLOWED", "Phương thức thanh toán phải là tiền mặt (CASH) hoặc chuyển khoản (BANK_TRANSFER)");
         }
         if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT) {
-            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Chỉ ghi nhận đặt cọc trực tiếp cho booking đang chờ đặt cọc");
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Chỉ ghi nhận đặt cọc cho booking đang chờ đặt cọc");
         }
 
         LocalDateTime nowUtc = LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC);
@@ -600,8 +608,13 @@ public class ManagerBookingService {
         payment.setHomestayId(homestayId);
         payment.setType(Payment.PaymentType.DEPOSIT);
         payment.setAmount(request.amount());
-        payment.setMethod(Payment.PaymentMethod.CASH);
+        payment.setMethod(request.method());
         payment.setStatus(Payment.PaymentStatus.CONFIRMED);
+        if (request.referenceCode() != null && !request.referenceCode().isBlank()) {
+            payment.setReferenceCode(request.referenceCode().trim());
+        } else if (request.method() == Payment.PaymentMethod.BANK_TRANSFER) {
+            payment.setReferenceCode(booking.getCode() + " DAT COC");
+        }
         payment.setNote(request.note() == null || request.note().isBlank() ? null : request.note().trim());
         payment.setCreatedBy(principal.getId());
         payment.setConfirmedBy(principal.getId());
@@ -619,7 +632,7 @@ public class ManagerBookingService {
 
         return new ManagerRecordDepositResponse(
                 saved.getId(), bookingId, saved.getType(), saved.getAmount(), saved.getMethod(),
-                saved.getStatus(), booking.getStatus());
+                saved.getStatus(), booking.getStatus(), saved.getReferenceCode());
     }
 
     /** API-MGR-BOOK-06: Cancel only eligible bookings at this manager's assigned homestay. */

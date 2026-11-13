@@ -276,14 +276,18 @@ export async function reviewManagerDepositApi(bookingId, { paymentId, decision, 
   return res.data?.data || null;
 }
 
-/** API-PAY-02: Ghi nhận tiền đặt cọc tiền mặt đã nhận trực tiếp tại homestay. */
-export async function recordManagerDirectDepositApi(bookingId, { amount, note }) {
-  const res = await apiClient.post(`/manager/bookings/${bookingId}/payments`, {
+/** API-PAY-02: Ghi nhận khoản đặt cọc cho đơn do quản lý đặt hộ (tiền mặt hoặc chuyển khoản). */
+export async function recordManagerDirectDepositApi(bookingId, { amount, method = 'CASH', referenceCode, note }) {
+  const payload = {
     type: 'DEPOSIT',
     amount: Number(amount),
-    method: 'CASH',
+    method,
     note: note?.trim() || null,
-  });
+  };
+  if (referenceCode?.trim()) {
+    payload.referenceCode = referenceCode.trim();
+  }
+  const res = await apiClient.post(`/manager/bookings/${bookingId}/payments`, payload);
   return res.data?.data || null;
 }
 

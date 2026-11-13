@@ -57,6 +57,8 @@ export default function ManagerBookingDetailPage() {
   const [depositReviewSubmitting, setDepositReviewSubmitting] = useState(false);
   const [isDirectDepositOpen, setIsDirectDepositOpen] = useState(false);
   const [directDepositAmount, setDirectDepositAmount] = useState('');
+  const [directDepositMethod, setDirectDepositMethod] = useState('CASH');
+  const [directDepositRefCode, setDirectDepositRefCode] = useState('');
   const [directDepositNote, setDirectDepositNote] = useState('');
   const [directDepositError, setDirectDepositError] = useState('');
   const [directDepositSubmitting, setDirectDepositSubmitting] = useState(false);
@@ -194,13 +196,20 @@ export default function ManagerBookingDetailPage() {
     setDirectDepositSubmitting(true);
     setDirectDepositError('');
     try {
-      const result = await recordManagerDirectDepositApi(bookingId, { amount, note: directDepositNote });
+      const result = await recordManagerDirectDepositApi(bookingId, {
+        amount,
+        method: directDepositMethod,
+        referenceCode: directDepositMethod === 'BANK_TRANSFER' ? directDepositRefCode : undefined,
+        note: directDepositNote,
+      });
       setIsDirectDepositOpen(false);
       setDirectDepositNote('');
       setDirectDepositAmount('');
+      setDirectDepositRefCode('');
+      setDirectDepositMethod('CASH');
       setAdjustSuccessToast(result.bookingStatus === 'CONFIRMED'
-        ? 'Đã ghi nhận tiền mặt và xác nhận booking.'
-        : 'Đã ghi nhận khoản cọc tiền mặt. Booking còn thiếu tiền đặt cọc.');
+        ? (directDepositMethod === 'CASH' ? 'Đã ghi nhận tiền mặt và xác nhận booking.' : 'Đã ghi nhận chuyển khoản và xác nhận booking.')
+        : (directDepositMethod === 'CASH' ? 'Đã ghi nhận khoản cọc tiền mặt. Booking còn thiếu tiền đặt cọc.' : 'Đã ghi nhận khoản cọc chuyển khoản. Booking còn thiếu tiền đặt cọc.'));
       setReloadKey((key) => key + 1);
     } catch (err) {
       setDirectDepositError(getErrorMessage(err) || 'Không thể ghi nhận khoản đặt cọc.');
@@ -770,9 +779,20 @@ export default function ManagerBookingDetailPage() {
                 {booking.status === 'PENDING_APPROVAL' && (
                   <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">Chờ xác nhận cọc</span>
                 )}
-                {booking.status === 'PENDING_DEPOSIT' && remainingDepositAmount > 0 && (
-                  <button type="button" onClick={() => { setDirectDepositAmount(String(remainingDepositAmount)); setDirectDepositError(''); setIsDirectDepositOpen(true); }} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]">
-                    <CreditCard className="h-4 w-4" /> Ghi nhận tiền mặt
+                {booking.source === 'MANAGER' && booking.status === 'PENDING_DEPOSIT' && remainingDepositAmount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDirectDepositAmount(String(remainingDepositAmount));
+                      setDirectDepositMethod('CASH');
+                      setDirectDepositRefCode('');
+                      setDirectDepositNote('');
+                      setDirectDepositError('');
+                      setIsDirectDepositOpen(true);
+                    }}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] shadow-2xs"
+                  >
+                    <CreditCard className="h-4 w-4" /> Ghi nhận đặt cọc
                   </button>
                 )}
               </div>
@@ -933,7 +953,7 @@ export default function ManagerBookingDetailPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 id="direct-deposit-title" className="text-lg font-bold text-[var(--color-ink)]">Ghi nhận tiền đặt cọc</h2>
-                <p className="mt-1 text-sm text-[var(--color-muted)]">Chỉ dùng khi quản lý đã trực tiếp nhận tiền mặt từ khách.</p>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">Ghi nhận cọc cho đơn do quản lý đặt hộ (khách nộp tiền mặt hoặc chuyển khoản).</p>
               </div>
               <button type="button" disabled={directDepositSubmitting} onClick={() => setIsDirectDepositOpen(false)} className="rounded-lg p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-soft)]" aria-label="Đóng"><X className="h-5 w-5" /></button>
             </div>
@@ -941,14 +961,36 @@ export default function ManagerBookingDetailPage() {
               <div><p className="text-xs text-[var(--color-muted)]">Tiền cọc cần có</p><p className="mt-1 font-bold text-[var(--color-ink)]">{formatVnd(booking.depositAmount)}</p></div>
               <div><p className="text-xs text-[var(--color-muted)]">Đã xác nhận · Còn thiếu</p><p className="mt-1 font-bold text-[var(--color-ink)]">{formatVnd(confirmedDepositAmount)} · {formatVnd(remainingDepositAmount)}</p></div>
             </div>
+
+            <div className="space-y-1.5">
+              <span className="block text-sm font-semibold text-[var(--color-ink)]">Hình thức thanh toán <span className="text-rose-600">*</span></span>
+              <div className="grid grid-cols-2 gap-3">
+                <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 text-sm font-semibold transition-colors ${directDepositMethod === 'CASH' ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]' : 'border-[var(--color-border)] bg-white text-[var(--color-body)] hover:bg-[var(--color-surface-soft)]'}`}>
+                  <input type="radio" name="depositMethod" value="CASH" checked={directDepositMethod === 'CASH'} onChange={() => setDirectDepositMethod('CASH')} className="sr-only" />
+                  <span>Tiền mặt</span>
+                </label>
+                <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 text-sm font-semibold transition-colors ${directDepositMethod === 'BANK_TRANSFER' ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]' : 'border-[var(--color-border)] bg-white text-[var(--color-body)] hover:bg-[var(--color-surface-soft)]'}`}>
+                  <input type="radio" name="depositMethod" value="BANK_TRANSFER" checked={directDepositMethod === 'BANK_TRANSFER'} onChange={() => setDirectDepositMethod('BANK_TRANSFER')} className="sr-only" />
+                  <span>Chuyển khoản</span>
+                </label>
+              </div>
+            </div>
+
+            {directDepositMethod === 'BANK_TRANSFER' && (
+              <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
+                <span>Mã giao dịch / Nội dung CK <span className="font-normal text-[var(--color-muted)]">(không bắt buộc)</span></span>
+                <input type="text" maxLength={100} value={directDepositRefCode} onChange={(event) => setDirectDepositRefCode(event.target.value)} placeholder={`Ví dụ: ${booking.code} DAT COC`} className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
+              </label>
+            )}
+
             <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
               <span>Số tiền nhận (VND) <span className="text-rose-600">*</span></span>
               <input type="number" min="1" max={remainingDepositAmount} step="1" required value={directDepositAmount} onChange={(event) => setDirectDepositAmount(event.target.value)} className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
-              <span className="block text-xs font-normal text-[var(--color-muted)]">Không vượt quá số tiền cọc còn thiếu.</span>
+              <span className="block text-xs font-normal text-[var(--color-muted)]">Không vượt quá số tiền cọc còn thiếu ({formatVnd(remainingDepositAmount)}).</span>
             </label>
             <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
               <span>Ghi chú <span className="font-normal text-[var(--color-muted)]">(không bắt buộc)</span></span>
-              <textarea maxLength={255} rows={2} value={directDepositNote} onChange={(event) => setDirectDepositNote(event.target.value)} placeholder="Ví dụ: Khách nộp tiền mặt tại quầy" className="w-full resize-y rounded-xl border border-[var(--color-border)] px-3 py-2.5 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
+              <textarea maxLength={255} rows={2} value={directDepositNote} onChange={(event) => setDirectDepositNote(event.target.value)} placeholder={directDepositMethod === 'CASH' ? 'Ví dụ: Khách nộp tiền mặt tại quầy lễ tân' : 'Ví dụ: Khách chuyển khoản qua Vietcombank'} className="w-full resize-y rounded-xl border border-[var(--color-border)] px-3 py-2.5 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
             </label>
             {directDepositError && <p role="alert" className="text-sm text-rose-700">{directDepositError}</p>}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

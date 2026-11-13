@@ -6,10 +6,15 @@ import jakarta.validation.constraints.Size;
 import vn.edu.hust.homestay.payment.entity.Payment.PaymentMethod;
 import vn.edu.hust.homestay.payment.entity.Payment.PaymentType;
 
-/** Request for API-PAY-02. Confirmation metadata is always assigned by the server. */
+/** Request cho API-PAY-02: Ghi nhận đặt cọc cho đơn do quản lý đặt hộ. */
 public record ManagerRecordDepositRequest(
         @NotNull PaymentType type,
         @Positive Long amount,
         @NotNull PaymentMethod method,
+        @Size(max = 100) String referenceCode,
         @Size(max = 255) String note
-) {}
+) {
+    public ManagerRecordDepositRequest(PaymentType type, Long amount, PaymentMethod method, String note) {
+        this(type, amount, method, null, note);
+    }
+}

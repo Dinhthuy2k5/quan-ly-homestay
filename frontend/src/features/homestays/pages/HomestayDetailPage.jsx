@@ -11,9 +11,10 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Users,
 } from 'lucide-react';
-import { fetchHomestayDetail, fetchHomestayRoomTypes, fetchHomestayRooms, searchAvailableRooms, fetchHomestayPolicies } from '../api';
+import { fetchHomestayDetail, fetchHomestayRoomTypes, fetchHomestayRooms, searchAvailableRooms, fetchHomestayPolicies, fetchHomestayServices } from '../api';
 import { fileUrl } from '../../../lib/api/client';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { getErrorMessage } from '../../../lib/errors';
@@ -24,6 +25,7 @@ import HomestayLocationMap from '../components/HomestayLocationMap';
 import HomestayPolicySection from '../components/HomestayPolicySection';
 import MultiRoomBookingModal from '../components/MultiRoomBookingModal';
 import { getAmenityMeta } from '../../../lib/amenities';
+import { getServiceIcon } from '../../../lib/services';
 import { formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
 
 function DetailSkeleton() {
@@ -71,6 +73,9 @@ export function HomestayDetailPage() {
   const [policies, setPolicies] = useState(null);
   const [policiesLoading, setPoliciesLoading] = useState(true);
   const [policiesError, setPoliciesError] = useState('');
+  const [services, setServices] = useState([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState('');
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -119,8 +124,9 @@ export function HomestayDetailPage() {
       fetchHomestayDetail(homestayId),
       fetchHomestayRoomTypes(homestayId),
       fetchHomestayPolicies(homestayId),
+      fetchHomestayServices(homestayId),
     ])
-      .then(([detailResult, typesResult, policiesResult]) => {
+      .then(([detailResult, typesResult, policiesResult, servicesResult]) => {
         if (!active) return;
         if (detailResult.status === 'fulfilled') {
           setHomestay(detailResult.value);
@@ -141,11 +147,19 @@ export function HomestayDetailPage() {
         } else {
           setPoliciesError(getErrorMessage(policiesResult.reason));
         }
+
+        if (servicesResult.status === 'fulfilled') {
+          setServices(servicesResult.value || []);
+          setServicesError('');
+        } else {
+          setServicesError(getErrorMessage(servicesResult.reason));
+        }
       })
       .finally(() => {
         if (active) {
           setLoading(false);
           setPoliciesLoading(false);
+          setServicesLoading(false);
         }
       });
     return () => { active = false; };
@@ -169,8 +183,10 @@ export function HomestayDetailPage() {
   const retry = () => {
     setLoading(true);
     setPoliciesLoading(true);
+    setServicesLoading(true);
     setError('');
     setPoliciesError('');
+    setServicesError('');
     setRoomTypesError('');
     setRoomsError('');
     setReloadKey((key) => key + 1);
@@ -287,6 +303,43 @@ export function HomestayDetailPage() {
         <section aria-labelledby="homestay-description" className="border-b border-[var(--color-border)] pb-8">
           <h2 id="homestay-description" className="text-xl font-semibold text-[var(--color-ink)]">Giới thiệu cơ sở</h2>
           <p className="mt-4 whitespace-pre-line leading-relaxed text-[var(--color-body)]">{homestay.description || 'Homestay chưa cập nhật phần giới thiệu.'}</p>
+        </section>
+
+        <section aria-labelledby="homestay-services-title" className="border-b border-[var(--color-border)] pb-8">
+          <div className="flex items-center gap-2">
+            <Sparkles aria-hidden="true" className="h-5 w-5 text-[var(--color-primary)]" />
+            <h2 id="homestay-services-title" className="text-xl font-semibold text-[var(--color-ink)]">Dịch vụ tại homestay</h2>
+          </div>
+          {servicesLoading ? (
+            <div aria-label="Đang tải dịch vụ" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((item) => <div key={item} className="h-28 animate-pulse rounded-2xl bg-[var(--color-surface-soft)]" />)}
+            </div>
+          ) : servicesError ? (
+            <ErrorBanner message={servicesError} onRetry={retry} className="mt-4" />
+          ) : services.length > 0 ? (
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2 sm:gap-4">
+              {services.map((service) => {
+                const Icon = getServiceIcon(service.name);
+                return (
+                  <li key={service.id} className="flex min-h-28 min-w-0 gap-3 rounded-2xl border border-[var(--color-border)] bg-white p-4 sm:p-5">
+                    <Icon aria-hidden="true" className="mt-0.5 h-6 w-6 shrink-0 text-[var(--color-ink)]" strokeWidth={1.5} />
+                    <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-semibold leading-6 text-[var(--color-ink)]">{service.name}</h3>
+                        {service.description && <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-[var(--color-body)]">{service.description}</p>}
+                      </div>
+                      <span className="shrink-0 text-right text-sm font-semibold leading-5 text-[var(--color-ink)]">
+                        <span className="block whitespace-nowrap">{formatVnd(service.unitPrice)}</span>
+                        <span className="mt-0.5 block whitespace-nowrap text-xs font-normal text-[var(--color-muted)]">/ {service.unit}</span>
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-[var(--color-body)]">Homestay hiện chưa công khai dịch vụ bổ sung.</p>
+          )}
         </section>
 
         <section id="rooms" aria-labelledby="rooms-title" className="scroll-mt-28">
