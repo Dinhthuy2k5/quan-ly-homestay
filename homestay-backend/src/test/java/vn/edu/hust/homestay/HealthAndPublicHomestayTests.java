@@ -167,6 +167,8 @@ class HealthAndPublicHomestayTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success", is(true)))
                 .andExpect(jsonPath("$.data", hasSize(greaterThanOrEqualTo(1))))
+                .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].categoryId", contains(categoryId.intValue())))
+                .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].categoryName", contains("PUB04-category-" + suffix)))
                 .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].name", contains(activeName)))
                 .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].unit", contains("suất")))
                 .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].unitPrice", contains(125000)))

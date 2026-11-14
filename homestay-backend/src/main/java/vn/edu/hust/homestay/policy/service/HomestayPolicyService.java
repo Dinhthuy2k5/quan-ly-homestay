@@ -38,7 +38,7 @@ public class HomestayPolicyService {
     private final HomestayRepository homestayRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final List<String> DEFAULT_HOUSE_RULES = List.of(
+    public static final List<String> DEFAULT_HOUSE_RULES = List.of(
             "Xuất trình CCCD hoặc hộ chiếu hợp lệ khi nhận phòng để làm thủ tục đăng ký tạm trú.",
             "Giữ gìn yên tĩnh chung, hạn chế làm ồn sau 22:00 để không ảnh hưởng các phòng xung quanh.",
             "Không hút thuốc lá trong phòng ngủ; vui lòng sử dụng khu vực ngoài trời được chỉ định.",
@@ -90,6 +90,7 @@ public class HomestayPolicyService {
         String bankName = settings.getOrDefault("PAYMENT.bank_name", "Ngân hàng TMCP Ngoại thương Việt Nam (Vietcombank)");
         String bankAccountNumber = settings.getOrDefault("PAYMENT.bank_account_number", "998877665544");
         String bankAccountHolder = settings.getOrDefault("PAYMENT.bank_account_holder", "CONG TY CP HOMESTAY VIET NAM");
+        String finalPaymentTiming = settings.getOrDefault("PAYMENT.final_payment_timing", "Thanh toán nốt khi trả phòng");
         String paymentDesc = String.format("Đặt cọc %d%% tổng tiền phòng trong vòng %d giờ kể từ khi tạo đơn để giữ phòng.",
                 depositPercent, holdHours);
         PaymentPolicyDto paymentPolicy = PaymentPolicyDto.builder()
@@ -99,6 +100,7 @@ public class HomestayPolicyService {
                 .bankAccountNumber(bankAccountNumber)
                 .bankAccountHolder(bankAccountHolder)
                 .description(paymentDesc)
+                .finalPaymentTiming(finalPaymentTiming)
                 .build();
 
         // 3. Quy định lưu trú & giờ giấc (Stay)
@@ -139,7 +141,7 @@ public class HomestayPolicyService {
         return getHomestayPolicies(principal.getHomestayId());
     }
 
-    private List<String> parseHouseRules(String rawRules) {
+    public List<String> parseHouseRules(String rawRules) {
         if (rawRules == null || rawRules.isBlank()) {
             return DEFAULT_HOUSE_RULES;
         }
@@ -150,7 +152,7 @@ public class HomestayPolicyService {
         return list.isEmpty() ? DEFAULT_HOUSE_RULES : list;
     }
 
-    private List<RefundRuleDto> parseRefundRules(String json) {
+    public List<RefundRuleDto> parseRefundRules(String json) {
         if (json == null || json.isBlank()) {
             return defaultRefundRules();
         }

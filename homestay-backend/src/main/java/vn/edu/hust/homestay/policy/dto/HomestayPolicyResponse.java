@@ -34,7 +34,8 @@ public record HomestayPolicyResponse(
             String bankName,
             String bankAccountNumber,
             String bankAccountHolder,
-            String description
+            String description,
+            String finalPaymentTiming
     ) {}
 
     @Builder

@@ -700,7 +700,14 @@ class CustomerBookingTests {
                 .andExpect(jsonPath("$.data.paidAmount", is(0)))
                 .andExpect(jsonPath("$.data.outstandingAmount", greaterThan(0)))
                 .andExpect(jsonPath("$.data.paymentInstruction.bankAccountNumber", notNullValue()))
-                .andExpect(jsonPath("$.data.paymentInstruction.transferContent", containsString("DAT COC")));
+                .andExpect(jsonPath("$.data.paymentInstruction.transferContent", containsString("DAT COC")))
+                .andExpect(jsonPath("$.data.appliedPolicy.depositPercent", is(30)))
+                .andExpect(jsonPath("$.data.appliedPolicy.holdHours", is(24)))
+                .andExpect(jsonPath("$.data.appliedPolicy.finalPaymentTiming", notNullValue()))
+                .andExpect(jsonPath("$.data.appliedPolicy.checkInTime", notNullValue()))
+                .andExpect(jsonPath("$.data.appliedPolicy.checkOutDeadline", notNullValue()))
+                .andExpect(jsonPath("$.data.appliedPolicy.houseRules", hasSize(greaterThan(0))))
+                .andExpect(jsonPath("$.data.appliedPolicy.refundRules", hasSize(greaterThan(0))));
 
         // 2. Khách hàng khác không được xem booking này
         User otherCustomer = userRepository.saveAndFlush(User.builder()

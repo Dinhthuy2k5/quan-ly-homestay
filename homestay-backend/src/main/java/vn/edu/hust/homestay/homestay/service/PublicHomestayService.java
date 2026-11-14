@@ -19,9 +19,13 @@ import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
 import vn.edu.hust.homestay.service.dto.PublicServiceResponse;
 import vn.edu.hust.homestay.service.entity.Service;
 import vn.edu.hust.homestay.service.entity.Service.ServiceStatus;
+import vn.edu.hust.homestay.service.entity.ServiceCategory;
+import vn.edu.hust.homestay.service.repository.ServiceCategoryRepository;
 import vn.edu.hust.homestay.service.repository.ServiceRepository;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Service xử lý các nghiệp vụ công khai liên quan đến Homestay (Tuần 1).
@@ -36,17 +40,20 @@ public class PublicHomestayService {
     private final MediaRepository mediaRepository;
     private final RoomTypeRepository roomTypeRepository;
     private final ServiceRepository serviceRepository;
+    private final ServiceCategoryRepository serviceCategoryRepository;
 
     public PublicHomestayService(
             HomestayRepository homestayRepository,
             MediaRepository mediaRepository,
             RoomTypeRepository roomTypeRepository,
-            ServiceRepository serviceRepository
+            ServiceRepository serviceRepository,
+            ServiceCategoryRepository serviceCategoryRepository
     ) {
         this.homestayRepository = homestayRepository;
         this.mediaRepository = mediaRepository;
         this.roomTypeRepository = roomTypeRepository;
         this.serviceRepository = serviceRepository;
+        this.serviceCategoryRepository = serviceCategoryRepository;
     }
 
     /**
@@ -147,16 +154,23 @@ public class PublicHomestayService {
                 .toList();
     }
 
-    /** API-PUB-04: Public catalog of currently active services at an active homestay. */
+    /** API-PUB-04: Public catalog of currently active services at an active homestay, enriched with category. */
     public List<PublicServiceResponse> getActiveServices(Long homestayId) {
         homestayRepository.findByIdAndStatus(homestayId, HomestayStatus.ACTIVE)
                 .orElseThrow(() -> BusinessException.notFound(
                         "HOMESTAY_NOT_FOUND", "Không tìm thấy homestay đang hoạt động"));
 
+        Map<Long, String> categoryNames = serviceCategoryRepository.findAllByHomestayId(homestayId).stream()
+                .collect(Collectors.toMap(
+                        ServiceCategory::getId,
+                        ServiceCategory::getName,
+                        (existing, replacement) -> existing
+                ));
+
         return serviceRepository
                 .findByHomestayIdAndStatusOrderByNameAsc(homestayId, ServiceStatus.ACTIVE)
                 .stream()
-                .map(PublicServiceResponse::from)
+                .map(service -> PublicServiceResponse.from(service, categoryNames.get(service.getCategoryId())))
                 .toList();
     }
 }

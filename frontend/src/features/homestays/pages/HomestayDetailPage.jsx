@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   BedDouble,
@@ -75,6 +75,23 @@ export function HomestayDetailPage() {
   const [services, setServices] = useState([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [servicesError, setServicesError] = useState('');
+  const [selectedServiceCategory, setSelectedServiceCategory] = useState('ALL');
+
+  const serviceCategories = useMemo(() => {
+    if (!services || services.length === 0) return [];
+    const counts = new Map();
+    for (const service of services) {
+      const catName = service.categoryName || 'Dịch vụ khác';
+      counts.set(catName, (counts.get(catName) || 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([name, count]) => ({ name, count }));
+  }, [services]);
+
+  const displayedServices = useMemo(() => {
+    if (!services || services.length === 0) return [];
+    if (selectedServiceCategory === 'ALL') return services;
+    return services.filter((s) => (s.categoryName || 'Dịch vụ khác') === selectedServiceCategory);
+  }, [services, selectedServiceCategory]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -305,31 +322,97 @@ export function HomestayDetailPage() {
         </section>
 
         <section aria-labelledby="homestay-services-title" className="border-b border-[var(--color-border)] pb-8">
-          <div className="flex items-center gap-2">
-            <Sparkles aria-hidden="true" className="h-5 w-5 text-[var(--color-primary)]" />
-            <h2 id="homestay-services-title" className="text-xl font-semibold text-[var(--color-ink)]">Dịch vụ tại homestay</h2>
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles aria-hidden="true" className="h-5 w-5 text-[var(--color-muted)]" />
+              <h2 id="homestay-services-title" className="text-xl font-semibold text-[var(--color-ink)]">Dịch vụ tại homestay</h2>
+            </div>
+            {services.length > 0 && (
+              <span className="text-xs text-[var(--color-muted)]">
+                {services.length} dịch vụ tiện ích
+              </span>
+            )}
           </div>
+
+          {services.length > 0 && serviceCategories.length > 1 && (
+            <div className="mt-4 flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Lọc dịch vụ theo danh mục">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={selectedServiceCategory === 'ALL'}
+                onClick={() => setSelectedServiceCategory('ALL')}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  selectedServiceCategory === 'ALL'
+                    ? 'bg-[var(--color-ink)] text-white shadow-xs'
+                    : 'border border-[var(--color-border)] bg-white text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]'
+                }`}
+              >
+                Tất cả ({services.length})
+              </button>
+              {serviceCategories.map((cat) => {
+                const isSelected = selectedServiceCategory === cat.name;
+                return (
+                  <button
+                    key={cat.name}
+                    type="button"
+                    role="tab"
+                    aria-selected={isSelected}
+                    onClick={() => setSelectedServiceCategory(cat.name)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      isSelected
+                        ? 'bg-[var(--color-ink)] text-white shadow-xs'
+                        : 'border border-[var(--color-border)] bg-white text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]'
+                    }`}
+                  >
+                    {cat.name} ({cat.count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {servicesLoading ? (
             <div aria-label="Đang tải dịch vụ" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {[1, 2, 3].map((item) => <div key={item} className="h-28 animate-pulse rounded-2xl bg-[var(--color-surface-soft)]" />)}
+              {[1, 2, 3].map((item) => <div key={item} className="h-24 animate-pulse rounded-2xl bg-[var(--color-surface-soft)]" />)}
             </div>
           ) : servicesError ? (
             <ErrorBanner message={servicesError} onRetry={retry} className="mt-4" />
-          ) : services.length > 0 ? (
+          ) : displayedServices.length > 0 ? (
             <ul className="mt-4 grid gap-3 sm:grid-cols-2 sm:gap-4">
-              {services.map((service) => {
+              {displayedServices.map((service) => {
                 const Icon = getServiceIcon(service.name);
                 return (
-                  <li key={service.id} className="flex min-h-28 min-w-0 gap-3 rounded-2xl border border-[var(--color-border)] bg-white p-4 sm:p-5">
-                    <Icon aria-hidden="true" className="mt-0.5 h-6 w-6 shrink-0 text-[var(--color-ink)]" strokeWidth={1.5} />
-                    <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="font-semibold leading-6 text-[var(--color-ink)]">{service.name}</h3>
-                        {service.description && <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-[var(--color-body)]">{service.description}</p>}
+                  <li
+                    key={service.id}
+                    className="flex min-h-[5.5rem] min-w-0 items-start justify-between gap-3.5 rounded-2xl border border-[var(--color-border)] bg-white p-4 transition-all hover:border-[var(--color-border-hover,var(--color-ink))]/20 hover:shadow-xs sm:p-4.5"
+                  >
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-surface-soft)] text-[var(--color-ink)]">
+                        <Icon aria-hidden="true" className="h-5 w-5" strokeWidth={1.5} />
                       </div>
-                      <span className="shrink-0 text-right text-sm font-semibold leading-5 text-[var(--color-ink)]">
-                        <span className="block whitespace-nowrap">{formatVnd(service.unitPrice)}</span>
-                        <span className="mt-0.5 block whitespace-nowrap text-xs font-normal text-[var(--color-muted)]">/ {service.unit}</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold leading-snug text-[var(--color-ink)]">{service.name}</h3>
+                          {service.categoryName && (
+                            <span className="rounded-md bg-[var(--color-surface-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-muted)]">
+                              {service.categoryName}
+                            </span>
+                          )}
+                        </div>
+                        {service.description && (
+                          <p className="mt-1 text-xs leading-relaxed text-[var(--color-body)] line-clamp-2">
+                            {service.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <span className="block whitespace-nowrap text-sm font-semibold text-[var(--color-ink)]">
+                        {formatVnd(service.unitPrice)}
+                      </span>
+                      <span className="block whitespace-nowrap text-[11px] text-[var(--color-muted)]">
+                        / {service.unit}
                       </span>
                     </div>
                   </li>
@@ -337,7 +420,9 @@ export function HomestayDetailPage() {
               })}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-[var(--color-body)]">Homestay hiện chưa công khai dịch vụ bổ sung.</p>
+            <p className="mt-4 text-sm text-[var(--color-body)]">
+              {services.length === 0 ? 'Homestay hiện chưa công khai dịch vụ bổ sung.' : 'Không có dịch vụ nào trong phân loại này.'}
+            </p>
           )}
         </section>
 

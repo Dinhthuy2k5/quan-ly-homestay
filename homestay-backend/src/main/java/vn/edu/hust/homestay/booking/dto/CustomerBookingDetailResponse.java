@@ -9,8 +9,8 @@ import java.util.List;
 
 /**
  * Response cho API-CUS-03: Chi tiết booking của khách hàng.
- * Bao gồm đầy đủ phòng, các đêm lưu trú, tổng tiền, hướng dẫn chuyển khoản
- * và danh sách tất cả các khoản thanh toán / đặt cọc.
+ * Bao gồm đầy đủ phòng, các đêm lưu trú, tổng tiền, hướng dẫn chuyển khoản,
+ * danh sách tất cả các khoản thanh toán / đặt cọc và chính sách áp dụng.
  */
 public record CustomerBookingDetailResponse(
         Long id,
@@ -32,8 +32,25 @@ public record CustomerBookingDetailResponse(
         Instant createdAt,
         List<BookingRoomDetail> rooms,
         CreateBookingResponse.PaymentInstruction paymentInstruction,
-        List<PaymentSummary> payments
+        List<PaymentSummary> payments,
+        AppliedPolicy appliedPolicy
 ) {
+    public record AppliedPolicy(
+            Integer depositPercent,
+            Integer holdHours,
+            String finalPaymentTiming,
+            String checkInTime,
+            String checkOutDeadline,
+            List<String> houseRules,
+            List<RefundRuleSummary> refundRules
+    ) {}
+
+    public record RefundRuleSummary(
+            Integer daysBeforeCheckIn,
+            Integer refundPercent,
+            String description
+    ) {}
+
     public record PaymentSummary(
             Long id,
             String paymentType,

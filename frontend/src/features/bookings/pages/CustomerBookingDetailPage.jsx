@@ -8,6 +8,9 @@ import {
   Calendar,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
   Compass,
   Copy,
   CreditCard,
@@ -80,6 +83,16 @@ export default function CustomerBookingDetailPage() {
   const [serviceCatalogLoading, setServiceCatalogLoading] = useState(false);
   const [serviceCatalogError, setServiceCatalogError] = useState('');
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
+
+  const groupedServiceCatalog = useMemo(() => {
+    const groups = new Map();
+    for (const item of serviceCatalog) {
+      const catName = item.categoryName || 'Dịch vụ khác';
+      if (!groups.has(catName)) groups.set(catName, []);
+      groups.get(catName).push(item);
+    }
+    return Array.from(groups.entries()).map(([categoryName, items]) => ({ categoryName, items }));
+  }, [serviceCatalog]);
   const [serviceIdInput, setServiceIdInput] = useState('');
   const [serviceRoomIdInput, setServiceRoomIdInput] = useState('');
   const [serviceQuantityInput, setServiceQuantityInput] = useState('1');
@@ -88,6 +101,7 @@ export default function CustomerBookingDetailPage() {
   const [serviceSubmitError, setServiceSubmitError] = useState('');
   const [serviceSubmitting, setServiceSubmitting] = useState(false);
   const [serviceSuccess, setServiceSuccess] = useState('');
+  const [expandHouseRules, setExpandHouseRules] = useState(false);
 
   const [todayTimestamp] = useState(() => {
     const d = new Date();
@@ -113,14 +127,23 @@ export default function CustomerBookingDetailPage() {
     if (booking.status === 'CONFIRMED') {
       if (!booking.checkInDate) return false;
       const [year, month, day] = booking.checkInDate.split('-').map(Number);
-      const checkInTime = new Date(year, month - 1, day).getTime();
-      const diffDays = Math.round((checkInTime - todayTimestamp) / (1000 * 60 * 60 * 24));
+      const checkInTimestamp = new Date(year, month - 1, day).getTime();
+      const diffDays = Math.round((checkInTimestamp - todayTimestamp) / (1000 * 60 * 60 * 24));
       return diffDays >= 3;
     }
     return false;
   }, [booking, nowTimestamp, todayTimestamp]);
 
   const canCancel = ['PENDING_DEPOSIT', 'CONFIRMED'].includes(booking?.status);
+
+  const appliedPolicy = booking?.appliedPolicy || {};
+  const depositPercent = appliedPolicy.depositPercent ?? 30;
+  const holdHours = appliedPolicy.holdHours ?? 24;
+  const finalPaymentTiming = appliedPolicy.finalPaymentTiming || 'Thanh toán nốt khi trả phòng';
+  const checkInTime = appliedPolicy.checkInTime || CHECK_IN_TIME;
+  const checkOutDeadline = appliedPolicy.checkOutDeadline || CHECK_OUT_DEADLINE;
+  const houseRules = appliedPolicy.houseRules || [];
+  const refundRules = appliedPolicy.refundRules || [];
 
   useEffect(() => {
     let active = true;
@@ -570,7 +593,7 @@ export default function CustomerBookingDetailPage() {
                   <Calendar className="h-4 w-4 text-[var(--color-primary)]" />
                   <span>{formatDate(booking.checkInDate)}</span>
                 </p>
-                <p className="text-xs text-[var(--color-muted)]">Từ {CHECK_IN_TIME}</p>
+                <p className="text-xs text-[var(--color-muted)]">Từ {checkInTime}</p>
               </div>
 
               <div className="space-y-1">
@@ -579,7 +602,7 @@ export default function CustomerBookingDetailPage() {
                   <Calendar className="h-4 w-4 text-[var(--color-primary)]" />
                   <span>{formatDate(booking.checkOutDate)}</span>
                 </p>
-                <p className="text-xs text-[var(--color-muted)]">Trước {CHECK_OUT_DEADLINE}</p>
+                <p className="text-xs text-[var(--color-muted)]">Trước {checkOutDeadline}</p>
               </div>
 
               <div className="sm:col-span-2 pt-2 border-t border-[var(--color-border)]/60 flex items-center justify-between text-xs text-[var(--color-body)]">
@@ -932,23 +955,22 @@ export default function CustomerBookingDetailPage() {
                             {title}
                           </span>
                           <span
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                              payment.status === 'CONFIRMED'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : payment.status === 'REJECTED'
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${payment.status === 'CONFIRMED'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : payment.status === 'REJECTED'
                                 ? 'bg-rose-50 text-rose-700'
                                 : 'bg-amber-50 text-amber-800'
-                            }`}
+                              }`}
                           >
                             {payment.status === 'CONFIRMED'
                               ? isRefund
                                 ? 'Đã hoàn tất'
                                 : 'Đã xác nhận'
                               : payment.status === 'REJECTED'
-                              ? 'Bị từ chối'
-                              : isRefund
-                              ? 'Chờ homestay hoàn tiền'
-                              : 'Đang chờ xác nhận'}
+                                ? 'Bị từ chối'
+                                : isRefund
+                                  ? 'Chờ homestay hoàn tiền'
+                                  : 'Đang chờ xác nhận'}
                           </span>
                           <span className="text-xs text-[var(--color-muted)]">
                             · {payment.paymentMethod === 'BANK_TRANSFER' ? 'Chuyển khoản' : 'Tiền mặt'}
@@ -1079,7 +1101,7 @@ export default function CustomerBookingDetailPage() {
                     Còn lại cần thanh toán:
                   </span>
                   <p className="text-[11px] text-[var(--color-muted)]">
-                    Thanh toán nốt khi nhận phòng
+                    {finalPaymentTiming}
                   </p>
                 </div>
                 <span className="text-lg font-bold text-[var(--color-ink)]">
@@ -1088,16 +1110,107 @@ export default function CustomerBookingDetailPage() {
               </div>
             </div>
 
-            {/* Thông tin hỗ trợ */}
+            {/* Chính sách áp dụng cho đơn đặt phòng */}
             <div className="border-t border-[var(--color-border)] pt-4 space-y-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-                Quy định lưu trú
-              </span>
-              <ul className="space-y-1.5 text-xs text-[var(--color-muted)] list-disc pl-4">
-                <li>Nhận phòng từ {CHECK_IN_TIME} ngày {formatDate(booking.checkInDate)}</li>
-                <li>Trả phòng trước {CHECK_OUT_DEADLINE} ngày {formatDate(booking.checkOutDate)}</li>
-                <li>Vui lòng mang theo CMND/CCCD khi làm thủ tục nhận phòng.</li>
-              </ul>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-[var(--color-ink)] flex items-center gap-1.5">
+                  <ShieldCheck className="h-4 w-4 text-[var(--color-primary)]" />
+                  Chính sách áp dụng
+                </span>
+                <span className="text-[11px] text-[var(--color-muted)]">Đơn #{booking.code}</span>
+              </div>
+
+              <div className="space-y-2.5 text-xs">
+                {/* 1. Nhận & trả phòng */}
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3 space-y-1.5">
+                  <div className="font-semibold text-[var(--color-ink)] flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-[var(--color-primary)]" />
+                    <span>Giờ nhận & trả phòng</span>
+                  </div>
+                  <ul className="text-[var(--color-muted)] space-y-1 pl-5 list-disc">
+                    <li>
+                      Nhận phòng từ <strong className="text-[var(--color-ink)]">{checkInTime}</strong> ngày {formatDate(booking.checkInDate)}
+                    </li>
+                    <li>
+                      Trả phòng trước <strong className="text-[var(--color-ink)]">{checkOutDeadline}</strong> ngày {formatDate(booking.checkOutDate)}
+                    </li>
+                  </ul>
+                </div>
+
+                {/* 2. Đặt cọc & thanh toán */}
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3 space-y-1.5">
+                  <div className="font-semibold text-[var(--color-ink)] flex items-center gap-1.5">
+                    <CreditCard className="h-3.5 w-3.5 text-amber-600" />
+                    <span>Đặt cọc & Thanh toán</span>
+                  </div>
+                  <ul className="text-[var(--color-muted)] space-y-1 pl-5 list-disc">
+                    <li>
+                      Tiền đặt cọc: <strong className="text-[var(--color-primary)]">{depositPercent}%</strong> tổng tiền phòng
+                    </li>
+                    <li>
+                      Thời hạn giữ phòng / gửi cọc: trong vòng <strong className="text-[var(--color-ink)]">{holdHours} giờ</strong>
+                    </li>
+                    <li>
+                      Thanh toán còn lại: <strong className="text-[var(--color-ink)]">{finalPaymentTiming}</strong>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* 3. Chính sách hủy & hoàn tiền */}
+                {refundRules.length > 0 && (
+                  <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3 space-y-1.5">
+                    <div className="font-semibold text-[var(--color-ink)] flex items-center gap-1.5">
+                      <RefreshCw className="h-3.5 w-3.5 text-blue-600" />
+                      <span>Chính sách hủy & hoàn tiền</span>
+                    </div>
+                    <ul className="text-[var(--color-muted)] space-y-1 pl-5 list-disc">
+                      {refundRules.map((rule, idx) => (
+                        <li key={idx}>
+                          {rule.description || (
+                            rule.daysBeforeCheckIn > 0
+                              ? `Hủy trước ≥ ${rule.daysBeforeCheckIn} ngày: hoàn ${rule.refundPercent}% tiền cọc`
+                              : `Hủy sát ngày: hoàn ${rule.refundPercent}% tiền cọc`
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 4. Nội quy lưu trú */}
+                {houseRules.length > 0 && (
+                  <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3 space-y-1.5">
+                    <div className="font-semibold text-[var(--color-ink)] flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <FileText className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>Nội quy lưu trú ({houseRules.length})</span>
+                      </span>
+                    </div>
+                    <ul className="text-[var(--color-muted)] space-y-1 pl-5 list-disc">
+                      {(expandHouseRules ? houseRules : houseRules.slice(0, 3)).map((rule, idx) => (
+                        <li key={idx}>{rule}</li>
+                      ))}
+                    </ul>
+                    {houseRules.length > 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandHouseRules(!expandHouseRules)}
+                        className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-[var(--color-primary)] hover:underline cursor-pointer"
+                      >
+                        {expandHouseRules ? (
+                          <>
+                            <ChevronUp className="h-3 w-3" /> Thu gọn
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-3 w-3" /> Xem thêm {houseRules.length - 3} nội quy
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="pt-2">
@@ -1151,7 +1264,15 @@ export default function CustomerBookingDetailPage() {
                 <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
                   <span>Dịch vụ <span className="text-rose-600">*</span></span>
                   <select required value={serviceIdInput} onChange={(event) => setServiceIdInput(event.target.value)} className="min-h-12 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]">
-                    {serviceCatalog.map((service) => <option key={service.id} value={service.id}>{service.name} · {formatVnd(service.unitPrice)} / {service.unit}</option>)}
+                    {groupedServiceCatalog.map((group) => (
+                      <optgroup key={group.categoryName} label={group.categoryName}>
+                        {group.items.map((service) => (
+                          <option key={service.id} value={service.id}>
+                            {service.name} · {formatVnd(service.unitPrice)} / {service.unit}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </label>
                 <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">

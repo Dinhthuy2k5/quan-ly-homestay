@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Sparkles, Trash2 } from 'lucide-react';
 import { fetchHomestayServices } from '../api';
 import { formatVnd } from '../../../lib/format';
@@ -14,12 +14,21 @@ function dayBefore(dateKey) {
 /** Optional service lines submitted atomically with API-CUS-01. */
 export default function BookingServiceSelector({ homestayId, rooms, checkInDate, checkOutDate, value, onChange }) {
   const [catalog, setCatalog] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(homestayId));
   const [error, setError] = useState('');
+
+  const groupedCatalog = useMemo(() => {
+    const groups = new Map();
+    for (const item of catalog) {
+      const catName = item.categoryName || 'Dịch vụ khác';
+      if (!groups.has(catName)) groups.set(catName, []);
+      groups.get(catName).push(item);
+    }
+    return Array.from(groups.entries()).map(([categoryName, items]) => ({ categoryName, items }));
+  }, [catalog]);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     fetchHomestayServices(homestayId)
       .then((items) => { if (active) setCatalog(items); })
       .catch((err) => { if (active) setError(getErrorMessage(err) || 'Không thể tải dịch vụ.'); })
@@ -58,7 +67,15 @@ export default function BookingServiceSelector({ homestayId, rooms, checkInDate,
           <div key={`${index}-${line.serviceId}`} className="grid gap-3 rounded-lg bg-[var(--color-surface-soft)] p-3 sm:grid-cols-2">
             <label className="text-xs font-medium text-[var(--color-body)]">Dịch vụ
               <select value={line.serviceId} onChange={(e) => updateLine(index, { serviceId: e.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-sm">
-                {catalog.map((item) => <option key={item.id} value={item.id}>{item.name} · {formatVnd(item.unitPrice)} / {item.unit}</option>)}
+                {groupedCatalog.map((group) => (
+                  <optgroup key={group.categoryName} label={group.categoryName}>
+                    {group.items.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {formatVnd(item.unitPrice)} / {item.unit}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </label>
             <label className="text-xs font-medium text-[var(--color-body)]">Dành cho phòng

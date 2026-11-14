@@ -40,8 +40,10 @@ import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
 import vn.edu.hust.homestay.media.entity.Media;
 import vn.edu.hust.homestay.media.repository.MediaRepository;
+import vn.edu.hust.homestay.policy.dto.HomestayPolicyResponse;
 import vn.edu.hust.homestay.policy.entity.PolicySetting;
 import vn.edu.hust.homestay.policy.repository.PolicySettingRepository;
+import vn.edu.hust.homestay.policy.service.HomestayPolicyService;
 import vn.edu.hust.homestay.payment.entity.Payment;
 import vn.edu.hust.homestay.payment.repository.PaymentRepository;
 import vn.edu.hust.homestay.pricing.entity.PriceRule;
@@ -99,6 +101,7 @@ public class CustomerBookingService {
     private final PaymentRepository paymentRepository;
     private final CancellationRefundPolicyService cancellationRefundPolicyService;
     private final CustomerBookingServiceService bookingServiceOperations;
+    private final HomestayPolicyService homestayPolicyService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Path privateUploadRoot;
 
@@ -114,6 +117,7 @@ public class CustomerBookingService {
             PaymentRepository paymentRepository,
             CancellationRefundPolicyService cancellationRefundPolicyService,
             CustomerBookingServiceService bookingServiceOperations,
+            HomestayPolicyService homestayPolicyService,
             @Value("${app.storage.private-upload-dir:storage/private}") String privateUploadDir
     ) {
         this.bookingRepository = bookingRepository;
@@ -127,6 +131,7 @@ public class CustomerBookingService {
         this.paymentRepository = paymentRepository;
         this.cancellationRefundPolicyService = cancellationRefundPolicyService;
         this.bookingServiceOperations = bookingServiceOperations;
+        this.homestayPolicyService = homestayPolicyService;
         this.privateUploadRoot = Paths.get(privateUploadDir).toAbsolutePath().normalize();
     }
 
@@ -483,6 +488,8 @@ public class CustomerBookingService {
                         payment.getBankAccountHolder()))
                 .toList();
 
+        CustomerBookingDetailResponse.AppliedPolicy appliedPolicy = resolveAppliedPolicy(booking);
+
         return new CustomerBookingDetailResponse(
                 booking.getId(),
                 booking.getCode(),
@@ -503,7 +510,105 @@ public class CustomerBookingService {
                 booking.getCreatedAt(),
                 roomDetails,
                 instruction,
-                payments
+                payments,
+                appliedPolicy
+        );
+    }
+
+    private CustomerBookingDetailResponse.AppliedPolicy resolveAppliedPolicy(Booking booking) {
+        HomestayPolicyResponse homestayPolicy = null;
+        try {
+            homestayPolicy = homestayPolicyService.getHomestayPolicies(booking.getHomestayId());
+        } catch (Exception e) {
+            log.warn("Không thể tải chính sách homestay {}: {}", booking.getHomestayId(), e.getMessage());
+        }
+
+        com.fasterxml.jackson.databind.JsonNode snapshot = null;
+        if (booking.getPolicySnapshot() != null && !booking.getPolicySnapshot().isBlank()) {
+            try {
+                snapshot = objectMapper.readTree(booking.getPolicySnapshot());
+            } catch (Exception e) {
+                log.warn("Không thể đọc policy_snapshot của booking {}: {}", booking.getId(), e.getMessage());
+            }
+        }
+
+        // 1. depositPercent (ưu tiên snapshot, fallback chính sách homestay)
+        Integer depositPercent = null;
+        if (snapshot != null && snapshot.hasNonNull("depositPercent")) {
+            depositPercent = snapshot.get("depositPercent").asInt();
+        }
+        if (depositPercent == null && homestayPolicy != null && homestayPolicy.paymentPolicy() != null) {
+            depositPercent = homestayPolicy.paymentPolicy().depositPercent();
+        }
+        if (depositPercent == null) {
+            depositPercent = 30;
+        }
+
+        // 2. holdHours (ưu tiên snapshot, fallback chính sách homestay)
+        Integer holdHours = null;
+        if (snapshot != null && snapshot.hasNonNull("holdHours")) {
+            holdHours = snapshot.get("holdHours").asInt();
+        }
+        if (holdHours == null && homestayPolicy != null && homestayPolicy.paymentPolicy() != null) {
+            holdHours = homestayPolicy.paymentPolicy().holdHours();
+        }
+        if (holdHours == null) {
+            holdHours = 24;
+        }
+
+        // 3. finalPaymentTiming
+        String finalPaymentTiming = policySettingRepository.findByPolicyGroupAndPolicyKey("PAYMENT", "final_payment_timing")
+                .map(PolicySetting::getPolicyValue)
+                .filter(s -> !s.isBlank())
+                .orElse("Thanh toán nốt khi trả phòng");
+
+        // 4. checkInTime
+        String checkInTime = (homestayPolicy != null && homestayPolicy.stayPolicy() != null && homestayPolicy.stayPolicy().checkInTime() != null)
+                ? homestayPolicy.stayPolicy().checkInTime()
+                : "11:00";
+
+        // 5. checkOutDeadline
+        String checkOutDeadline = (homestayPolicy != null && homestayPolicy.stayPolicy() != null && homestayPolicy.stayPolicy().checkOutDeadline() != null)
+                ? homestayPolicy.stayPolicy().checkOutDeadline()
+                : "08:00";
+
+        // 6. houseRules
+        List<String> houseRules = (homestayPolicy != null && homestayPolicy.stayPolicy() != null && homestayPolicy.stayPolicy().houseRules() != null)
+                ? homestayPolicy.stayPolicy().houseRules()
+                : HomestayPolicyService.DEFAULT_HOUSE_RULES;
+
+        // 7. refundRules (ưu tiên snapshot, fallback chính sách homestay)
+        List<HomestayPolicyResponse.RefundRuleDto> rawRefundRules = null;
+        if (snapshot != null && snapshot.hasNonNull("refundRules")) {
+            com.fasterxml.jackson.databind.JsonNode rulesNode = snapshot.get("refundRules");
+            String rulesJson = rulesNode.isTextual() ? rulesNode.asText() : rulesNode.toString();
+            rawRefundRules = homestayPolicyService.parseRefundRules(rulesJson);
+        }
+        if (rawRefundRules == null || rawRefundRules.isEmpty()) {
+            if (homestayPolicy != null && homestayPolicy.cancellationPolicy() != null) {
+                rawRefundRules = homestayPolicy.cancellationPolicy().refundRules();
+            }
+        }
+        if (rawRefundRules == null) {
+            rawRefundRules = List.of();
+        }
+
+        List<CustomerBookingDetailResponse.RefundRuleSummary> refundRules = rawRefundRules.stream()
+                .map(r -> new CustomerBookingDetailResponse.RefundRuleSummary(
+                        r.daysBeforeCheckIn(),
+                        r.refundPercent(),
+                        r.description()
+                ))
+                .toList();
+
+        return new CustomerBookingDetailResponse.AppliedPolicy(
+                depositPercent,
+                holdHours,
+                finalPaymentTiming,
+                checkInTime,
+                checkOutDeadline,
+                houseRules,
+                refundRules
         );
     }
 
