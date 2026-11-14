@@ -68,13 +68,12 @@ public class CustomerBookingServiceService {
             throw BusinessException.badRequest("ROOM_NOT_IN_BOOKING", "Phòng không thuộc đơn đặt phòng này");
         }
 
-        BookingService bookingService = createBookingService(booking, roomId, request.serviceId(), request.quantity(),
+        Service service = findActiveService(request.serviceId(), booking.getHomestayId());
+        BookingService bookingService = createBookingService(booking, roomId, service, request.quantity(),
                 request.serviceDate(), request.note(), principal.getId());
         BookingService saved = bookingServiceRepository.saveAndFlush(bookingService);
         long totalPrice = Math.multiplyExact(saved.getUnitPrice(), saved.getQuantity().longValue());
-        String serviceName = serviceRepository.findById(saved.getServiceId())
-                .map(Service::getName).orElseThrow();
-        return CustomerBookingServiceResponse.from(saved, serviceName, totalPrice);
+        return CustomerBookingServiceResponse.from(saved, service.getName(), totalPrice);
     }
 
     public void createInitialServices(
@@ -90,7 +89,8 @@ public class CustomerBookingServiceService {
             if (!bookedRoomIds.contains(selection.roomId())) {
                 throw BusinessException.badRequest("ROOM_NOT_IN_BOOKING", "Phòng đăng ký dịch vụ không thuộc booking");
             }
-            return createBookingService(booking, selection.roomId(), selection.serviceId(), selection.quantity(),
+            Service service = findActiveService(selection.serviceId(), booking.getHomestayId());
+            return createBookingService(booking, selection.roomId(), service, selection.quantity(),
                     selection.serviceDate(), selection.note(), requestedBy);
         }).toList();
         bookingServiceRepository.saveAllAndFlush(bookingServices);
@@ -123,18 +123,21 @@ public class CustomerBookingServiceService {
         }
     }
 
+    private Service findActiveService(Long serviceId, Long homestayId) {
+        return serviceRepository
+                .findByIdAndHomestayIdAndStatus(serviceId, homestayId, Service.ServiceStatus.ACTIVE)
+                .orElseThrow(() -> BusinessException.badRequest("SERVICE_NOT_ACTIVE", "Dịch vụ không còn được cung cấp tại homestay này"));
+    }
+
     private BookingService createBookingService(
             Booking booking,
             Long roomId,
-            Long serviceId,
+            Service service,
             Integer quantity,
             LocalDate serviceDate,
             String note,
             Long requestedBy
     ) {
-        Service service = serviceRepository
-                .findByIdAndHomestayIdAndStatus(serviceId, booking.getHomestayId(), Service.ServiceStatus.ACTIVE)
-                .orElseThrow(() -> BusinessException.badRequest("SERVICE_NOT_ACTIVE", "Dịch vụ không còn được cung cấp tại homestay này"));
         validateServiceDate(booking, serviceDate);
         try {
             Math.multiplyExact(service.getUnitPrice(), quantity.longValue());

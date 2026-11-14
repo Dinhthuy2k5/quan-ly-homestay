@@ -227,7 +227,9 @@ class CustomerBookingTests {
                 .andExpect(jsonPath("$.data.quantity", is(2)))
                 .andExpect(jsonPath("$.data.unitPrice", is(125000)))
                 .andExpect(jsonPath("$.data.totalPrice", is(250000)))
-                .andExpect(jsonPath("$.data.status", is("REGISTERED")));
+                .andExpect(jsonPath("$.data.status", is("REGISTERED")))
+                .andExpect(jsonPath("$.data.serviceDate", is(serviceDate.toString())))
+                .andExpect(jsonPath("$.data.note", is("Không đường")));
 
         Map<String, Object> persisted = jdbcTemplate.queryForMap("""
                 SELECT booking_id, homestay_id, room_id, service_id, quantity, unit_price, total_price,
@@ -251,7 +253,9 @@ class CustomerBookingTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].serviceName", startsWith("Dịch vụ kiểm thử ")))
-                .andExpect(jsonPath("$.data[0].totalPrice", is(250000)));
+                .andExpect(jsonPath("$.data[0].totalPrice", is(250000)))
+                .andExpect(jsonPath("$.data[0].serviceDate", is(serviceDate.toString())))
+                .andExpect(jsonPath("$.data[0].note", is("Không đường")));
     }
 
     @Test
@@ -284,6 +288,14 @@ class CustomerBookingTests {
                         .content(requestBody))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code", is("ROOM_NOT_IN_BOOKING")));
+
+        // Từ chối serviceId không dương (<= 0) theo validation @Positive
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("serviceId", 0, "quantity", 1))))
+                .andExpect(status().isBadRequest());
+
         assertEquals(0, jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM booking_services WHERE booking_id = ?", Integer.class, booking.getId()));
     }

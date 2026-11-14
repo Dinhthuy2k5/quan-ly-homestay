@@ -743,15 +743,33 @@ export default function CustomerBookingDetailPage() {
                   const statusText = service.status === 'USED' ? 'Đã sử dụng' : service.status === 'CANCELLED' ? 'Đã hủy' : 'Đã đăng ký';
                   const statusClass = service.status === 'USED' ? 'bg-emerald-50 text-emerald-800' : service.status === 'CANCELLED' ? 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]' : 'bg-sky-50 text-sky-800';
                   return (
-                    <li key={service.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-[var(--color-ink)]">{service.serviceName}</p>
-                        <p className="mt-1 text-sm text-[var(--color-muted)]">{serviceRoom?.roomName || `Phòng #${service.roomId}`} · {service.quantity} × {formatVnd(service.unitPrice)}</p>
+                    <li key={service.id} className="p-4 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-[var(--color-ink)]">{service.serviceName}</p>
+                          <p className="mt-0.5 text-sm text-[var(--color-muted)]">{serviceRoom?.roomName || `Phòng #${service.roomId}`} · {service.quantity} × {formatVnd(service.unitPrice)}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-semibold tabular-nums text-[var(--color-ink)]">{formatVnd(service.totalPrice)}</span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass}`}>{statusText}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold tabular-nums text-[var(--color-ink)]">{formatVnd(service.totalPrice)}</span>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass}`}>{statusText}</span>
-                      </div>
+                      {(service.serviceDate || service.note) && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-muted)] pt-1 border-t border-[var(--color-border)]/50">
+                          {service.serviceDate && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-[var(--color-muted)]" />
+                              <span>Ngày dùng: {formatDate(service.serviceDate)}</span>
+                            </span>
+                          )}
+                          {service.note && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <FileText className="h-3.5 w-3.5 text-[var(--color-muted)]" />
+                              <span className="italic">Ghi chú: {service.note}</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
