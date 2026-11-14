@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.web.context.WebApplicationContext;
 import vn.edu.hust.homestay.auth.entity.Role;
 import vn.edu.hust.homestay.auth.entity.User;
@@ -34,6 +35,7 @@ import vn.edu.hust.homestay.pricing.repository.PriceRuleRepository;
 import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
+import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSelectionRequest;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -67,6 +69,7 @@ class CustomerBookingTests {
     @Autowired private BookingRepository bookingRepository;
     @Autowired private BookingRoomNightRepository bookingRoomNightRepository;
     @Autowired private PaymentRepository paymentRepository;
+    @Autowired private vn.edu.hust.homestay.booking.repository.BookingRoomRepository bookingRoomRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private JwtService jwtService;
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -108,14 +111,59 @@ class CustomerBookingTests {
     void cancelConfirmedBookingPersistsRefundAndReleasesNights() throws Exception {
         LocalDate checkInDate = LocalDate.now(BUSINESS_TIME_ZONE).plusDays(5);
         Booking booking = createConfirmedBookingWithDeposit(checkInDate);
+        Long roomId = bookingRoomRepository.findByBookingId(booking.getId()).getFirst().getRoomId();
+        long serviceId = createActiveService(booking.getHomestayId(), 75_000L);
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("serviceId", serviceId, "quantity", 1))))
+                .andExpect(status().isCreated());
         long expectedRefund = (booking.getDepositAmount() + 1) / 2;
         assertEquals(1, jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
 
+        // 1. Khi đơn phát sinh hoàn tiền cọc mà thiếu thông tin ngân hàng -> 400 REFUND_BANK_INFO_REQUIRED
         mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/cancel")
                         .header("Authorization", "Bearer " + customerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("reason", "  Đổi kế hoạch  "))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("REFUND_BANK_INFO_REQUIRED")));
+
+        // 1b. Khi số tài khoản không hợp lệ (chứa chữ cái hoặc ngắn hơn 6 số) -> 400
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "reason", "Đổi kế hoạch",
+                                "bankName", "MB Bank",
+                                "bankAccountNumber", "1234a",
+                                "bankAccountHolder", "NGUYEN VAN A"
+                        ))))
+                .andExpect(status().isBadRequest());
+
+        // 1c. Khi tên chủ tài khoản chứa số hoặc ký tự đặc biệt -> 400
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "reason", "Đổi kế hoạch",
+                                "bankName", "MB Bank",
+                                "bankAccountNumber", "0987654321",
+                                "bankAccountHolder", "NGUYEN VAN 123"
+                        ))))
+                .andExpect(status().isBadRequest());
+
+        // 2. Khi cung cấp đầy đủ thông tin ngân hàng nhận hoàn tiền (có dấu tiếng Việt) -> Hủy thành công, tên chuẩn hóa in hoa không dấu
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "reason", "  Đổi kế hoạch  ",
+                                "bankName", "MB Bank",
+                                "bankAccountNumber", "0987654321",
+                                "bankAccountHolder", "Nguyễn Văn Đạt"
+                        ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success", is(true)))
                 .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
@@ -130,9 +178,11 @@ class CustomerBookingTests {
         assertEquals(customer.getId(), ((Number) persistedBooking.get("cancelled_by")).longValue());
         assertEquals(0, jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+        assertEquals("CANCELLED", jdbcTemplate.queryForObject(
+                "SELECT status FROM booking_services WHERE booking_id = ? AND service_id = ?", String.class, booking.getId(), serviceId));
 
         Map<String, Object> refundPayment = jdbcTemplate.queryForMap("""
-                SELECT type, amount, method, status, created_by
+                SELECT type, amount, method, status, created_by, bank_name, bank_account_number, bank_account_holder
                 FROM payments
                 WHERE booking_id = ? AND type = 'REFUND'
                 """, booking.getId());
@@ -141,6 +191,162 @@ class CustomerBookingTests {
         assertEquals("PENDING", refundPayment.get("status"));
         assertEquals("BANK_TRANSFER", refundPayment.get("method"));
         assertEquals(customer.getId(), ((Number) refundPayment.get("created_by")).longValue());
+        assertEquals("MB Bank", refundPayment.get("bank_name"));
+        assertEquals("0987654321", refundPayment.get("bank_account_number"));
+        assertEquals("NGUYEN VAN DAT", refundPayment.get("bank_account_holder"));
+
+        mockMvc.perform(get("/api/v1/customer/bookings/" + booking.getId())
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.payments[?(@.paymentType == 'REFUND')].bankName").value(hasItem("MB Bank")))
+                .andExpect(jsonPath("$.data.payments[?(@.paymentType == 'REFUND')].bankAccountNumber").value(hasItem("0987654321")))
+                .andExpect(jsonPath("$.data.payments[?(@.paymentType == 'REFUND')].bankAccountHolder").value(hasItem("NGUYEN VAN DAT")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-07 đăng ký dịch vụ: lưu đúng phòng, số lượng, giá chốt, ngày và người yêu cầu trong database")
+    void customerRegistersServiceAndPersistsSnapshotForOwnBookingRoom() throws Exception {
+        Booking booking = createConfirmedBookingWithDeposit(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(3));
+        Long roomId = bookingRoomRepository.findByBookingId(booking.getId()).getFirst().getRoomId();
+        long serviceId = createActiveService(booking.getHomestayId(), 125_000L);
+        LocalDate serviceDate = booking.getCheckInDate();
+
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "serviceId", serviceId,
+                                "quantity", 2,
+                                "serviceDate", serviceDate.toString(),
+                                "note", "  Không đường  "))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.roomId", is(roomId.intValue())))
+                .andExpect(jsonPath("$.data.serviceId", is((int) serviceId)))
+                .andExpect(jsonPath("$.data.quantity", is(2)))
+                .andExpect(jsonPath("$.data.unitPrice", is(125000)))
+                .andExpect(jsonPath("$.data.totalPrice", is(250000)))
+                .andExpect(jsonPath("$.data.status", is("REGISTERED")));
+
+        Map<String, Object> persisted = jdbcTemplate.queryForMap("""
+                SELECT booking_id, homestay_id, room_id, service_id, quantity, unit_price, total_price,
+                       status, service_date, note, requested_by, recorded_by
+                FROM booking_services WHERE booking_id = ? AND service_id = ?
+                """, booking.getId(), serviceId);
+        assertEquals(booking.getId(), ((Number) persisted.get("booking_id")).longValue());
+        assertEquals(booking.getHomestayId(), ((Number) persisted.get("homestay_id")).longValue());
+        assertEquals(roomId, ((Number) persisted.get("room_id")).longValue());
+        assertEquals(2, ((Number) persisted.get("quantity")).intValue());
+        assertEquals(125_000L, ((Number) persisted.get("unit_price")).longValue());
+        assertEquals(250_000L, ((Number) persisted.get("total_price")).longValue());
+        assertEquals("REGISTERED", persisted.get("status"));
+        assertEquals(serviceDate, ((java.sql.Date) persisted.get("service_date")).toLocalDate());
+        assertEquals("Không đường", persisted.get("note"));
+        assertEquals(customer.getId(), ((Number) persisted.get("requested_by")).longValue());
+        assertNull(persisted.get("recorded_by"));
+
+        mockMvc.perform(get("/api/v1/customer/bookings/" + booking.getId() + "/services")
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].serviceName", startsWith("Dịch vụ kiểm thử ")))
+                .andExpect(jsonPath("$.data[0].totalPrice", is(250000)));
+    }
+
+    @Test
+    @DisplayName("API-CUS-07 từ chối đăng ký dịch vụ cho booking của khách khác hoặc phòng không thuộc booking")
+    void customerCannotRegisterServiceOutsideOwnedBookingAndRoom() throws Exception {
+        Booking booking = createConfirmedBookingWithDeposit(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(4));
+        long serviceId = createActiveService(booking.getHomestayId(), 80_000L);
+        Long roomId = bookingRoomRepository.findByBookingId(booking.getId()).getFirst().getRoomId();
+        User otherCustomer = userRepository.saveAndFlush(User.builder()
+                .email("service-other-" + UUID.randomUUID() + "@example.com")
+                .passwordHash("test-hash")
+                .fullName("Khách khác")
+                .phone("0912888777")
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .build());
+        String otherToken = jwtService.generateAccessToken(otherCustomer);
+        String requestBody = objectMapper.writeValueAsString(Map.of("serviceId", serviceId, "quantity", 1));
+
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services")
+                        .header("Authorization", "Bearer " + otherToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code", is("BOOKING_NOT_OWNED")));
+
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/999999/services")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("ROOM_NOT_IN_BOOKING")));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_services WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-CUS-07 nhận booking còn giữ chỗ hoặc đang hoạt động và ngày dịch vụ nằm trong kỳ lưu trú")
+    void customerServiceRegistrationRequiresOpenBookingAndDateInsideStay() throws Exception {
+        Booking booking = createConfirmedBookingWithDeposit(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(5));
+        Long roomId = bookingRoomRepository.findByBookingId(booking.getId()).getFirst().getRoomId();
+        long serviceId = createActiveService(booking.getHomestayId(), 90_000L);
+        String endpoint = "/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services";
+        String invalidDate = objectMapper.writeValueAsString(Map.of(
+                "serviceId", serviceId,
+                "quantity", 1,
+                "serviceDate", booking.getCheckOutDate().toString()));
+
+        mockMvc.perform(post(endpoint)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(invalidDate))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("SERVICE_DATE_OUTSIDE_BOOKING")));
+
+        booking.setStatus(BookingStatus.CANCELLED);
+        bookingRepository.saveAndFlush(booking);
+        mockMvc.perform(post(endpoint)
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("serviceId", serviceId, "quantity", 1))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("SERVICE_BOOKING_CLOSED")));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_services WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-CUS-07 cho phép khách đăng ký dịch vụ khi booking PENDING_DEPOSIT còn hạn giữ chỗ")
+    void customerCanRegisterServiceBeforeDepositApprovalWhileHoldIsActive() throws Exception {
+        Booking booking = createPendingBooking(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(6));
+        Long roomId = bookingRoomRepository.findByBookingId(booking.getId()).getFirst().getRoomId();
+        long serviceId = createActiveService(booking.getHomestayId(), 65_000L);
+
+        mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("serviceId", serviceId, "quantity", 1))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status", is("REGISTERED")));
+        assertEquals("REGISTERED", jdbcTemplate.queryForObject(
+                "SELECT status FROM booking_services WHERE booking_id = ?", String.class, booking.getId()));
+    }
+
+    private long createActiveService(Long homestayId, long unitPrice) {
+        String suffix = UUID.randomUUID().toString();
+        String categoryName = "Danh mục kiểm thử " + suffix;
+        jdbcTemplate.update("INSERT INTO service_categories (homestay_id, name) VALUES (?, ?)", homestayId, categoryName);
+        long categoryId = jdbcTemplate.queryForObject(
+                "SELECT id FROM service_categories WHERE homestay_id = ? AND name = ?", Long.class, homestayId, categoryName);
+        jdbcTemplate.update("""
+                INSERT INTO services (homestay_id, category_id, name, unit, unit_price, description, status)
+                VALUES (?, ?, ?, 'suất', ?, 'Dịch vụ tạo bởi kiểm thử API-CUS-07', 'ACTIVE')
+                """, homestayId, categoryId, "Dịch vụ kiểm thử " + suffix, unitPrice);
+        return jdbcTemplate.queryForObject("SELECT id FROM services WHERE category_id = ?", Long.class, categoryId);
     }
 
     @Test
@@ -193,16 +399,22 @@ class CustomerBookingTests {
         assertEquals(1, jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
 
+        String validCancelBody = objectMapper.writeValueAsString(Map.of(
+                "reason", "Chủ đơn hủy",
+                "bankName", "Techcombank",
+                "bankAccountNumber", "1903000111",
+                "bankAccountHolder", "NGUYEN VAN A"
+        ));
         mockMvc.perform(post(path)
                         .header("Authorization", "Bearer " + customerToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(validCancelBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.refundAmount", is(booking.getDepositAmount().intValue())));
         mockMvc.perform(post(path)
                         .header("Authorization", "Bearer " + customerToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(validCancelBody))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code", is("CANCELLATION_NOT_ALLOWED")));
 
@@ -279,6 +491,75 @@ class CustomerBookingTests {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code", is("ROOM_NOT_AVAILABLE")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-01 tạo booking và dịch vụ đã chọn nguyên tử, chốt giá dịch vụ và vẫn tính cọc từ tiền phòng")
+    void createBookingWithServicesPersistsServicesInSameTransaction() throws Exception {
+        LocalDate checkInDate = findFreeCheckInDate();
+        long serviceId = createActiveService(room.getHomestayId(), 125_000L);
+        CreateBookingRequest request = bookingRequest(checkInDate, 1);
+        request.setServices(List.of(new CustomerBookingServiceSelectionRequest(
+                room.getId(), serviceId, 2, checkInDate, "Không đường")));
+
+        String response = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status", is("PENDING_DEPOSIT")))
+                .andReturn().getResponse().getContentAsString();
+
+        long bookingId = objectMapper.readTree(response).path("data").path("id").asLong();
+        long roomTotal = objectMapper.readTree(response).path("data").path("roomTotalPrice").asLong();
+        long deposit = objectMapper.readTree(response).path("data").path("depositAmount").asLong();
+        Map<String, Object> persisted = jdbcTemplate.queryForMap("""
+                SELECT booking_id, room_id, service_id, quantity, unit_price, total_price,
+                       status, service_date, note, requested_by
+                FROM booking_services WHERE booking_id = ?
+                """, bookingId);
+        assertEquals(bookingId, ((Number) persisted.get("booking_id")).longValue());
+        assertEquals(room.getId(), ((Number) persisted.get("room_id")).longValue());
+        assertEquals(serviceId, ((Number) persisted.get("service_id")).longValue());
+        assertEquals(2, ((Number) persisted.get("quantity")).intValue());
+        assertEquals(125_000L, ((Number) persisted.get("unit_price")).longValue());
+        assertEquals(250_000L, ((Number) persisted.get("total_price")).longValue());
+        assertEquals("REGISTERED", persisted.get("status"));
+        assertEquals(checkInDate, ((java.sql.Date) persisted.get("service_date")).toLocalDate());
+        assertEquals("Không đường", persisted.get("note"));
+        assertEquals(customer.getId(), ((Number) persisted.get("requested_by")).longValue());
+        assertEquals(roomTotal, jdbcTemplate.queryForObject(
+                "SELECT room_total_price FROM bookings WHERE id = ?", Long.class, bookingId));
+        assertTrue(deposit <= roomTotal, "Tiền cọc phải được tính từ tiền phòng, không cộng dịch vụ REGISTERED");
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DisplayName("API-CUS-01 từ chối dịch vụ không thuộc danh mục ACTIVE của homestay")
+    void createBookingRejectsInactiveOrMissingSelectedService() throws Exception {
+        LocalDate checkInDate = findFreeCheckInDate();
+        CreateBookingRequest request = bookingRequest(checkInDate, 1);
+        request.setServices(List.of(new CustomerBookingServiceSelectionRequest(
+                room.getId(), Long.MAX_VALUE, 1, checkInDate, null)));
+        int bookingsBefore = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM bookings WHERE created_by = ?", Integer.class, customer.getId());
+        int nightsBefore = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE room_id = ?", Integer.class, room.getId());
+        mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("SERVICE_NOT_ACTIVE")));
+
+        assertEquals(bookingsBefore, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM bookings WHERE created_by = ?", Integer.class, customer.getId()));
+        assertEquals(nightsBefore, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE room_id = ?", Integer.class, room.getId()));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_services WHERE service_id = ?", Integer.class, Long.MAX_VALUE));
+        userRepository.delete(customer);
+        userRepository.flush();
     }
 
     @Test
@@ -677,12 +958,24 @@ class CustomerBookingTests {
                 .andReturn().getResponse().getContentAsString();
         Long bookingId = objectMapper.readTree(createRes).path("data").path("id").asLong();
 
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
+        Long managerId = userRepository.findByEmail("manager.maichau@homestay.vn").orElseThrow().getId();
+        Payment confirmedDeposit = createPayment(booking, Payment.PaymentStatus.CONFIRMED, managerId);
+        confirmedDeposit.setAmount(125_000L);
+        paymentRepository.saveAndFlush(confirmedDeposit);
+        Payment pendingDeposit = createPayment(booking, Payment.PaymentStatus.PENDING, null);
+        pendingDeposit.setAmount(200_000L);
+        paymentRepository.saveAndFlush(pendingDeposit);
+
         // Đọc chi tiết booking
         String detailRes = mockMvc.perform(get("/api/v1/customer/bookings/" + bookingId)
                         .header("Authorization", "Bearer " + customerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rooms", hasSize(1)))
                 .andExpect(jsonPath("$.data.rooms[0].nights", hasSize(2)))
+                .andExpect(jsonPath("$.data.payments", hasSize(2)))
+                .andExpect(jsonPath("$.data.payments[0].amount", notNullValue()))
+                .andExpect(jsonPath("$.data.payments[0].status", notNullValue()))
                 .andReturn().getResponse().getContentAsString();
 
         long night1Price = objectMapper.readTree(detailRes).path("data").path("rooms").get(0)
@@ -698,8 +991,12 @@ class CustomerBookingTests {
                 "Tổng giá từng đêm phải bằng đúng tổng tiền phòng của đơn");
         org.junit.jupiter.api.Assertions.assertTrue(depositAmount > 0 && depositAmount <= roomTotalPrice,
                 "Tiền cọc phải lớn hơn 0 và nhỏ hơn hoặc bằng tổng tiền phòng");
-        org.junit.jupiter.api.Assertions.assertEquals(0L, paidAmount);
-        org.junit.jupiter.api.Assertions.assertEquals(roomTotalPrice, outstandingAmount);
+        org.junit.jupiter.api.Assertions.assertEquals(125_000L, paidAmount,
+                "Chỉ khoản cọc đã được xác nhận mới tính là tiền đã nhận");
+        org.junit.jupiter.api.Assertions.assertEquals(roomTotalPrice - 125_000L, outstandingAmount);
+        assertEquals(125_000L, jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE booking_id = ? AND type = 'DEPOSIT' AND status = 'CONFIRMED'",
+                Long.class, bookingId));
     }
 
     @Test

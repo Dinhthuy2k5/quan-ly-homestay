@@ -3,7 +3,6 @@ package vn.edu.hust.homestay.homestay.service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.common.response.PagedResult;
@@ -18,9 +17,9 @@ import vn.edu.hust.homestay.media.repository.MediaRepository;
 import vn.edu.hust.homestay.room.dto.RoomTypePublicResponse;
 import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
 import vn.edu.hust.homestay.service.dto.PublicServiceResponse;
-import vn.edu.hust.homestay.service.entity.ServiceOffering;
-import vn.edu.hust.homestay.service.entity.ServiceOffering.ServiceStatus;
-import vn.edu.hust.homestay.service.repository.ServiceOfferingRepository;
+import vn.edu.hust.homestay.service.entity.Service;
+import vn.edu.hust.homestay.service.entity.Service.ServiceStatus;
+import vn.edu.hust.homestay.service.repository.ServiceRepository;
 
 import java.util.List;
 
@@ -29,25 +28,25 @@ import java.util.List;
  * Tuân thủ tài liệu API v1.1 và kế hoạch 10 tuần.
  * Ngày thực hiện: 17/10/2026
  */
-@Service
+@org.springframework.stereotype.Service
 @Transactional(readOnly = true)
 public class PublicHomestayService {
 
     private final HomestayRepository homestayRepository;
     private final MediaRepository mediaRepository;
     private final RoomTypeRepository roomTypeRepository;
-    private final ServiceOfferingRepository serviceOfferingRepository;
+    private final ServiceRepository serviceRepository;
 
     public PublicHomestayService(
             HomestayRepository homestayRepository,
             MediaRepository mediaRepository,
             RoomTypeRepository roomTypeRepository,
-            ServiceOfferingRepository serviceOfferingRepository
+            ServiceRepository serviceRepository
     ) {
         this.homestayRepository = homestayRepository;
         this.mediaRepository = mediaRepository;
         this.roomTypeRepository = roomTypeRepository;
-        this.serviceOfferingRepository = serviceOfferingRepository;
+        this.serviceRepository = serviceRepository;
     }
 
     /**
@@ -154,7 +153,7 @@ public class PublicHomestayService {
                 .orElseThrow(() -> BusinessException.notFound(
                         "HOMESTAY_NOT_FOUND", "Không tìm thấy homestay đang hoạt động"));
 
-        return serviceOfferingRepository
+        return serviceRepository
                 .findByHomestayIdAndStatusOrderByNameAsc(homestayId, ServiceStatus.ACTIVE)
                 .stream()
                 .map(PublicServiceResponse::from)

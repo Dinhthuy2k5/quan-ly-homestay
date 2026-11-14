@@ -665,7 +665,7 @@ Cột trái (nội dung chính), cột phải (tóm tắt: ảnh phòng, mã boo
 - Lỗi `DEPOSIT_AMOUNT_INVALID`: gắn vào ô số tiền. `FILE_TOO_LARGE`/`UNSUPPORTED_MEDIA_TYPE`: gắn vào ô tệp.
 - Nếu một khoản cọc bị từ chối, booking quay về `PENDING_DEPOSIT`: hiển thị **lý do từ chối** (nếu API trả) ngay trên thẻ cọc và cho gửi lại.
 - Khối **Thanh toán**: bảng các khoản (`DEPOSIT`/`PAYMENT`/`REFUND`, số tiền, trạng thái, thời điểm).
-- Khối **Dịch vụ**: danh sách dòng dịch vụ (`REGISTERED/USED/CANCELLED`), nút **Thêm dịch vụ** (chỉ khi `CONFIRMED` hoặc `CHECKED_IN`): chọn dịch vụ từ danh mục công khai + số lượng + chọn phòng. Hủy dòng `REGISTERED` bằng nút thùng rác có xác nhận.
+- Khối **Dịch vụ**: danh sách dòng dịch vụ (`REGISTERED/USED/CANCELLED`). Khách có thể chọn dịch vụ tùy chọn ngay trong bước tạo booking; gửi cùng API-CUS-01 để hệ thống lưu booking, phòng, đêm phòng và dịch vụ trong một transaction. Giá đơn vị được chốt tại lúc đăng ký; giải thích ngắn rằng chỉ dịch vụ được Manager xác nhận `USED` mới tính khi quyết toán, tiền cọc ban đầu chỉ dựa trên tiền phòng. Sau khi tạo booking, nút **Thêm dịch vụ** khả dụng khi booking ở `PENDING_DEPOSIT` còn hạn giữ chỗ, `PENDING_APPROVAL`, `CONFIRMED` hoặc `CHECKED_IN`; chọn dịch vụ + số lượng + phòng và ngày sử dụng tùy chọn. Hệ thống chuyển các dòng `REGISTERED` thành `CANCELLED` khi booking bị hủy/hết hạn hoặc dòng dịch vụ không còn phù hợp sau điều chỉnh booking.
 
 **Hủy đặt phòng (khách):**
 - Hộp xác nhận nêu rõ: "Đặt phòng sẽ bị hủy và các đêm đã giữ được trả lại. Số tiền hoàn do hệ thống tính theo chính sách, bạn không thể tự nhập." + ô lý do (tùy chọn).

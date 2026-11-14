@@ -7,6 +7,8 @@ import { formatVnd, nightsBetween } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { useAuth } from '../../auth/context/useAuth';
+import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
+import BookingServiceSelector from '../../homestays/components/BookingServiceSelector';
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const today = new Date();
@@ -104,6 +106,7 @@ export function RoomAvailabilityCalendar({ room }) {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState('');
   const [bookingNote, setBookingNote] = useState('');
+  const [bookingServices, setBookingServices] = useState([]);
   const [dateError, setDateError] = useState('');
 
   useEffect(() => {
@@ -185,6 +188,7 @@ export function RoomAvailabilityCalendar({ room }) {
         checkOutDate: checkOut,
         guestCount,
         note: bookingNote,
+        services: bookingServices,
       });
       navigate(`/customer/bookings/${result.id}`);
     } catch (error) {
@@ -199,7 +203,7 @@ export function RoomAvailabilityCalendar({ room }) {
 
   return (
     <section id="availability" className="scroll-mt-28 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-1)] sm:p-6">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid gap-6">
         <div>
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>
@@ -218,48 +222,50 @@ export function RoomAvailabilityCalendar({ room }) {
           </div>
         </div>
 
-        <aside className="h-fit rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 sm:p-5">
-          <p className="flex items-baseline gap-2"><span className="text-2xl font-semibold tabular-nums text-[var(--color-ink)]">{quote ? formatVnd(quote.roomTotalPrice) : room.nightlyPrice == null ? 'Chưa thiết lập giá' : formatVnd(room.nightlyPrice)}</span><span className="text-sm text-[var(--color-muted)]">{quote ? `cho ${nights} đêm` : '/ đêm'}</span></p>
-          <p className="mt-1 text-xs text-[var(--color-muted)]">{quote ? 'Giá đã tính theo từng đêm và quy tắc giá đang áp dụng.' : 'Giá cuối cùng có thể thay đổi theo ngày lưu trú.'}</p>
-          <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-t-lg border border-[var(--color-border)]">
-            <div className="p-3"><p className="text-[10px] font-bold uppercase text-[var(--color-muted)]">Nhận phòng</p><p className="mt-1 text-sm">{checkIn || 'Thêm ngày'}</p></div>
-            <div className="border-l border-[var(--color-border)] p-3"><p className="text-[10px] font-bold uppercase text-[var(--color-muted)]">Trả phòng</p><p className="mt-1 text-sm">{checkOut || 'Thêm ngày'}</p></div>
-          </div>
-          <label className="block rounded-b-lg border border-t-0 border-[var(--color-border)] p-3">
-            <span className="text-[10px] font-bold uppercase text-[var(--color-muted)]">Khách</span>
-            <span className="mt-1 flex items-center gap-2"><Users aria-hidden="true" className="h-4 w-4 text-[var(--color-muted)]" /><input type="number" min="1" max={room.maxGuests || 255} value={guestCount} onChange={(event) => { setGuestCount(Math.max(1, Number(event.target.value) || 1)); setQuote(null); setBookingError(''); }} aria-label="Số khách" className="w-full bg-transparent text-sm focus-visible:outline-none" /><span className="shrink-0 text-xs text-[var(--color-muted)]">tối đa {room.maxGuests}</span></span>
-          </label>
-          <button type="button" disabled={quoteLoading || calendarLoading} onClick={checkRoom} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-55">{quoteLoading ? <><LoaderCircle className="h-4 w-4 animate-spin" />Đang kiểm tra…</> : <><Search className="h-4 w-4" />Kiểm tra phòng và giá</>}</button>
-          <p className="mt-3 text-center text-xs text-[var(--color-muted)]">Nhận phòng từ {CHECK_IN_TIME} · Trả phòng đến hết {CHECK_OUT_DEADLINE}</p>
-          {quoteError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{quoteError}</p>}
-          {quote && <div className="mt-4 space-y-2 border-t border-[var(--color-border)] pt-4"><p className="font-semibold text-emerald-700">Phòng còn trống</p>{quote.quotedNights.map((night) => <div key={night.stayDate} className="flex justify-between gap-4 text-sm text-[var(--color-body)]"><span>{night.stayDate}</span><span className="font-medium tabular-nums">{formatVnd(night.nightlyPrice)}</span></div>)}<p className="flex justify-between border-t border-[var(--color-border)] pt-2 text-sm font-semibold"><span>Tổng cộng</span><span>{formatVnd(quote.roomTotalPrice)}</span></p></div>}
-          {quote && user?.role === 'CUSTOMER' && <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-            <label htmlFor="booking-note" className="mb-1 block text-xs font-semibold text-[var(--color-body)]">Ghi chú cho homestay (không bắt buộc)</label>
-            <textarea id="booking-note" maxLength={500} value={bookingNote} onChange={(event) => setBookingNote(event.target.value)} rows={2} className="w-full resize-y rounded-lg border border-[var(--color-border)] p-2 text-sm" placeholder="Ví dụ: dự kiến nhận phòng sau 11:00" />
-            <button type="button" onClick={createBooking} disabled={bookingLoading} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-55">{bookingLoading ? <><LoaderCircle className="h-4 w-4 animate-spin" />Đang tạo booking…</> : 'Đặt phòng'}</button>
-          </div>}
-          {quote && !isAuthenticated && <button type="button" onClick={createBooking} className="mt-4 flex min-h-12 w-full items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white hover:bg-[var(--color-primary-hover)]">Đăng nhập để đặt phòng</button>}
-          {quote && isAuthenticated && user?.role !== 'CUSTOMER' && <p className="mt-4 rounded-lg bg-[var(--color-surface-soft)] p-3 text-sm text-[var(--color-muted)]">Chỉ tài khoản khách hàng mới có thể đặt phòng trực tuyến.</p>}
-          {bookingError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{bookingError}</p>}
-          {(room.homestay?.id || room.homestayId) && (
-            <div className="mt-5 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3.5 text-xs text-[var(--color-muted)]">
-              <p className="font-semibold text-[var(--color-ink)]">Cần đặt nhiều phòng cho đoàn hoặc gia đình?</p>
-              <p className="mt-1">
-                Homestay có nhiều phòng với các mức sức chứa khác nhau. Bạn có thể chọn và kết hợp nhiều phòng trong cùng 1 đơn đặt.
-              </p>
-              <Link
-                to={`/homestays/${room.homestay?.id || room.homestayId}${
-                  checkIn && checkOut
-                    ? `?checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}&guests=${encodeURIComponent(guestCount)}`
-                    : ''
-                }#rooms-title`}
-                className="mt-2.5 inline-flex items-center gap-1 font-semibold text-[var(--color-primary)] hover:underline"
-              >
-                <span>Xem và chọn nhiều phòng tại homestay này</span>
-                <span aria-hidden="true">→</span>
-              </Link>
+        <aside className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)]/40 p-4 sm:p-6">
+          <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="text-2xl font-semibold tabular-nums text-[var(--color-ink)]">{quote ? formatVnd(quote.roomTotalPrice) : room.nightlyPrice == null ? 'Chưa thiết lập giá' : formatVnd(room.nightlyPrice)}</span>
+                <span className="text-sm text-[var(--color-muted)]">{quote ? `cho ${nights} đêm` : '/ đêm'}</span>
+              </div>
+              <p className="mt-1 text-sm text-[var(--color-muted)]">{quote ? 'Giá đã tính theo từng đêm và quy tắc giá đang áp dụng.' : 'Giá cuối cùng có thể thay đổi theo ngày lưu trú.'}</p>
+              <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-t-xl border border-[var(--color-border)] bg-white">
+                <div className="p-3.5"><p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-muted)]">Nhận phòng</p><p className="mt-1 text-sm font-medium">{checkIn || 'Thêm ngày'}</p></div>
+                <div className="border-l border-[var(--color-border)] p-3.5"><p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-muted)]">Trả phòng</p><p className="mt-1 text-sm font-medium">{checkOut || 'Thêm ngày'}</p></div>
+              </div>
+              <label className="block rounded-b-xl border border-t-0 border-[var(--color-border)] bg-white p-3.5">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-muted)]">Số khách</span>
+                <span className="mt-1 flex items-center gap-2"><Users aria-hidden="true" className="h-4 w-4 text-[var(--color-muted)]" /><input type="number" min="1" max={room.maxGuests || 255} value={guestCount} onChange={(event) => { setGuestCount(Math.max(1, Number(event.target.value) || 1)); setQuote(null); setBookingError(''); }} aria-label="Số khách" className="w-full bg-transparent text-sm focus-visible:outline-none" /><span className="shrink-0 text-xs text-[var(--color-muted)]">tối đa {room.maxGuests}</span></span>
+              </label>
+              <button type="button" disabled={quoteLoading || calendarLoading} onClick={checkRoom} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-55">{quoteLoading ? <><LoaderCircle className="h-4 w-4 animate-spin" />Đang kiểm tra…</> : <><Search className="h-4 w-4" />Kiểm tra phòng và giá</>}</button>
+              <p className="mt-3 text-center text-xs text-[var(--color-muted)]">Nhận phòng từ {CHECK_IN_TIME} · Trả phòng đến hết {CHECK_OUT_DEADLINE}</p>
+              {quoteError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{quoteError}</p>}
+              {quote && <div className="mt-5 space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-4">
+                <p className="font-semibold text-emerald-700">Phòng còn trống</p>
+                {quote.quotedNights.map((night) => <div key={night.stayDate} className="flex justify-between gap-4 text-sm text-[var(--color-body)]"><span>{night.stayDate}</span><span className="font-medium tabular-nums">{formatVnd(night.nightlyPrice)}</span></div>)}
+                <p className="flex justify-between border-t border-[var(--color-border)] pt-3 text-sm font-semibold"><span>Tổng tiền phòng</span><span>{formatVnd(quote.roomTotalPrice)}</span></p>
+              </div>}
             </div>
-          )}
+
+            <div className="min-w-0 space-y-4">
+              {quote && user?.role === 'CUSTOMER' && <>
+                <OptionalNotePicker label="Ghi chú cho homestay (không bắt buộc)" value={bookingNote} onChange={setBookingNote} maxLength={500} placeholder="Nhập ghi chú riêng cho homestay" options={['Tôi dự kiến đến muộn', 'Đoàn có trẻ nhỏ', 'Vui lòng liên hệ để xác nhận giờ đến']} />
+                <BookingServiceSelector homestayId={room.homestay?.id || room.homestayId} rooms={[{ id: room.id, name: room.name }]} checkInDate={checkIn} checkOutDate={checkOut} value={bookingServices} onChange={setBookingServices} />
+                <button type="button" onClick={createBooking} disabled={bookingLoading} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-55">{bookingLoading ? <><LoaderCircle className="h-4 w-4 animate-spin" />Đang tạo booking…</> : 'Đặt phòng'}</button>
+              </>}
+              {quote && !isAuthenticated && <button type="button" onClick={createBooking} className="flex min-h-12 w-full items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 font-semibold text-white hover:bg-[var(--color-primary-hover)]">Đăng nhập để đặt phòng</button>}
+              {quote && isAuthenticated && user?.role !== 'CUSTOMER' && <p className="rounded-lg bg-[var(--color-surface-soft)] p-3 text-sm text-[var(--color-muted)]">Chỉ tài khoản khách hàng mới có thể đặt phòng trực tuyến.</p>}
+              {bookingError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{bookingError}</p>}
+              {(room.homestay?.id || room.homestayId) && <div className="rounded-xl border border-[var(--color-border)] bg-white p-4 text-sm text-[var(--color-muted)]">
+                <p className="font-semibold text-[var(--color-ink)]">Cần đặt nhiều phòng cho đoàn hoặc gia đình?</p>
+                <p className="mt-1.5">Chọn và kết hợp nhiều phòng trong cùng một đơn đặt.</p>
+                <Link to={`/homestays/${room.homestay?.id || room.homestayId}${checkIn && checkOut ? `?checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}&guests=${encodeURIComponent(guestCount)}` : ''}#rooms-title`} className="mt-2 inline-flex items-center gap-1 font-semibold text-[var(--color-primary)] hover:underline">
+                  <span>Xem và chọn nhiều phòng</span><span aria-hidden="true">→</span>
+                </Link>
+              </div>}
+            </div>
+          </div>
         </aside>
       </div>
     </section>

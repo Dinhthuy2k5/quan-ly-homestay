@@ -48,5 +48,7 @@ public interface BookingRoomNightRepository extends JpaRepository<BookingRoomNig
 
     List<BookingRoomNight> findByBookingId(Long bookingId);
 
+    List<BookingRoomNight> findByBookingIdIn(Collection<Long> bookingIds);
+
     List<BookingRoomNight> findByBookingIdOrderByIdRoomIdAscIdStayDateAsc(Long bookingId);
 }

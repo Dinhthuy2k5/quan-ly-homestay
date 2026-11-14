@@ -51,12 +51,14 @@ import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.entity.RoomType;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
 import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
+import vn.edu.hust.homestay.service.service.CustomerBookingServiceService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.Normalizer;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -69,9 +71,11 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -85,6 +89,8 @@ import java.util.stream.Collectors;
 public class ManagerBookingService {
 
     private static final ZoneId BUSINESS_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final Pattern BANK_ACCOUNT_NUMBER_PATTERN = Pattern.compile("^[0-9]{6,20}$");
+    private static final Pattern BANK_ACCOUNT_HOLDER_PATTERN = Pattern.compile("^[\\p{L}\\s]{2,50}$");
     private static final List<String> BANK_POLICY_KEYS = List.of(
             "bank_name", "bank_account_number", "bank_account_holder"
     );
@@ -101,6 +107,7 @@ public class ManagerBookingService {
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
     private final CancellationRefundPolicyService cancellationRefundPolicyService;
+    private final CustomerBookingServiceService bookingServiceOperations;
     private final Path privateUploadRoot;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -117,6 +124,7 @@ public class ManagerBookingService {
             UserRepository userRepository,
             PaymentRepository paymentRepository,
             CancellationRefundPolicyService cancellationRefundPolicyService,
+            CustomerBookingServiceService bookingServiceOperations,
             @Value("${app.storage.private-upload-dir:storage/private}") String privateUploadDir
     ) {
         this.bookingRepository = bookingRepository;
@@ -131,6 +139,7 @@ public class ManagerBookingService {
         this.userRepository = userRepository;
         this.paymentRepository = paymentRepository;
         this.cancellationRefundPolicyService = cancellationRefundPolicyService;
+        this.bookingServiceOperations = bookingServiceOperations;
         this.privateUploadRoot = Paths.get(privateUploadDir).toAbsolutePath().normalize();
     }
 
@@ -375,6 +384,8 @@ public class ManagerBookingService {
                 : "MANAGER";
 
         List<BookingRoom> bRooms = bookingRoomRepository.findByBookingId(booking.getId());
+        List<BookingRoomNight> allNights = bookingRoomNightRepository
+                .findByBookingIdOrderByIdRoomIdAscIdStayDateAsc(booking.getId());
         Set<Long> roomIds = bRooms.stream().map(BookingRoom::getRoomId).collect(Collectors.toSet());
         Map<Long, Room> roomMap = roomIds.isEmpty() ? Map.of() :
                 roomRepository.findAllById(roomIds).stream().collect(Collectors.toMap(Room::getId, r -> r));
@@ -387,8 +398,6 @@ public class ManagerBookingService {
                 mediaRepository.findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(Media.OwnerType.ROOM, roomIds).stream()
                         .collect(Collectors.toMap(Media::getOwnerId, m -> m, (first, second) -> first));
 
-        List<BookingRoomNight> allNights = bookingRoomNightRepository
-                .findByBookingIdOrderByIdRoomIdAscIdStayDateAsc(booking.getId());
         Map<Long, List<BookingRoomNight>> nightsByRoomId = allNights.stream()
                 .collect(Collectors.groupingBy(n -> n.getId().getRoomId()));
 
@@ -474,14 +483,15 @@ public class ManagerBookingService {
                 roomDetails,
                 instruction,
                 paymentRepository.findByBookingIdAndTypeInOrderByCreatedAtDesc(
-                                booking.getId(), List.of(Payment.PaymentType.DEPOSIT, Payment.PaymentType.REFUND))
+                                booking.getId(), List.of(Payment.PaymentType.DEPOSIT, Payment.PaymentType.PAYMENT, Payment.PaymentType.REFUND))
                         .stream()
                         .map(payment -> new ManagerBookingDetailResponse.PaymentSummary(
                                 payment.getId(), payment.getType().name(), payment.getAmount(), payment.getStatus().name(),
                                 payment.getMethod().name(), payment.getReferenceCode(), payment.getRejectionReason(),
                                 payment.getCreatedAt() == null ? null : payment.getCreatedAt().toInstant(ZoneOffset.UTC),
                                 payment.getConfirmedAt() == null ? null : payment.getConfirmedAt().toInstant(ZoneOffset.UTC),
-                                payment.getProofUrl() != null, managerProofMimeType(payment.getProofUrl()), payment.getNote()))
+                                payment.getProofUrl() != null, managerProofMimeType(payment.getProofUrl()), payment.getNote(),
+                                payment.getBankName(), payment.getBankAccountNumber(), payment.getBankAccountHolder()))
                         .toList(),
                 List.of()
         );
@@ -525,6 +535,7 @@ public class ManagerBookingService {
                 booking.setStatus(BookingStatus.PENDING_DEPOSIT);
             } else {
                 booking.setStatus(BookingStatus.EXPIRED);
+                bookingServiceOperations.cancelRegisteredServices(booking.getId());
                 bookingRepository.saveAndFlush(booking);
                 bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
             }
@@ -548,6 +559,7 @@ public class ManagerBookingService {
                 booking.setStatus(BookingStatus.PENDING_DEPOSIT);
             } else {
                 booking.setStatus(BookingStatus.EXPIRED);
+                bookingServiceOperations.cancelRegisteredServices(booking.getId());
                 bookingRepository.saveAndFlush(booking);
                 bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
             }
@@ -671,6 +683,7 @@ public class ManagerBookingService {
         booking.setCancelledBy(principal.getId());
         booking.setCancelReason((Boolean.TRUE.equals(request.requestedByCustomer()) ? "Khách yêu cầu: " : "Sự cố homestay: ") + reason);
         booking.setRefundAmount(refundAmount);
+        bookingServiceOperations.cancelRegisteredServices(booking.getId());
         bookingRepository.saveAndFlush(booking);
         bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
 
@@ -682,6 +695,29 @@ public class ManagerBookingService {
             refund.setAmount(refundAmount);
             refund.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
             refund.setStatus(Payment.PaymentStatus.PENDING);
+            if (request != null) {
+                if (request.bankName() != null && !request.bankName().isBlank()) {
+                    refund.setBankName(request.bankName().trim());
+                }
+                if (request.bankAccountNumber() != null && !request.bankAccountNumber().isBlank()) {
+                    String accNumber = request.bankAccountNumber().trim();
+                    if (!BANK_ACCOUNT_NUMBER_PATTERN.matcher(accNumber).matches()) {
+                        throw BusinessException.badRequest(
+                                "INVALID_BANK_ACCOUNT_NUMBER",
+                                "Số tài khoản ngân hàng không hợp lệ (phải gồm từ 6 đến 20 chữ số và chỉ chứa số từ 0-9)");
+                    }
+                    refund.setBankAccountNumber(accNumber);
+                }
+                if (request.bankAccountHolder() != null && !request.bankAccountHolder().isBlank()) {
+                    String holder = request.bankAccountHolder().trim();
+                    if (!BANK_ACCOUNT_HOLDER_PATTERN.matcher(holder).matches()) {
+                        throw BusinessException.badRequest(
+                                "INVALID_BANK_ACCOUNT_HOLDER",
+                                "Tên chủ tài khoản không hợp lệ (phải từ 2 đến 50 ký tự chữ cái, không chứa số hoặc ký tự đặc biệt)");
+                    }
+                    refund.setBankAccountHolder(normalizeAccountHolder(holder));
+                }
+            }
             refund.setNote("Hoàn tiền theo chính sách hủy booking");
             refund.setCreatedBy(principal.getId());
             paymentRepository.save(refund);
@@ -884,14 +920,22 @@ public class ManagerBookingService {
         }
 
         // 7. Cập nhật booking_room_nights và booking_rooms
+        bookingServiceOperations.deleteServicesInvalidatedByAdjustment(booking.getId(),
+                Set.copyOf(effectiveRoomIds), newCheckInDate, newCheckOutDate);
         List<BookingRoomNight> oldNights = bookingRoomNightRepository.findByBookingId(booking.getId());
         bookingRoomNightRepository.deleteAll(oldNights);
         bookingRoomNightRepository.flush();
 
         if (request.roomIds() != null) {
-            bookingRoomRepository.deleteAll(currentBookingRooms);
+            Set<Long> effectiveIds = Set.copyOf(effectiveRoomIds);
+            List<BookingRoom> removable = currentBookingRooms.stream()
+                    .filter(br -> !effectiveIds.contains(br.getRoomId()))
+                    .toList();
+            bookingRoomRepository.deleteAll(removable);
             bookingRoomRepository.flush();
+            Set<Long> linkedIds = currentBookingRooms.stream().map(BookingRoom::getRoomId).collect(Collectors.toSet());
             bookingRoomRepository.saveAllAndFlush(rooms.stream()
+                    .filter(r -> !linkedIds.contains(r.getId()))
                     .map(r -> new BookingRoom(booking.getId(), homestayId, r.getId()))
                     .toList());
         }
@@ -1062,6 +1106,16 @@ public class ManagerBookingService {
 
     private String normalize(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String normalizeAccountHolder(String holder) {
+        if (holder == null) {
+            return null;
+        }
+        String nfdNormalized = Normalizer.normalize(holder.trim(), Normalizer.Form.NFD);
+        String withoutDiacritics = nfdNormalized.replaceAll("\\p{M}", "");
+        String replacedD = withoutDiacritics.replace('Đ', 'D').replace('đ', 'd');
+        return replacedD.replaceAll("\\s+", " ").trim().toUpperCase(Locale.ROOT);
     }
 
     private record BookingPolicy(int minNights, int maxNights, int maxAdvanceDays,

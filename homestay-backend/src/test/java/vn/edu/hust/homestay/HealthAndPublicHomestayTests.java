@@ -6,11 +6,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -26,6 +29,9 @@ class HealthAndPublicHomestayTests {
 
     @Autowired
     private WebApplicationContext context;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private MockMvc mockMvc;
 
@@ -137,6 +143,46 @@ class HealthAndPublicHomestayTests {
                 .andExpect(jsonPath("$.data[0].name", notNullValue()));
     }
 
+    @Test
+    @Transactional
+    @DisplayName("API-PUB-04: chỉ trả dịch vụ ACTIVE của homestay, đúng đơn vị và giá từ MySQL")
+    void testPublicHomestayServicesReturnActiveCatalog() throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String activeName = "PUB04-active-" + suffix;
+        String inactiveName = "PUB04-inactive-" + suffix;
+        jdbcTemplate.update("INSERT INTO service_categories (homestay_id, name) VALUES (1, ?)", "PUB04-category-" + suffix);
+        Long categoryId = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        jdbcTemplate.update("""
+                INSERT INTO services (homestay_id, category_id, name, unit, unit_price, description, status)
+                VALUES (1, ?, ?, 'suất', 125000, 'Dịch vụ công khai thử nghiệm', 'ACTIVE')
+                """, categoryId, activeName);
+        Long activeId = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        jdbcTemplate.update("""
+                INSERT INTO services (homestay_id, category_id, name, unit, unit_price, description, status)
+                VALUES (1, ?, ?, 'lượt', 50000, 'Dịch vụ ngừng cung cấp', 'INACTIVE')
+                """, categoryId, inactiveName);
+        Long inactiveId = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+
+        mockMvc.perform(get("/api/v1/public/homestays/1/services"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data", hasSize(greaterThanOrEqualTo(1))))
+                .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].name", contains(activeName)))
+                .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].unit", contains("suất")))
+                .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].unitPrice", contains(125000)))
+                .andExpect(jsonPath("$.data[?(@.id == " + activeId + ")].description", contains("Dịch vụ công khai thử nghiệm")))
+                .andExpect(jsonPath("$.data[?(@.id == " + inactiveId + ")]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("API-PUB-04: homestay không tồn tại hoặc không hoạt động trả 404 HOMESTAY_NOT_FOUND")
+    void testPublicHomestayServicesNotFound() throws Exception {
+        mockMvc.perform(get("/api/v1/public/homestays/999999/services"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_NOT_FOUND")));
+    }
+
     /**
      * Mã API: API-PUB-06
      * Tên API: Xem chi tiết thông tin phòng
@@ -185,5 +231,35 @@ class HealthAndPublicHomestayTests {
                 .andExpect(jsonPath("$.data.fromDate", is(fromDate.toString())))
                 .andExpect(jsonPath("$.data.toDate", is(toDate.toString())))
                 .andExpect(jsonPath("$.data.unavailableDates", isA(java.util.List.class)));
+    }
+
+    /**
+     * Mã API: API-PUB-POLICY-01
+     * Tên API: Lấy chính sách của homestay công khai cho khách hàng
+     */
+    @Test
+    @DisplayName("API-PUB-POLICY-01: GET /api/v1/public/homestays/{homestayId}/policies — Lấy chính sách của homestay thành công")
+    void testGetHomestayPoliciesSuccess() throws Exception {
+        mockMvc.perform(get("/api/v1/public/homestays/1/policies")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.homestayId", is(1)))
+                .andExpect(jsonPath("$.data.bookingPolicy", notNullValue()))
+                .andExpect(jsonPath("$.data.paymentPolicy", notNullValue()))
+                .andExpect(jsonPath("$.data.stayPolicy", notNullValue()))
+                .andExpect(jsonPath("$.data.cancellationPolicy", notNullValue()))
+                .andExpect(jsonPath("$.data.stayPolicy.checkInTime", notNullValue()))
+                .andExpect(jsonPath("$.data.stayPolicy.checkOutDeadline", notNullValue()));
+    }
+
+    @Test
+    @DisplayName("API-PUB-POLICY-01: GET /api/v1/public/homestays/{homestayId}/policies — Homestay không tồn tại trả 404")
+    void testGetHomestayPoliciesNotFound() throws Exception {
+        mockMvc.perform(get("/api/v1/public/homestays/999999/policies")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_NOT_FOUND")));
     }
 }

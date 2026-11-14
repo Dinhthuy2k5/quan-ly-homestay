@@ -21,6 +21,7 @@ import { formatDate, formatVnd, getNextDate, nightsBetween } from '../../../lib/
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { getErrorMessage } from '../../../lib/errors';
 import { EMAIL_REGEX, PHONE_REGEX } from '../../../lib/validation';
+import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
 
 export default function ManagerCreateBookingModal({ homestay, onClose, onSuccess }) {
   // Hôm nay định dạng YYYY-MM-DD
@@ -533,18 +534,8 @@ export default function ManagerCreateBookingModal({ homestay, onClose, onSuccess
           </div>
 
           {/* Section: Ghi chú */}
-          <div className="space-y-1.5 pt-2 border-t border-[var(--color-border)]">
-            <label htmlFor="booking-note" className="block text-xs font-semibold text-[var(--color-body)]">
-              Ghi chú nội bộ / Kênh đặt phòng <span className="text-xs font-normal text-[var(--color-muted)]">(Tùy chọn)</span>
-            </label>
-            <textarea
-              id="booking-note"
-              rows={2}
-              placeholder="Ví dụ: Khách gọi điện qua hotline lúc 9h; khách sẽ chuyển khoản cọc trong hôm nay..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full rounded-xl border border-[var(--color-border)] px-3.5 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] focus:outline-hidden resize-none"
-            />
+          <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
+            <OptionalNotePicker label="Ghi chú nội bộ / Kênh đặt phòng (tùy chọn)" value={note} onChange={setNote} rows={2} placeholder="Nhập kênh đặt hoặc ghi chú riêng" options={['Khách đặt trực tiếp tại quầy', 'Khách đặt qua điện thoại', 'Khách đặt qua mạng xã hội']} />
           </div>
 
           {/* Thông báo lỗi */}

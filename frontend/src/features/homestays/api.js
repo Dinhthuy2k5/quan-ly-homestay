@@ -38,7 +38,7 @@ export async function searchAvailableRooms({ homestayId, checkInDate, checkOutDa
 }
 
 /** Tạo booking cho Customer hiện tại (API-CUS-01). */
-export async function createCustomerBooking({ homestayId, roomIds, checkInDate, checkOutDate, guestCount, note = '' }) {
+export async function createCustomerBooking({ homestayId, roomIds, checkInDate, checkOutDate, guestCount, note = '', services = [] }) {
   const res = await apiClient.post('/customer/bookings', {
     homestayId: Number(homestayId),
     roomIds: roomIds.map(Number),
@@ -46,6 +46,13 @@ export async function createCustomerBooking({ homestayId, roomIds, checkInDate, 
     checkOutDate,
     guestCount: Number(guestCount),
     note: note.trim() || null,
+    services: services.map((item) => ({
+      roomId: Number(item.roomId),
+      serviceId: Number(item.serviceId),
+      quantity: Number(item.quantity),
+      serviceDate: item.serviceDate || null,
+      note: item.note?.trim() || null,
+    })),
   });
   const result = res.data?.data ?? res.data;
   if (!result || !result.id || !result.code) throw new Error('Máy chủ trả về thông tin booking không hợp lệ.');

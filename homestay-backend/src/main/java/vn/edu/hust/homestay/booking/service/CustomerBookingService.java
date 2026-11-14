@@ -22,6 +22,7 @@ import vn.edu.hust.homestay.booking.dto.CreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CreateBookingResponse;
 import vn.edu.hust.homestay.booking.dto.DepositSubmissionResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
+import vn.edu.hust.homestay.booking.dto.CancelBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CancelBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CustomerAdjustBookingResponse;
@@ -48,6 +49,7 @@ import vn.edu.hust.homestay.pricing.repository.PriceRuleRepository;
 import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
+import vn.edu.hust.homestay.service.service.CustomerBookingServiceService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -62,15 +64,18 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.Normalizer;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -78,6 +83,8 @@ public class CustomerBookingService {
 
     private static final Logger log = LoggerFactory.getLogger(CustomerBookingService.class);
     private static final ZoneId BUSINESS_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final Pattern BANK_ACCOUNT_NUMBER_PATTERN = Pattern.compile("^[0-9]{6,20}$");
+    private static final Pattern BANK_ACCOUNT_HOLDER_PATTERN = Pattern.compile("^[\\p{L}\\s]{2,50}$");
     private static final List<String> BANK_POLICY_KEYS = List.of(
             "bank_name", "bank_account_number", "bank_account_holder");
 
@@ -91,6 +98,7 @@ public class CustomerBookingService {
     private final MediaRepository mediaRepository;
     private final PaymentRepository paymentRepository;
     private final CancellationRefundPolicyService cancellationRefundPolicyService;
+    private final CustomerBookingServiceService bookingServiceOperations;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Path privateUploadRoot;
 
@@ -105,6 +113,7 @@ public class CustomerBookingService {
             MediaRepository mediaRepository,
             PaymentRepository paymentRepository,
             CancellationRefundPolicyService cancellationRefundPolicyService,
+            CustomerBookingServiceService bookingServiceOperations,
             @Value("${app.storage.private-upload-dir:storage/private}") String privateUploadDir
     ) {
         this.bookingRepository = bookingRepository;
@@ -117,6 +126,7 @@ public class CustomerBookingService {
         this.mediaRepository = mediaRepository;
         this.paymentRepository = paymentRepository;
         this.cancellationRefundPolicyService = cancellationRefundPolicyService;
+        this.bookingServiceOperations = bookingServiceOperations;
         this.privateUploadRoot = Paths.get(privateUploadDir).toAbsolutePath().normalize();
     }
 
@@ -227,6 +237,11 @@ public class CustomerBookingService {
 
     @Transactional
     public CancelBookingResponse cancelBooking(UserPrincipal principal, Long bookingId, String reason) {
+        return cancelBooking(principal, bookingId, new CancelBookingRequest(reason, null, null, null));
+    }
+
+    @Transactional
+    public CancelBookingResponse cancelBooking(UserPrincipal principal, Long bookingId, CancelBookingRequest request) {
         boolean bookingExists = bookingRepository.existsById(bookingId);
         Booking booking = bookingRepository.findByIdAndCustomerIdForUpdate(bookingId, principal.getId())
                 .orElseThrow(() -> bookingExists
@@ -247,11 +262,38 @@ public class CustomerBookingService {
                 .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
                 .longValueExact();
 
+        String bankName = null;
+        String bankAccountNumber = null;
+        String bankAccountHolder = null;
+        if (refundAmount > 0) {
+            bankName = request != null ? normalize(request.bankName()) : null;
+            bankAccountNumber = request != null ? normalize(request.bankAccountNumber()) : null;
+            bankAccountHolder = request != null ? normalize(request.bankAccountHolder()) : null;
+
+            if (bankName == null || bankAccountNumber == null || bankAccountHolder == null) {
+                throw BusinessException.badRequest(
+                        "REFUND_BANK_INFO_REQUIRED",
+                        "Đơn hủy phát sinh hoàn tiền cọc, vui lòng cung cấp đầy đủ thông tin tài khoản ngân hàng để nhận tiền");
+            }
+            if (!BANK_ACCOUNT_NUMBER_PATTERN.matcher(bankAccountNumber).matches()) {
+                throw BusinessException.badRequest(
+                        "INVALID_BANK_ACCOUNT_NUMBER",
+                        "Số tài khoản ngân hàng không hợp lệ (phải gồm từ 6 đến 20 chữ số và chỉ chứa số từ 0-9)");
+            }
+            if (!BANK_ACCOUNT_HOLDER_PATTERN.matcher(bankAccountHolder).matches()) {
+                throw BusinessException.badRequest(
+                        "INVALID_BANK_ACCOUNT_HOLDER",
+                        "Tên chủ tài khoản không hợp lệ (phải từ 2 đến 50 ký tự chữ cái, không chứa số hoặc ký tự đặc biệt)");
+            }
+            bankAccountHolder = normalizeAccountHolder(bankAccountHolder);
+        }
+
         booking.setStatus(BookingStatus.CANCELLED);
         booking.setCancelledAt(Instant.now());
         booking.setCancelledBy(principal.getId());
-        booking.setCancelReason(normalize(reason));
+        booking.setCancelReason(request != null ? normalize(request.reason()) : null);
         booking.setRefundAmount(refundAmount);
+        bookingServiceOperations.cancelRegisteredServices(booking.getId());
         bookingRepository.saveAndFlush(booking);
         bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
 
@@ -263,6 +305,9 @@ public class CustomerBookingService {
             refund.setAmount(refundAmount);
             refund.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
             refund.setStatus(Payment.PaymentStatus.PENDING);
+            refund.setBankName(bankName);
+            refund.setBankAccountNumber(bankAccountNumber);
+            refund.setBankAccountHolder(bankAccountHolder);
             refund.setNote("Hoàn tiền theo chính sách hủy booking");
             refund.setCreatedBy(principal.getId());
             paymentRepository.save(refund);
@@ -341,6 +386,9 @@ public class CustomerBookingService {
             throw BusinessException.conflict("ROOM_NOT_AVAILABLE", "Phòng vừa được đặt bởi khách khác. Hãy chọn ngày hoặc phòng khác");
         }
 
+        bookingServiceOperations.createInitialServices(savedBooking, principal.getId(),
+                Set.copyOf(roomIds), request.getServices());
+
         return toResponse(savedBooking, policySettingRepository.findByPolicyGroupAndPolicyKeyIn("PAYMENT", BANK_POLICY_KEYS));
     }
 
@@ -357,6 +405,8 @@ public class CustomerBookingService {
 
         // Lấy các phòng trong booking
         List<BookingRoom> bRooms = bookingRoomRepository.findByBookingId(booking.getId());
+        List<BookingRoomNight> allNights = bookingRoomNightRepository
+                .findByBookingIdOrderByIdRoomIdAscIdStayDateAsc(booking.getId());
         Set<Long> roomIds = bRooms.stream().map(BookingRoom::getRoomId).collect(Collectors.toSet());
         Map<Long, Room> roomMap = roomIds.isEmpty() ? Map.of() :
                 roomRepository.findAllById(roomIds).stream().collect(Collectors.toMap(Room::getId, r -> r));
@@ -365,8 +415,6 @@ public class CustomerBookingService {
                         .collect(Collectors.toMap(Media::getOwnerId, m -> m, (first, second) -> first));
 
         // Lấy các đêm lưu trú, nhóm theo phòng
-        List<BookingRoomNight> allNights = bookingRoomNightRepository
-                .findByBookingIdOrderByIdRoomIdAscIdStayDateAsc(booking.getId());
         Map<Long, List<BookingRoomNight>> nightsByRoomId = allNights.stream()
                 .collect(Collectors.groupingBy(n -> n.getId().getRoomId()));
 
@@ -429,7 +477,10 @@ public class CustomerBookingService {
                         payment.getConfirmedAt() == null ? null : payment.getConfirmedAt().toInstant(ZoneOffset.UTC),
                         payment.getProofUrl() != null,
                         mediaTypeForProof(payment.getProofUrl()),
-                        payment.getNote()))
+                        payment.getNote(),
+                        payment.getBankName(),
+                        payment.getBankAccountNumber(),
+                        payment.getBankAccountHolder()))
                 .toList();
 
         return new CustomerBookingDetailResponse(
@@ -652,14 +703,22 @@ public class CustomerBookingService {
         }
 
         // 7. Cập nhật booking_room_nights và booking_rooms
+        bookingServiceOperations.deleteServicesInvalidatedByAdjustment(booking.getId(),
+                Set.copyOf(effectiveRoomIds), newCheckInDate, newCheckOutDate);
         List<BookingRoomNight> oldNights = bookingRoomNightRepository.findByBookingId(booking.getId());
         bookingRoomNightRepository.deleteAll(oldNights);
         bookingRoomNightRepository.flush();
 
         if (request.getRoomIds() != null) {
-            bookingRoomRepository.deleteAll(currentBookingRooms);
+            Set<Long> effectiveIds = Set.copyOf(effectiveRoomIds);
+            List<BookingRoom> removable = currentBookingRooms.stream()
+                    .filter(br -> !effectiveIds.contains(br.getRoomId()))
+                    .toList();
+            bookingRoomRepository.deleteAll(removable);
             bookingRoomRepository.flush();
+            Set<Long> linkedIds = currentBookingRooms.stream().map(BookingRoom::getRoomId).collect(Collectors.toSet());
             bookingRoomRepository.saveAllAndFlush(rooms.stream()
+                    .filter(r -> !linkedIds.contains(r.getId()))
                     .map(r -> new BookingRoom(booking.getId(), booking.getHomestayId(), r.getId()))
                     .toList());
         }
@@ -961,6 +1020,16 @@ public class CustomerBookingService {
 
     private String normalize(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String normalizeAccountHolder(String holder) {
+        if (holder == null) {
+            return null;
+        }
+        String nfdNormalized = Normalizer.normalize(holder.trim(), Normalizer.Form.NFD);
+        String withoutDiacritics = nfdNormalized.replaceAll("\\p{M}", "");
+        String replacedD = withoutDiacritics.replace('Đ', 'D').replace('đ', 'd');
+        return replacedD.replaceAll("\\s+", " ").trim().toUpperCase(Locale.ROOT);
     }
 
     private record BookingPolicy(int minNights, int maxNights, int maxAdvanceDays,

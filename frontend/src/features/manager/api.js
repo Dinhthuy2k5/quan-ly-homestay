@@ -276,6 +276,15 @@ export async function reviewManagerDepositApi(bookingId, { paymentId, decision, 
   return res.data?.data || null;
 }
 
+/** API-PAY-04: Xác nhận khoản REFUND sau khi đã hoàn tiền thực tế cho khách. */
+export async function confirmManagerRefundApi(paymentId, { referenceCode, note }) {
+  const res = await apiClient.post(`/manager/payments/${paymentId}/confirm`, {
+    referenceCode: referenceCode?.trim() || null,
+    note: note?.trim() || null,
+  });
+  return res.data?.data || null;
+}
+
 /** API-PAY-02: Ghi nhận khoản đặt cọc cho đơn do quản lý đặt hộ (tiền mặt hoặc chuyển khoản). */
 export async function recordManagerDirectDepositApi(bookingId, { amount, method = 'CASH', referenceCode, note }) {
   const payload = {
@@ -292,11 +301,15 @@ export async function recordManagerDirectDepositApi(bookingId, { amount, method 
 }
 
 /** API-MGR-BOOK-06: Cancel a booking and calculate any refund from its cancellation policy. */
-export async function cancelManagerBookingApi(bookingId, { reason, requestedByCustomer }) {
-  const res = await apiClient.post(`/manager/bookings/${bookingId}/cancel`, {
+export async function cancelManagerBookingApi(bookingId, { reason, requestedByCustomer, bankName, bankAccountNumber, bankAccountHolder } = {}) {
+  const payload = {
     reason: reason?.trim(),
     requestedByCustomer: Boolean(requestedByCustomer),
-  });
+    ...(bankName?.trim() ? { bankName: bankName.trim() } : {}),
+    ...(bankAccountNumber?.trim() ? { bankAccountNumber: bankAccountNumber.trim() } : {}),
+    ...(bankAccountHolder?.trim() ? { bankAccountHolder: bankAccountHolder.trim().toUpperCase() } : {}),
+  };
+  const res = await apiClient.post(`/manager/bookings/${bookingId}/cancel`, payload);
   return res.data?.data || null;
 }
 

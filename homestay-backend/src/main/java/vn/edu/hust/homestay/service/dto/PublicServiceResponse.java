@@ -1,6 +1,6 @@
 package vn.edu.hust.homestay.service.dto;
 
-import vn.edu.hust.homestay.service.entity.ServiceOffering;
+import vn.edu.hust.homestay.service.entity.Service;
 
 public record PublicServiceResponse(
         Long id,
@@ -9,8 +9,8 @@ public record PublicServiceResponse(
         Long unitPrice,
         String description
 ) {
-    public static PublicServiceResponse from(ServiceOffering offering) {
+    public static PublicServiceResponse from(Service service) {
         return new PublicServiceResponse(
-                offering.getId(), offering.getName(), offering.getUnit(), offering.getUnitPrice(), offering.getDescription());
+                service.getId(), service.getName(), service.getUnit(), service.getUnitPrice(), service.getDescription());
     }
 }

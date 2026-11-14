@@ -15,21 +15,34 @@ import {
   Edit3,
   FileText,
   MapPin,
+  LoaderCircle,
+  Plus,
   RefreshCw,
   Send,
   ShieldCheck,
+  Sparkles,
   Tag,
   Upload,
   Users,
   X,
 } from 'lucide-react';
-import { cancelCustomerBookingApi, fetchCustomerBookingDetailApi, fetchCustomerDepositProofApi, submitCustomerDepositApi } from '../api';
+import { cancelCustomerBookingApi, fetchCustomerBookingDetailApi, fetchCustomerBookingServicesApi, fetchCustomerDepositProofApi, registerCustomerBookingServiceApi, submitCustomerDepositApi } from '../api';
+import { fetchHomestayServices } from '../../homestays/api';
 import CustomerAdjustBookingModal from '../components/CustomerAdjustBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { getErrorMessage } from '../../../lib/errors';
+import { validateBankAccountNumber, validateBankAccountHolder, normalizeBankAccountHolder } from '../../../lib/validation';
+import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
+
+function previousDateKey(value) {
+  if (!value) return undefined;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day - 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 export default function CustomerBookingDetailPage() {
   const { bookingId } = useParams();
@@ -43,6 +56,9 @@ export default function CustomerBookingDetailPage() {
   const [adjustSuccessMsg, setAdjustSuccessMsg] = useState('');
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [cancelBankName, setCancelBankName] = useState('');
+  const [cancelBankAccountNumber, setCancelBankAccountNumber] = useState('');
+  const [cancelBankAccountHolder, setCancelBankAccountHolder] = useState('');
   const [cancelError, setCancelError] = useState('');
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [cancelResult, setCancelResult] = useState(null);
@@ -55,6 +71,23 @@ export default function CustomerBookingDetailPage() {
   const [previewProofPayment, setPreviewProofPayment] = useState(null);
   const [previewProofUrl, setPreviewProofUrl] = useState('');
   const [previewProofError, setPreviewProofError] = useState('');
+  const [bookingServices, setBookingServices] = useState([]);
+  const [bookingServicesLoading, setBookingServicesLoading] = useState(true);
+  const [bookingServicesError, setBookingServicesError] = useState('');
+  const [serviceCatalog, setServiceCatalog] = useState([]);
+  const [serviceCatalogHomestayId, setServiceCatalogHomestayId] = useState(null);
+  const [serviceCatalogReload, setServiceCatalogReload] = useState(0);
+  const [serviceCatalogLoading, setServiceCatalogLoading] = useState(false);
+  const [serviceCatalogError, setServiceCatalogError] = useState('');
+  const [serviceModalOpen, setServiceModalOpen] = useState(false);
+  const [serviceIdInput, setServiceIdInput] = useState('');
+  const [serviceRoomIdInput, setServiceRoomIdInput] = useState('');
+  const [serviceQuantityInput, setServiceQuantityInput] = useState('1');
+  const [serviceDateInput, setServiceDateInput] = useState('');
+  const [serviceNoteInput, setServiceNoteInput] = useState('');
+  const [serviceSubmitError, setServiceSubmitError] = useState('');
+  const [serviceSubmitting, setServiceSubmitting] = useState(false);
+  const [serviceSuccess, setServiceSuccess] = useState('');
 
   const [todayTimestamp] = useState(() => {
     const d = new Date();
@@ -111,6 +144,43 @@ export default function CustomerBookingDetailPage() {
   }, [bookingId, refreshKey]);
 
   useEffect(() => {
+    if (!booking?.id) return undefined;
+    let active = true;
+    setBookingServicesLoading(true);
+    setBookingServicesError('');
+    fetchCustomerBookingServicesApi(booking.id)
+      .then((services) => { if (active) setBookingServices(services); })
+      .catch((err) => { if (active) setBookingServicesError(getErrorMessage(err) || 'Không thể tải dịch vụ đã đăng ký.'); })
+      .finally(() => { if (active) setBookingServicesLoading(false); });
+    return () => { active = false; };
+  }, [booking?.id, refreshKey]);
+
+  useEffect(() => {
+    if (!serviceModalOpen || !booking?.homestayId || serviceCatalogHomestayId === booking.homestayId) return undefined;
+    let active = true;
+    setServiceCatalogLoading(true);
+    setServiceCatalogError('');
+    fetchHomestayServices(booking.homestayId)
+      .then((services) => {
+        if (active) {
+          setServiceCatalog(services);
+          setServiceCatalogHomestayId(booking.homestayId);
+        }
+      })
+      .catch((err) => { if (active) setServiceCatalogError(getErrorMessage(err) || 'Không thể tải danh mục dịch vụ.'); })
+      .finally(() => { if (active) setServiceCatalogLoading(false); });
+    return () => { active = false; };
+  }, [serviceModalOpen, booking?.homestayId, serviceCatalogHomestayId, serviceCatalogReload]);
+
+  useEffect(() => {
+    if (!serviceIdInput && serviceCatalog.length > 0) setServiceIdInput(String(serviceCatalog[0].id));
+  }, [serviceCatalog, serviceIdInput]);
+
+  useEffect(() => {
+    if (!serviceRoomIdInput && booking?.rooms?.length > 0) setServiceRoomIdInput(String(booking.rooms[0].roomId));
+  }, [booking?.rooms, serviceRoomIdInput]);
+
+  useEffect(() => {
     if (!previewProofPayment?.proofAvailable || !booking?.id) {
       return undefined;
     }
@@ -147,15 +217,48 @@ export default function CustomerBookingDetailPage() {
     setRefreshKey((k) => k + 1);
   };
 
+  const confirmedDepositAmount = (booking?.payments || [])
+    .filter((p) => p.paymentType === 'DEPOSIT' && p.status === 'CONFIRMED')
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+
   const handleCancelBooking = async (event) => {
     event.preventDefault();
     setCancelSubmitting(true);
     setCancelError('');
+
+    if (confirmedDepositAmount > 0) {
+      if (!cancelBankName.trim()) {
+        setCancelError('Vui lòng chọn hoặc nhập tên ngân hàng nhận tiền hoàn.');
+        setCancelSubmitting(false);
+        return;
+      }
+      const accNumError = validateBankAccountNumber(cancelBankAccountNumber);
+      if (accNumError) {
+        setCancelError(accNumError);
+        setCancelSubmitting(false);
+        return;
+      }
+      const holderError = validateBankAccountHolder(cancelBankAccountHolder);
+      if (holderError) {
+        setCancelError(holderError);
+        setCancelSubmitting(false);
+        return;
+      }
+    }
+
     try {
-      const result = await cancelCustomerBookingApi(booking.id, cancelReason.trim());
+      const result = await cancelCustomerBookingApi(booking.id, {
+        reason: cancelReason.trim(),
+        bankName: cancelBankName.trim(),
+        bankAccountNumber: cancelBankAccountNumber.trim(),
+        bankAccountHolder: cancelBankAccountHolder.trim().toUpperCase(),
+      });
       setCancelResult(result);
       setCancelModalOpen(false);
       setCancelReason('');
+      setCancelBankName('');
+      setCancelBankAccountNumber('');
+      setCancelBankAccountHolder('');
       handleRefresh();
     } catch (err) {
       setCancelError(getErrorMessage(err));
@@ -208,6 +311,35 @@ export default function CustomerBookingDetailPage() {
       setProofError(getErrorMessage(err) || 'Không thể gửi chứng từ. Vui lòng thử lại.');
     } finally {
       setProofSubmitting(false);
+    }
+  };
+
+  const handleRegisterService = async (event) => {
+    event.preventDefault();
+    setServiceSubmitError('');
+    const quantity = Number(serviceQuantityInput);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      setServiceSubmitError('Số lượng phải là số nguyên lớn hơn 0.');
+      return;
+    }
+    setServiceSubmitting(true);
+    try {
+      const created = await registerCustomerBookingServiceApi(booking.id, Number(serviceRoomIdInput), {
+        serviceId: Number(serviceIdInput),
+        quantity,
+        serviceDate: serviceDateInput || null,
+        note: serviceNoteInput.trim() || null,
+      });
+      setBookingServices((current) => [...current, created]);
+      setServiceSuccess(`Đã đăng ký ${created.serviceName} cho ${booking.rooms.find((room) => room.roomId === created.roomId)?.roomName || 'phòng đã chọn'}.`);
+      setServiceModalOpen(false);
+      setServiceQuantityInput('1');
+      setServiceDateInput('');
+      setServiceNoteInput('');
+    } catch (err) {
+      setServiceSubmitError(getErrorMessage(err) || 'Không thể đăng ký dịch vụ. Vui lòng thử lại.');
+    } finally {
+      setServiceSubmitting(false);
     }
   };
 
@@ -556,6 +688,54 @@ export default function CustomerBookingDetailPage() {
             </div>
           </div>
 
+          {/* Dịch vụ khách đã đăng ký và đăng ký mới theo booking */}
+          <section aria-labelledby="booking-services-title" className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)] sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
+              <div>
+                <h2 id="booking-services-title" className="flex items-center gap-2 text-base font-bold text-[var(--color-ink)]">
+                  <Sparkles className="h-5 w-5 text-[var(--color-primary)]" /> Dịch vụ đã đăng ký
+                </h2>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">Chỉ dịch vụ được homestay ghi nhận đã sử dụng mới được tính vào quyết toán.</p>
+              </div>
+              {['PENDING_DEPOSIT', 'PENDING_APPROVAL', 'CONFIRMED', 'CHECKED_IN'].includes(booking.status) && (
+                <button type="button" onClick={() => { setServiceSuccess(''); setServiceSubmitError(''); setServiceModalOpen(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]">
+                  <Plus className="h-4 w-4" /> Thêm dịch vụ
+                </button>
+              )}
+            </div>
+            {serviceSuccess && <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-900">{serviceSuccess}</p>}
+            {bookingServicesLoading ? (
+              <div aria-label="Đang tải dịch vụ" className="mt-4 space-y-3"><div className="h-16 animate-pulse rounded-xl bg-[var(--color-surface-soft)]" /><div className="h-16 animate-pulse rounded-xl bg-[var(--color-surface-soft)]" /></div>
+            ) : bookingServicesError ? (
+              <div className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">
+                <p>{bookingServicesError}</p>
+                <button type="button" onClick={handleRefresh} className="mt-2 font-semibold underline">Tải lại thông tin booking</button>
+              </div>
+            ) : bookingServices.length === 0 ? (
+              <p className="mt-4 rounded-xl bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-body)]">Chưa có dịch vụ nào được đăng ký cho chuyến đi này.</p>
+            ) : (
+              <ul className="mt-4 divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
+                {bookingServices.map((service) => {
+                  const serviceRoom = booking.rooms?.find((room) => room.roomId === service.roomId);
+                  const statusText = service.status === 'USED' ? 'Đã sử dụng' : service.status === 'CANCELLED' ? 'Đã hủy' : 'Đã đăng ký';
+                  const statusClass = service.status === 'USED' ? 'bg-emerald-50 text-emerald-800' : service.status === 'CANCELLED' ? 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]' : 'bg-sky-50 text-sky-800';
+                  return (
+                    <li key={service.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--color-ink)]">{service.serviceName}</p>
+                        <p className="mt-1 text-sm text-[var(--color-muted)]">{serviceRoom?.roomName || `Phòng #${service.roomId}`} · {service.quantity} × {formatVnd(service.unitPrice)}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold tabular-nums text-[var(--color-ink)]">{formatVnd(service.totalPrice)}</span>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass}`}>{statusText}</span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
           {/* Hướng dẫn chuyển khoản ngân hàng nếu PENDING_DEPOSIT */}
           {isPendingDeposit && instruction && (
             <div className="rounded-2xl border border-[var(--color-primary)]/30 bg-white p-5 sm:p-6 shadow-[var(--shadow-1)] space-y-4">
@@ -761,9 +941,13 @@ export default function CustomerBookingDetailPage() {
                             }`}
                           >
                             {payment.status === 'CONFIRMED'
-                              ? 'Đã xác nhận'
+                              ? isRefund
+                                ? 'Đã hoàn tất'
+                                : 'Đã xác nhận'
                               : payment.status === 'REJECTED'
                               ? 'Bị từ chối'
+                              : isRefund
+                              ? 'Chờ homestay hoàn tiền'
                               : 'Đang chờ xác nhận'}
                           </span>
                           <span className="text-xs text-[var(--color-muted)]">
@@ -778,9 +962,18 @@ export default function CustomerBookingDetailPage() {
                           </span>
                         </div>
 
+                        {isRefund && (payment.bankAccountNumber || payment.bankName || payment.bankAccountHolder) && (
+                          <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-2.5 text-xs text-sky-950 space-y-1">
+                            <span className="font-semibold block text-sky-900">Tài khoản nhận tiền hoàn:</span>
+                            <p className="font-medium">
+                              {payment.bankName || 'Ngân hàng'} - <span className="font-mono font-bold text-sky-950">{payment.bankAccountNumber}</span> ({payment.bankAccountHolder})
+                            </p>
+                          </div>
+                        )}
+
                         {payment.referenceCode && (
                           <div className="flex flex-wrap items-center gap-2 text-xs">
-                            <span className="text-[var(--color-muted)]">Nội dung CK:</span>
+                            <span className="text-[var(--color-muted)]">{isRefund ? 'Mã GD hoàn tiền:' : 'Nội dung CK:'}</span>
                             <span className="break-all font-mono font-semibold text-[var(--color-ink)] bg-[var(--color-surface-soft)] px-2 py-0.5 rounded border border-[var(--color-border)]">
                               {payment.referenceCode}
                             </span>
@@ -802,10 +995,10 @@ export default function CustomerBookingDetailPage() {
 
                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
                           {payment.createdAt && (
-                            <span>Gửi lúc: {formatDateTime(payment.createdAt)}</span>
+                            <span>{isRefund ? 'Yêu cầu lúc:' : 'Gửi lúc:'} {formatDateTime(payment.createdAt)}</span>
                           )}
                           {payment.confirmedAt && (
-                            <span>· Xác nhận lúc: {formatDateTime(payment.confirmedAt)}</span>
+                            <span>· {isRefund ? 'Đã hoàn lúc:' : 'Xác nhận lúc:'} {formatDateTime(payment.confirmedAt)}</span>
                           )}
                         </div>
                       </div>
@@ -933,6 +1126,65 @@ export default function CustomerBookingDetailPage() {
         />
       )}
 
+      {serviceModalOpen && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !serviceSubmitting) setServiceModalOpen(false); }}>
+          <form onSubmit={handleRegisterService} role="dialog" aria-modal="true" aria-labelledby="register-service-title" className="max-h-[92vh] w-full max-w-xl space-y-5 overflow-y-auto rounded-t-2xl bg-white p-5 shadow-[var(--shadow-2)] sm:rounded-2xl sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="register-service-title" className="text-lg font-bold text-[var(--color-ink)]">Đăng ký dịch vụ</h2>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">Chọn dịch vụ và phòng cần sử dụng. Giá được chốt theo đơn giá hiện tại của homestay.</p>
+              </div>
+              <button type="button" disabled={serviceSubmitting} onClick={() => setServiceModalOpen(false)} className="rounded-lg p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-soft)]" aria-label="Đóng"><X className="h-5 w-5" /></button>
+            </div>
+
+            {serviceCatalogLoading ? (
+              <div className="space-y-3" aria-label="Đang tải danh mục dịch vụ"><div className="h-12 animate-pulse rounded-xl bg-[var(--color-surface-soft)]" /><div className="h-12 animate-pulse rounded-xl bg-[var(--color-surface-soft)]" /></div>
+            ) : serviceCatalogError ? (
+              <div role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">
+                <p>{serviceCatalogError}</p>
+                <button type="button" onClick={() => setServiceCatalogReload((current) => current + 1)} className="mt-2 font-semibold underline">Thử tải lại</button>
+              </div>
+            ) : serviceCatalog.length === 0 ? (
+              <div className="rounded-xl bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-body)]">Homestay hiện chưa có dịch vụ bổ sung để đăng ký.</div>
+            ) : (
+              <>
+                <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
+                  <span>Dịch vụ <span className="text-rose-600">*</span></span>
+                  <select required value={serviceIdInput} onChange={(event) => setServiceIdInput(event.target.value)} className="min-h-12 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]">
+                    {serviceCatalog.map((service) => <option key={service.id} value={service.id}>{service.name} · {formatVnd(service.unitPrice)} / {service.unit}</option>)}
+                  </select>
+                </label>
+                <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
+                  <span>Phòng sử dụng dịch vụ <span className="text-rose-600">*</span></span>
+                  <select required value={serviceRoomIdInput} onChange={(event) => setServiceRoomIdInput(event.target.value)} className="min-h-12 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]">
+                    {booking.rooms?.map((room) => <option key={room.roomId} value={room.roomId}>{room.roomName}</option>)}
+                  </select>
+                </label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
+                    <span>Số lượng <span className="text-rose-600">*</span></span>
+                    <input required type="number" min="1" max="2147483647" step="1" value={serviceQuantityInput} onChange={(event) => setServiceQuantityInput(event.target.value)} className="min-h-12 w-full rounded-xl border border-[var(--color-border)] px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
+                  </label>
+                  <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
+                    <span>Ngày sử dụng <span className="font-normal text-[var(--color-muted)]">(tùy chọn)</span></span>
+                    <input type="date" min={booking.checkInDate} max={previousDateKey(booking.checkOutDate)} value={serviceDateInput} onChange={(event) => setServiceDateInput(event.target.value)} className="min-h-12 w-full rounded-xl border border-[var(--color-border)] px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
+                  </label>
+                </div>
+                <OptionalNotePicker label="Ghi chú cho homestay (tùy chọn)" value={serviceNoteInput} onChange={setServiceNoteInput} maxLength={255} placeholder="Nhập yêu cầu riêng cho dịch vụ" options={['Vui lòng liên hệ trước khi phục vụ', 'Tôi sẽ trao đổi thêm với homestay']} />
+              </>
+            )}
+
+            {serviceSubmitError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{serviceSubmitError}</p>}
+            <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
+              <button type="button" disabled={serviceSubmitting} onClick={() => setServiceModalOpen(false)} className="min-h-11 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)]">Đóng</button>
+              <button type="submit" disabled={serviceSubmitting || serviceCatalogLoading || serviceCatalog.length === 0 || Boolean(serviceCatalogError)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-bold text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50">
+                {serviceSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}{serviceSubmitting ? 'Đang đăng ký…' : 'Đăng ký dịch vụ'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {cancelModalOpen && (
         <div
           className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
@@ -953,24 +1205,85 @@ export default function CustomerBookingDetailPage() {
                 Phòng sẽ được mở lại sau khi hủy. Số tiền hoàn (nếu có) được tính theo chính sách áp dụng cho đơn này và sẽ do homestay xử lý.
               </p>
             </div>
-            <label htmlFor="cancel-reason" className="block text-sm font-semibold text-[var(--color-ink)]">
-              Lý do hủy <span className="font-normal text-[var(--color-muted)]">(không bắt buộc)</span>
-            </label>
-            <textarea
-              id="cancel-reason"
-              value={cancelReason}
-              onChange={(event) => setCancelReason(event.target.value)}
-              maxLength={255}
-              rows={3}
-              placeholder="Bạn có thể cho homestay biết lý do hủy"
-              className="w-full resize-y rounded-xl border border-[var(--color-border)] px-3 py-2.5 text-sm outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
-            />
+
+            {confirmedDepositAmount > 0 && (
+              <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/70 p-3.5 text-xs text-sky-950">
+                <div>
+                  <p className="font-semibold text-sky-950">
+                    Đơn đã cọc {formatVnd(confirmedDepositAmount)}. Vui lòng cung cấp tài khoản nhận tiền hoàn:
+                  </p>
+                  <p className="text-2xs text-sky-800 mt-0.5">Homestay sẽ đối soát và chuyển khoản hoàn tiền vào tài khoản này.</p>
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-2xs font-semibold text-sky-950 mb-1">
+                      Ngân hàng <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      list="customer-cancel-bank-list"
+                      required
+                      value={cancelBankName}
+                      onChange={(e) => setCancelBankName(e.target.value)}
+                      placeholder="Chọn hoặc nhập tên ngân hàng"
+                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[var(--color-primary)]"
+                    />
+                    <datalist id="customer-cancel-bank-list">
+                      <option value="Vietcombank" />
+                      <option value="Techcombank" />
+                      <option value="MB Bank" />
+                      <option value="BIDV" />
+                      <option value="VietinBank" />
+                      <option value="Agribank" />
+                      <option value="ACB" />
+                      <option value="VPBank" />
+                      <option value="TPBank" />
+                      <option value="VIB" />
+                      <option value="Sacombank" />
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block text-2xs font-semibold text-sky-950 mb-1">
+                      Số tài khoản <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={cancelBankAccountNumber}
+                      onChange={(e) => setCancelBankAccountNumber(e.target.value.replace(/\D/g, ''))}
+                      maxLength={20}
+                      placeholder="Nhập số tài khoản ngân hàng (6-20 chữ số)"
+                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs font-mono outline-none focus:border-[var(--color-primary)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-2xs font-semibold text-sky-950 mb-1">
+                      Tên chủ tài khoản <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={cancelBankAccountHolder}
+                      onChange={(e) => setCancelBankAccountHolder(normalizeBankAccountHolder(e.target.value))}
+                      maxLength={50}
+                      placeholder="VD: NGUYEN VAN A"
+                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs font-semibold uppercase outline-none focus:border-[var(--color-primary)]"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <OptionalNotePicker label="Lý do hủy (không bắt buộc)" value={cancelReason} onChange={setCancelReason} placeholder="Nhập lý do riêng (không bắt buộc)" options={['Thay đổi kế hoạch chuyến đi', 'Không còn nhu cầu lưu trú', 'Lý do cá nhân']} />
             {cancelError && <p role="alert" className="text-sm text-rose-700">{cancelError}</p>}
             <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 disabled={cancelSubmitting}
-                onClick={() => setCancelModalOpen(false)}
+                onClick={() => {
+                  setCancelModalOpen(false);
+                  setCancelError('');
+                }}
                 className="min-h-10 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] disabled:opacity-50"
               >
                 Giữ đơn đặt phòng

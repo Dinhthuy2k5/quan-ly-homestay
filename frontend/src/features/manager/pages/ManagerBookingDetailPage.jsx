@@ -21,12 +21,14 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { cancelManagerBookingApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
+import { cancelManagerBookingApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
 import ManagerAdjustBookingModal from '../components/ManagerAdjustBookingModal';
+import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
+import { validateBankAccountNumber, validateBankAccountHolder, normalizeBankAccountHolder } from '../../../lib/validation';
 
 const CUSTOMER_CANCELLATION_REASONS = [
   'Khách thay đổi kế hoạch chuyến đi',
@@ -55,6 +57,11 @@ export default function ManagerBookingDetailPage() {
   const [depositReviewReason, setDepositReviewReason] = useState('');
   const [depositReviewError, setDepositReviewError] = useState('');
   const [depositReviewSubmitting, setDepositReviewSubmitting] = useState(false);
+  const [confirmingRefund, setConfirmingRefund] = useState(null);
+  const [refundReferenceCode, setRefundReferenceCode] = useState('');
+  const [refundNote, setRefundNote] = useState('');
+  const [refundConfirmError, setRefundConfirmError] = useState('');
+  const [refundConfirmSubmitting, setRefundConfirmSubmitting] = useState(false);
   const [isDirectDepositOpen, setIsDirectDepositOpen] = useState(false);
   const [directDepositAmount, setDirectDepositAmount] = useState('');
   const [directDepositMethod, setDirectDepositMethod] = useState('CASH');
@@ -66,6 +73,10 @@ export default function ManagerBookingDetailPage() {
   const [selectedCancelReason, setSelectedCancelReason] = useState('');
   const [otherCancelReason, setOtherCancelReason] = useState('');
   const [cancelRequestedByCustomer, setCancelRequestedByCustomer] = useState(false);
+  const [cancelBankName, setCancelBankName] = useState('');
+  const [cancelBankAccountNumber, setCancelBankAccountNumber] = useState('');
+  const [cancelBankAccountHolder, setCancelBankAccountHolder] = useState('');
+  const [copiedPaymentId, setCopiedPaymentId] = useState(null);
   const [cancelError, setCancelError] = useState('');
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
 
@@ -178,6 +189,28 @@ export default function ManagerBookingDetailPage() {
     }
   };
 
+  const handleConfirmRefund = async (event) => {
+    event.preventDefault();
+    if (!confirmingRefund) return;
+    setRefundConfirmSubmitting(true);
+    setRefundConfirmError('');
+    try {
+      await confirmManagerRefundApi(confirmingRefund.id, {
+        referenceCode: refundReferenceCode,
+        note: refundNote,
+      });
+      setConfirmingRefund(null);
+      setRefundReferenceCode('');
+      setRefundNote('');
+      setAdjustSuccessToast(`Đã xác nhận hoàn ${formatVnd(confirmingRefund.amount)} cho khách.`);
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      setRefundConfirmError(getErrorMessage(err) || 'Không thể xác nhận khoản hoàn tiền.');
+    } finally {
+      setRefundConfirmSubmitting(false);
+    }
+  };
+
   const confirmedDepositAmount = (booking?.payments || []).reduce((sum, payment) =>
     payment.paymentType === 'DEPOSIT' && payment.status === 'CONFIRMED' ? sum + Number(payment.amount || 0) : sum, 0);
   const remainingDepositAmount = Math.max(0, Number(booking?.depositAmount || 0) - confirmedDepositAmount);
@@ -229,14 +262,37 @@ export default function ManagerBookingDetailPage() {
     }
     setCancelSubmitting(true);
     setCancelError('');
+
+    if (cancelBankAccountNumber?.trim()) {
+      const accNumError = validateBankAccountNumber(cancelBankAccountNumber);
+      if (accNumError) {
+        setCancelError(accNumError);
+        setCancelSubmitting(false);
+        return;
+      }
+    }
+    if (cancelBankAccountHolder?.trim()) {
+      const holderError = validateBankAccountHolder(cancelBankAccountHolder);
+      if (holderError) {
+        setCancelError(holderError);
+        setCancelSubmitting(false);
+        return;
+      }
+    }
     try {
       const result = await cancelManagerBookingApi(bookingId, {
         reason,
         requestedByCustomer: cancelRequestedByCustomer,
+        bankName: cancelBankName,
+        bankAccountNumber: cancelBankAccountNumber,
+        bankAccountHolder: cancelBankAccountHolder,
       });
       setIsCancelOpen(false);
       setSelectedCancelReason('');
       setOtherCancelReason('');
+      setCancelBankName('');
+      setCancelBankAccountNumber('');
+      setCancelBankAccountHolder('');
       setAdjustSuccessToast(result.refundRequired
         ? `Booking đã hủy. Khoản hoàn ${formatVnd(result.refundAmount)} đang chờ xử lý.`
         : 'Booking đã hủy. Theo chính sách, không phát sinh khoản hoàn tiền.');
@@ -802,6 +858,7 @@ export default function ManagerBookingDetailPage() {
                 {booking.payments.map((payment) => {
                   const isDeposit = payment.paymentType === 'DEPOSIT';
                   const canReview = isDeposit && payment.status === 'PENDING' && booking.status === 'PENDING_APPROVAL';
+                  const canConfirmRefund = payment.paymentType === 'REFUND' && payment.status === 'PENDING';
                   return (
                     <div key={payment.id} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0 space-y-1">
@@ -812,10 +869,30 @@ export default function ManagerBookingDetailPage() {
                           </span>
                         </div>
                         <p className="text-sm text-[var(--color-body)]">{formatVnd(payment.amount)} · {payment.paymentMethod === 'BANK_TRANSFER' ? 'Chuyển khoản' : 'Tiền mặt'}</p>
-                        {payment.referenceCode && <p className="break-all text-xs text-[var(--color-muted)]">Nội dung chuyển khoản: {payment.referenceCode}</p>}
+                        {payment.paymentType === 'REFUND' && (payment.bankAccountNumber || payment.bankName || payment.bankAccountHolder) && (
+                          <div className="my-1.5 flex flex-wrap items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-1.5 text-xs text-blue-900">
+                            <span className="font-semibold text-blue-800">Tài khoản nhận:</span>
+                            <span>{payment.bankName || 'Ngân hàng'} - <strong className="font-mono">{payment.bankAccountNumber}</strong> ({payment.bankAccountHolder})</span>
+                            {payment.bankAccountNumber && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(payment.bankAccountNumber);
+                                  setCopiedPaymentId(payment.id);
+                                  setTimeout(() => setCopiedPaymentId(null), 2000);
+                                }}
+                                className="ml-1 inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-2xs font-semibold text-blue-700 shadow-2xs border border-blue-200 hover:bg-blue-100"
+                              >
+                                {copiedPaymentId === payment.id ? 'Đã sao chép!' : 'Sao chép STK'}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {payment.referenceCode && <p className="break-all text-xs text-[var(--color-muted)]">{isDeposit ? 'Nội dung chuyển khoản:' : 'Mã tham chiếu hoàn tiền:'} {payment.referenceCode}</p>}
                         {payment.note && <p className="text-xs text-[var(--color-muted)]">Ghi chú: {payment.note}</p>}
                         {payment.rejectionReason && <p className="text-xs text-rose-700">Lý do từ chối: {payment.rejectionReason}</p>}
                         {payment.createdAt && <p className="text-xs text-[var(--color-muted)]">Gửi lúc {formatDateTime(payment.createdAt)}</p>}
+                        {payment.paymentType === 'REFUND' && payment.confirmedAt && <p className="text-xs text-emerald-700">Đã hoàn lúc {formatDateTime(payment.confirmedAt)}</p>}
                       </div>
                       {canReview && (
                         <button
@@ -828,6 +905,20 @@ export default function ManagerBookingDetailPage() {
                           className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-semibold text-white hover:bg-[var(--color-primary-hover)]"
                         >
                           <UserCheck className="h-4 w-4" /> Đối chiếu chứng từ
+                        </button>
+                      )}
+                      {canConfirmRefund && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRefundReferenceCode(payment.referenceCode || '');
+                            setRefundNote('');
+                            setRefundConfirmError('');
+                            setConfirmingRefund(payment);
+                          }}
+                          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-semibold text-white hover:bg-[var(--color-primary-hover)]"
+                        >
+                          <CheckCircle2 className="h-4 w-4" /> Xác nhận đã hoàn tiền
                         </button>
                       )}
                     </div>
@@ -947,6 +1038,65 @@ export default function ManagerBookingDetailPage() {
         </div>
       )}
 
+      {confirmingRefund && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !refundConfirmSubmitting) setConfirmingRefund(null); }}>
+          <form onSubmit={handleConfirmRefund} role="dialog" aria-modal="true" aria-labelledby="confirm-refund-title" className="w-full max-w-lg space-y-5 rounded-t-2xl bg-white p-5 shadow-[var(--shadow-2)] sm:rounded-2xl sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="confirm-refund-title" className="text-lg font-bold text-[var(--color-ink)]">Xác nhận đã hoàn tiền</h2>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">Booking #{booking.code} · {formatVnd(confirmingRefund.amount)} · {confirmingRefund.paymentMethod === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'}</p>
+              </div>
+              <button type="button" disabled={refundConfirmSubmitting} onClick={() => setConfirmingRefund(null)} className="rounded-lg p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-soft)]" aria-label="Đóng"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="rounded-xl bg-amber-50 p-3 text-sm leading-relaxed text-amber-900">Chỉ xác nhận sau khi homestay đã thực hiện hoàn tiền cho khách. Thao tác này sẽ ghi nhận khoản hoàn là đã hoàn tất.</p>
+            {(confirmingRefund.bankAccountNumber || confirmingRefund.bankName || confirmingRefund.bankAccountHolder) && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 space-y-1.5 text-xs text-blue-900">
+                <p className="font-bold text-sm text-blue-950 flex items-center justify-between">
+                  <span>Tài khoản nhận tiền hoàn của khách:</span>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs">
+                  <div>
+                    <span className="text-blue-700">Ngân hàng: </span>
+                    <span className="font-semibold text-blue-950">{confirmingRefund.bankName || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-blue-700">Chủ tài khoản: </span>
+                    <span className="font-semibold text-blue-950">{confirmingRefund.bankAccountHolder || '—'}</span>
+                  </div>
+                  <div className="sm:col-span-2 flex items-center gap-2">
+                    <span className="text-blue-700">Số tài khoản: </span>
+                    <span className="font-mono font-bold text-blue-950 text-sm">{confirmingRefund.bankAccountNumber || '—'}</span>
+                    {confirmingRefund.bankAccountNumber && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(confirmingRefund.bankAccountNumber);
+                          setCopiedPaymentId(confirmingRefund.id);
+                          setTimeout(() => setCopiedPaymentId(null), 2000);
+                        }}
+                        className="inline-flex items-center gap-1 rounded bg-blue-100 hover:bg-blue-200 px-2 py-0.5 text-xs font-semibold text-blue-800"
+                      >
+                        {copiedPaymentId === confirmingRefund.id ? 'Đã sao chép!' : 'Sao chép STK'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
+              <span>Mã tham chiếu giao dịch <span className="font-normal text-[var(--color-muted)]">(không bắt buộc)</span></span>
+              <input maxLength={100} value={refundReferenceCode} onChange={(event) => setRefundReferenceCode(event.target.value)} placeholder="Mã giao dịch chuyển khoản hoàn tiền" className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
+            </label>
+            <OptionalNotePicker label="Ghi chú hoàn tiền (không bắt buộc)" value={refundNote} onChange={setRefundNote} maxLength={255} placeholder="Nhập ghi chú riêng về khoản hoàn" options={['Đã hoàn tiền qua chuyển khoản', 'Đã hoàn tiền mặt cho khách', 'Đã thông báo khách về khoản hoàn']} />
+            {refundConfirmError && <p role="alert" className="text-sm text-rose-700">{refundConfirmError}</p>}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" disabled={refundConfirmSubmitting} onClick={() => setConfirmingRefund(null)} className="min-h-11 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)]">Quay lại</button>
+              <button type="submit" disabled={refundConfirmSubmitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-bold text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"><CheckCircle2 className="h-4 w-4" />{refundConfirmSubmitting ? 'Đang xác nhận…' : 'Xác nhận đã hoàn tiền'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {isDirectDepositOpen && (
         <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !directDepositSubmitting) setIsDirectDepositOpen(false); }}>
           <form onSubmit={handleRecordDirectDeposit} role="dialog" aria-modal="true" aria-labelledby="direct-deposit-title" className="w-full max-w-lg space-y-5 rounded-t-2xl bg-white p-5 shadow-[var(--shadow-2)] sm:rounded-2xl sm:p-6">
@@ -988,10 +1138,7 @@ export default function ManagerBookingDetailPage() {
               <input type="number" min="1" max={remainingDepositAmount} step="1" required value={directDepositAmount} onChange={(event) => setDirectDepositAmount(event.target.value)} className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
               <span className="block text-xs font-normal text-[var(--color-muted)]">Không vượt quá số tiền cọc còn thiếu ({formatVnd(remainingDepositAmount)}).</span>
             </label>
-            <label className="block space-y-1.5 text-sm font-semibold text-[var(--color-ink)]">
-              <span>Ghi chú <span className="font-normal text-[var(--color-muted)]">(không bắt buộc)</span></span>
-              <textarea maxLength={255} rows={2} value={directDepositNote} onChange={(event) => setDirectDepositNote(event.target.value)} placeholder={directDepositMethod === 'CASH' ? 'Ví dụ: Khách nộp tiền mặt tại quầy lễ tân' : 'Ví dụ: Khách chuyển khoản qua Vietcombank'} className="w-full resize-y rounded-xl border border-[var(--color-border)] px-3 py-2.5 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
-            </label>
+            <OptionalNotePicker label="Ghi chú (không bắt buộc)" value={directDepositNote} onChange={setDirectDepositNote} maxLength={255} placeholder="Nhập ghi chú riêng về khoản đặt cọc" options={directDepositMethod === 'CASH' ? ['Khách nộp tiền mặt tại quầy', 'Đã đối chiếu số tiền với khách'] : ['Đã đối chiếu giao dịch chuyển khoản', 'Đã xác nhận số tiền với khách']} />
             {directDepositError && <p role="alert" className="text-sm text-rose-700">{directDepositError}</p>}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button type="button" disabled={directDepositSubmitting} onClick={() => setIsDirectDepositOpen(false)} className="min-h-11 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)]">Quay lại</button>
@@ -1047,9 +1194,65 @@ export default function ManagerBookingDetailPage() {
                 <textarea required value={otherCancelReason} onChange={(event) => setOtherCancelReason(event.target.value)} maxLength={239} rows={3} placeholder="Mô tả ngắn gọn lý do hủy" className="w-full resize-y rounded-xl border border-[var(--color-border)] px-3 py-2.5 text-sm font-normal outline-none focus:border-[var(--color-primary)]" />
               </label>
             )}
+
+            <div className="space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-[var(--color-ink)]">Tài khoản nhận hoàn của khách (không bắt buộc)</span>
+                <span className="text-2xs text-[var(--color-muted)]">Nếu khách nhờ chuyển khoản</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div>
+                  <label className="block text-2xs font-medium text-[var(--color-muted)] mb-1">Tên ngân hàng</label>
+                  <input
+                    type="text"
+                    maxLength={100}
+                    value={cancelBankName}
+                    onChange={(e) => setCancelBankName(e.target.value)}
+                    placeholder="VD: Vietcombank, MB..."
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[var(--color-primary)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-2xs font-medium text-[var(--color-muted)] mb-1">Số tài khoản</label>
+                  <input
+                    type="text"
+                    maxLength={20}
+                    value={cancelBankAccountNumber}
+                    onChange={(e) => setCancelBankAccountNumber(e.target.value.replace(/\D/g, ''))}
+                    placeholder="VD: 0123456789"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs font-mono outline-none focus:border-[var(--color-primary)]"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-2xs font-medium text-[var(--color-muted)] mb-1">Tên chủ tài khoản (in hoa)</label>
+                  <input
+                    type="text"
+                    maxLength={50}
+                    value={cancelBankAccountHolder}
+                    onChange={(e) => setCancelBankAccountHolder(normalizeBankAccountHolder(e.target.value))}
+                    placeholder="VD: NGUYEN VAN A"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs uppercase outline-none focus:border-[var(--color-primary)]"
+                  />
+                </div>
+              </div>
+            </div>
+
             {cancelError && <p role="alert" className="text-sm text-rose-700">{cancelError}</p>}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button type="button" disabled={cancelSubmitting} onClick={() => setIsCancelOpen(false)} className="min-h-11 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)]">Quay lại</button>
+              <button
+                type="button"
+                disabled={cancelSubmitting}
+                onClick={() => {
+                  setIsCancelOpen(false);
+                  setCancelError('');
+                  setCancelBankName('');
+                  setCancelBankAccountNumber('');
+                  setCancelBankAccountHolder('');
+                }}
+                className="min-h-11 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)]"
+              >
+                Quay lại
+              </button>
               <button type="submit" disabled={cancelSubmitting || !selectedCancelReason || (selectedCancelReason === 'OTHER' && !otherCancelReason.trim())} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-rose-700 px-4 text-sm font-bold text-white hover:bg-rose-800 disabled:opacity-50">
                 <XCircle className="h-4 w-4" /> {cancelSubmitting ? 'Đang hủy…' : 'Xác nhận hủy booking'}
               </button>

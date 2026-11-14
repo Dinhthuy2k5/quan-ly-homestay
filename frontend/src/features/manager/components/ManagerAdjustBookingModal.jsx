@@ -5,7 +5,6 @@ import {
   Check,
   DoorOpen,
   Edit3,
-  FileText,
   LoaderCircle,
   Plus,
   RefreshCw,
@@ -18,6 +17,7 @@ import { searchAvailableRooms } from '../../homestays/api';
 import { formatDate, formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { getErrorMessage } from '../../../lib/errors';
+import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
 
 export default function ManagerAdjustBookingModal({
   booking,
@@ -337,22 +337,8 @@ export default function ManagerAdjustBookingModal({
               )}
             </div>
 
-            <div className="sm:col-span-2 space-y-1.5">
-              <label htmlFor="mgr-adj-reason" className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[var(--color-ink)]">
-                <FileText className="h-4 w-4 text-[var(--color-muted)]" />
-                <span>Lý do điều chỉnh (tùy chọn)</span>
-              </label>
-              <input
-                id="mgr-adj-reason"
-                type="text"
-                placeholder="VD: Khách yêu cầu đổi ngày, thay đổi số người..."
-                value={reason}
-                maxLength={500}
-                onChange={(e) => setReason(e.target.value)}
-                className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-              />
-              <span className="text-[11px] sm:text-xs text-[var(--color-muted)]">Ghi nhận vào nhật ký ghi chú đơn đặt phòng</span>
-            </div>
+            <OptionalNotePicker className="sm:col-span-2" label="Lý do điều chỉnh (tùy chọn)" value={reason} onChange={setReason} maxLength={500} rows={2} placeholder="Nhập lý do điều chỉnh khác" options={['Khách yêu cầu đổi ngày', 'Khách yêu cầu đổi phòng', 'Điều chỉnh số lượng khách', 'Cập nhật thông tin đặt phòng']} />
+            <span className="sm:col-span-2 -mt-2 text-[11px] sm:text-xs text-[var(--color-muted)]">Ghi nhận vào nhật ký ghi chú đơn đặt phòng</span>
           </div>
 
           {/* Dải tóm tắt nhanh số đêm và phòng */}

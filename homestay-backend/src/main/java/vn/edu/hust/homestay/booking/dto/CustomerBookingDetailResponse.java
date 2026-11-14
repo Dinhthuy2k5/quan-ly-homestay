@@ -46,7 +46,10 @@ public record CustomerBookingDetailResponse(
             Instant confirmedAt,
             boolean proofAvailable,
             String proofMimeType,
-            String note
+            String note,
+            String bankName,
+            String bankAccountNumber,
+            String bankAccountHolder
     ) {}
 
     public record BookingRoomDetail(

@@ -29,6 +29,20 @@ export async function fetchCustomerBookingDetailApi(bookingId) {
   return res.data?.data || null;
 }
 
+/** API-CUS-06: Lấy các dịch vụ đã đăng ký trong booking của khách. */
+export async function fetchCustomerBookingServicesApi(bookingId) {
+  const res = await apiClient.get(`/customer/bookings/${bookingId}/services`);
+  const result = res.data?.data;
+  if (!Array.isArray(result)) throw new Error('Máy chủ trả về danh sách dịch vụ không hợp lệ.');
+  return result;
+}
+
+/** API-CUS-07: Đăng ký dịch vụ cho một phòng thuộc booking. */
+export async function registerCustomerBookingServiceApi(bookingId, roomId, request) {
+  const res = await apiClient.post(`/customer/bookings/${bookingId}/rooms/${roomId}/services`, request);
+  return res.data?.data || null;
+}
+
 /**
  * API-CUS-09: Điều chỉnh thông tin đặt phòng cá nhân.
  * @param {number|string} bookingId
@@ -40,8 +54,19 @@ export async function adjustCustomerBookingApi(bookingId, data) {
 }
 
 /** API-CUS-04: Hủy booking của khách hàng theo chính sách hủy đã áp dụng. */
-export async function cancelCustomerBookingApi(bookingId, reason = '') {
-  const res = await apiClient.post(`/customer/bookings/${bookingId}/cancel`, { reason });
+export async function cancelCustomerBookingApi(bookingId, cancelData = '') {
+  let payload;
+  if (typeof cancelData === 'string') {
+    payload = { reason: cancelData };
+  } else {
+    payload = {
+      reason: cancelData?.reason || '',
+      ...(cancelData?.bankName ? { bankName: cancelData.bankName.trim() } : {}),
+      ...(cancelData?.bankAccountNumber ? { bankAccountNumber: cancelData.bankAccountNumber.trim() } : {}),
+      ...(cancelData?.bankAccountHolder ? { bankAccountHolder: cancelData.bankAccountHolder.trim().toUpperCase() } : {}),
+    };
+  }
+  const res = await apiClient.post(`/customer/bookings/${bookingId}/cancel`, payload);
   return res.data?.data || null;
 }
 

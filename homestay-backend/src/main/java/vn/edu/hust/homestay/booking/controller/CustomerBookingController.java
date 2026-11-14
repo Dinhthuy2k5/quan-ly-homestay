@@ -39,6 +39,10 @@ import vn.edu.hust.homestay.booking.service.CustomerBookingService;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.common.response.PageMeta;
+import vn.edu.hust.homestay.service.dto.CustomerBookingServiceRequest;
+import vn.edu.hust.homestay.service.dto.CustomerBookingServiceResponse;
+import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSummaryResponse;
+import vn.edu.hust.homestay.service.service.CustomerBookingServiceService;
 
 import java.util.List;
 import java.util.Set;
@@ -50,9 +54,14 @@ import java.util.Set;
 public class CustomerBookingController {
 
     private final CustomerBookingService customerBookingService;
+    private final CustomerBookingServiceService bookingServiceOperations;
 
-    public CustomerBookingController(CustomerBookingService customerBookingService) {
+    public CustomerBookingController(
+            CustomerBookingService customerBookingService,
+            CustomerBookingServiceService bookingServiceOperations
+    ) {
         this.customerBookingService = customerBookingService;
+        this.bookingServiceOperations = bookingServiceOperations;
     }
 
     @Operation(summary = "API-CUS-01: Tạo booking online và giữ phòng theo từng đêm")
@@ -119,7 +128,7 @@ public class CustomerBookingController {
             @Valid @RequestBody CancelBookingRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.ok(
-                customerBookingService.cancelBooking(principal, bookingId, request.reason())));
+                customerBookingService.cancelBooking(principal, bookingId, request)));
     }
 
     @Operation(summary = "API-CUS-05: Gửi chứng từ chuyển khoản đặt cọc")
@@ -163,6 +172,28 @@ public class CustomerBookingController {
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         org.springframework.http.ContentDisposition.inline().filename(proof.filename()).build().toString())
                 .body(proof.resource());
+    }
+
+    @Operation(summary = "API-CUS-06: Xem các dịch vụ đã đăng ký cho booking của khách")
+    @GetMapping("/{bookingId}/services")
+    public ResponseEntity<ApiResponse<List<CustomerBookingServiceSummaryResponse>>> getBookingServices(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                bookingServiceOperations.getBookingServices(principal, bookingId)));
+    }
+
+    @Operation(summary = "API-CUS-07: Đăng ký dịch vụ cho một phòng thuộc booking")
+    @PostMapping("/{bookingId}/rooms/{roomId}/services")
+    public ResponseEntity<ApiResponse<CustomerBookingServiceResponse>> registerService(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @PathVariable Long roomId,
+            @Valid @RequestBody CustomerBookingServiceRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(
+                bookingServiceOperations.registerService(principal, bookingId, roomId, request)));
     }
 
     private Sort parseSort(String sort) {

@@ -5,6 +5,7 @@ import { AuthProvider } from './features/auth/context/AuthContext';
 import PublicLayout from './layouts/PublicLayout';
 import HomePage from './features/homestays/pages/HomePage';
 import HomestayDetailPage from './features/homestays/pages/HomestayDetailPage';
+import MultiRoomBookingPage from './features/homestays/pages/MultiRoomBookingPage';
 import SearchResultsPage from './features/homestays/pages/SearchResultsPage';
 import RoomDetailPage from './features/rooms/pages/RoomDetailPage';
 import LoginPage from './features/auth/pages/LoginPage';
@@ -57,6 +58,7 @@ export function App() {
 
             {/* Chi tiết homestay (API-PUB-02, room-types) */}
             <Route path="/homestays/:homestayId" element={<HomestayDetailRoute />} />
+            <Route path="/homestays/:homestayId/book" element={<MultiRoomBookingPage />} />
 
             {/* Chi tiết phòng & Giá cơ bản (API-PUB-06) */}
             <Route path="/rooms/:roomId" element={<RoomDetailRoute />} />

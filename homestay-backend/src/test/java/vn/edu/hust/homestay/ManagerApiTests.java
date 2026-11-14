@@ -570,4 +570,22 @@ class ManagerApiTests {
                 .andExpect(jsonPath("$.success", is(false)))
                 .andExpect(jsonPath("$.error.code", is("UNAUTHORIZED")));
     }
+
+    /**
+     * Mã API: API-MGR-POLICY-01
+     * Tên API: Quản lý xem chính sách của homestay được phân công
+     */
+    @Test
+    @DisplayName("API-MGR-POLICY-01: GET /api/v1/manager/homestay/policies — Manager lấy chính sách homestay thành công")
+    void testManagerGetHomestayPoliciesSuccess() throws Exception {
+        mockMvc.perform(get("/api/v1/manager/homestay/policies")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.homestayId", is(homestay1Id.intValue())))
+                .andExpect(jsonPath("$.data.bookingPolicy", notNullValue()))
+                .andExpect(jsonPath("$.data.paymentPolicy", notNullValue()))
+                .andExpect(jsonPath("$.data.stayPolicy", notNullValue()))
+                .andExpect(jsonPath("$.data.cancellationPolicy", notNullValue()));
+    }
 }

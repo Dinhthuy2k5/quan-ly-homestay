@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatVnd, formatDate, formatDateTime, nightsBetween, getNextDate } from '../format.js';
 import { getStatusInfo } from '../status.js';
 import { getErrorMessage, ERROR_MESSAGES } from '../errors.js';
-import { validateEmail, validatePhone } from '../validation.js';
+import { validateEmail, validatePhone, validateBankAccountNumber, validateBankAccountHolder, normalizeBankAccountHolder } from '../validation.js';
 
 test('formatVnd formats money integers correctly to Vietnamese Dong', () => {
   assert.equal(formatVnd(0), '0 ₫');
@@ -92,4 +92,35 @@ test('validatePhone validates Vietnamese phone numbers using regular expression'
   assert.match(validatePhone('09012345abc'), /không hợp lệ/);
   assert.match(validatePhone('01234'), /không hợp lệ/);
   assert.match(validatePhone('090123456789'), /không hợp lệ/);
+});
+
+test('validateBankAccountNumber validates bank account number using regular expression', () => {
+  assert.equal(validateBankAccountNumber('0987654321'), null);
+  assert.equal(validateBankAccountNumber('123456'), null);
+  assert.equal(validateBankAccountNumber('19036789012345'), null);
+  assert.equal(validateBankAccountNumber('12345678901234567890'), null);
+  assert.match(validateBankAccountNumber(''), /không được để trống/);
+  assert.match(validateBankAccountNumber('12345'), /không hợp lệ/);
+  assert.match(validateBankAccountNumber('123456789012345678901'), /không hợp lệ/);
+  assert.match(validateBankAccountNumber('0987abc123'), /không hợp lệ/);
+  assert.match(validateBankAccountNumber('0987 654 321'), /không hợp lệ/);
+  assert.match(validateBankAccountNumber('0987-654-321'), /không hợp lệ/);
+});
+
+test('validateBankAccountHolder validates bank account holder name using regular expression', () => {
+  assert.equal(validateBankAccountHolder('NGUYEN VAN A'), null);
+  assert.equal(validateBankAccountHolder('Nguyễn Văn Đạt'), null);
+  assert.equal(validateBankAccountHolder('LE C'), null);
+  assert.match(validateBankAccountHolder(''), /không được để trống/);
+  assert.match(validateBankAccountHolder('A'), /không hợp lệ/);
+  assert.match(validateBankAccountHolder('NGUYEN123'), /không hợp lệ/);
+  assert.match(validateBankAccountHolder('NGUYEN @ VAN A'), /không hợp lệ/);
+  assert.match(validateBankAccountHolder('123456'), /không hợp lệ/);
+});
+
+test('normalizeBankAccountHolder removes accents and converts to uppercase', () => {
+  assert.equal(normalizeBankAccountHolder('nguyễn văn đạt'), 'NGUYEN VAN DAT');
+  assert.equal(normalizeBankAccountHolder('Nguyễn Văn A'), 'NGUYEN VAN A');
+  assert.equal(normalizeBankAccountHolder('tran thi b'), 'TRAN THI B');
+  assert.equal(normalizeBankAccountHolder(''), '');
 });

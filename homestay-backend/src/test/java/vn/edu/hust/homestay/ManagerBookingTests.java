@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -26,6 +27,8 @@ import vn.edu.hust.homestay.booking.entity.BookingRoomNight;
 import vn.edu.hust.homestay.booking.repository.BookingRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomNightRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomRepository;
+import vn.edu.hust.homestay.payment.entity.Payment;
+import vn.edu.hust.homestay.payment.repository.PaymentRepository;
 import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
@@ -35,6 +38,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
@@ -60,6 +64,8 @@ class ManagerBookingTests {
     @Autowired private RoomRepository roomRepository;
     @Autowired private BookingRepository bookingRepository;
     @Autowired private BookingRoomRepository bookingRoomRepository;
+    @Autowired private PaymentRepository paymentRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private BookingRoomNightRepository bookingRoomNightRepository;
     @Autowired private JwtService jwtService;
 
@@ -317,6 +323,20 @@ class ManagerBookingTests {
         }
 
         return saved;
+    }
+
+    private Payment createPendingDeposit(Booking booking, long amount) {
+        Payment payment = new Payment();
+        payment.setBookingId(booking.getId());
+        payment.setHomestayId(booking.getHomestayId());
+        payment.setType(Payment.PaymentType.DEPOSIT);
+        payment.setAmount(amount);
+        payment.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        payment.setStatus(Payment.PaymentStatus.PENDING);
+        payment.setReferenceCode(booking.getCode() + " DAT COC");
+        payment.setProofUrl(null);
+        payment.setCreatedBy(manager1.getId());
+        return paymentRepository.saveAndFlush(payment);
     }
 
     // ── API-MGR-BOOK-02: Đặt phòng hộ khách ─────────────────────────────────
@@ -767,6 +787,292 @@ class ManagerBookingTests {
                 .andExpect(jsonPath("$.data.paymentInstruction").doesNotExist());
     }
 
+    @Test
+    @DisplayName("API-MGR-BOOK-05 duyệt đủ cọc: payment và booking được xác nhận đồng thời trong database")
+    void approveDepositConfirmsPaymentAndBookingInDatabase() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(45);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-DEP-OK-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001777", "Khách nộp đủ cọc", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_APPROVAL);
+        Payment payment = createPendingDeposit(booking, booking.getDepositAmount());
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "paymentId", payment.getId(), "decision", "APPROVE"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/deposit-review")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.bookingStatus", is("CONFIRMED")))
+                .andExpect(jsonPath("$.data.paymentStatus", is("CONFIRMED")))
+                .andExpect(jsonPath("$.data.approvedAt", notNullValue()));
+
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject(
+                "SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals(manager1.getId(), jdbcTemplate.queryForObject(
+                "SELECT approved_by FROM bookings WHERE id = ?", Long.class, booking.getId()));
+        assertNotNull(jdbcTemplate.queryForObject(
+                "SELECT approved_at FROM bookings WHERE id = ?", java.sql.Timestamp.class, booking.getId()));
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject(
+                "SELECT status FROM payments WHERE id = ?", String.class, payment.getId()));
+        assertEquals(manager1.getId(), jdbcTemplate.queryForObject(
+                "SELECT confirmed_by FROM payments WHERE id = ?", Long.class, payment.getId()));
+        assertNotNull(jdbcTemplate.queryForObject(
+                "SELECT confirmed_at FROM payments WHERE id = ?", java.sql.Timestamp.class, payment.getId()));
+        assertEquals(2, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-05 duyệt cọc một phần: payment CONFIRMED nhưng booking còn PENDING_DEPOSIT")
+    void approvePartialDepositKeepsBookingPendingDeposit() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(48);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-DEP-PART-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001778", "Khách cọc một phần", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_APPROVAL);
+        Payment payment = createPendingDeposit(booking, booking.getDepositAmount() / 2);
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "paymentId", payment.getId(), "decision", "APPROVE"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/deposit-review")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.bookingStatus", is("PENDING_DEPOSIT")))
+                .andExpect(jsonPath("$.data.paymentStatus", is("CONFIRMED")))
+                .andExpect(jsonPath("$.data.approvedAt").doesNotExist());
+
+        assertEquals("PENDING_DEPOSIT", jdbcTemplate.queryForObject(
+                "SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject(
+                "SELECT status FROM payments WHERE id = ?", String.class, payment.getId()));
+        assertEquals(2, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-05 từ chối chứng từ khi còn hạn: lưu lý do và trả booking về PENDING_DEPOSIT")
+    void rejectDepositStoresReasonAndReturnsBookingToPendingDeposit() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(52);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-DEP-REJ-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001779", "Khách gửi sai chứng từ", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_APPROVAL);
+        Payment payment = createPendingDeposit(booking, 100_000L);
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "paymentId", payment.getId(), "decision", "REJECT", "reason", "Giao dịch không khớp nội dung chuyển khoản"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/deposit-review")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.bookingStatus", is("PENDING_DEPOSIT")))
+                .andExpect(jsonPath("$.data.paymentStatus", is("REJECTED")))
+                .andExpect(jsonPath("$.data.rejectionReason", is("Giao dịch không khớp nội dung chuyển khoản")));
+
+        assertEquals("PENDING_DEPOSIT", jdbcTemplate.queryForObject(
+                "SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals("REJECTED", jdbcTemplate.queryForObject(
+                "SELECT status FROM payments WHERE id = ?", String.class, payment.getId()));
+        assertEquals("Giao dịch không khớp nội dung chuyển khoản", jdbcTemplate.queryForObject(
+                "SELECT rejection_reason FROM payments WHERE id = ?", String.class, payment.getId()));
+        assertEquals(2, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-05 từ chối sau hạn giữ phòng: chuyển EXPIRED và giải phóng booking_room_nights")
+    void rejectDepositAfterHoldExpiryReleasesRoomNights() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(55);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-DEP-EXP-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001780", "Khách gửi chứng từ quá hạn", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_APPROVAL);
+        booking.setHoldExpiresAt(LocalDateTime.ofInstant(Instant.now().minusSeconds(60), ZoneOffset.UTC));
+        bookingRepository.saveAndFlush(booking);
+        Payment payment = createPendingDeposit(booking, 100_000L);
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "paymentId", payment.getId(), "decision", "REJECT", "reason", "Chứng từ không hợp lệ"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/deposit-review")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.bookingStatus", is("EXPIRED")))
+                .andExpect(jsonPath("$.data.paymentStatus", is("REJECTED")));
+
+        assertEquals("EXPIRED", jdbcTemplate.queryForObject(
+                "SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+        assertEquals("REJECTED", jdbcTemplate.queryForObject(
+                "SELECT status FROM payments WHERE id = ?", String.class, payment.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-05 từ chối thiếu lý do: không cập nhật payment hoặc booking")
+    void rejectDepositWithoutReasonDoesNotChangeDatabase() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(58);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-DEP-NOR-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001781", "Khách chứng từ thiếu lý do", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_APPROVAL);
+        Payment payment = createPendingDeposit(booking, 100_000L);
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "paymentId", payment.getId(), "decision", "REJECT", "reason", "   "));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/deposit-review")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("VALIDATION_ERROR")));
+
+        assertEquals("PENDING_APPROVAL", jdbcTemplate.queryForObject(
+                "SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals("PENDING", jdbcTemplate.queryForObject(
+                "SELECT status FROM payments WHERE id = ?", String.class, payment.getId()));
+    }
+
+    @Test
+    @DisplayName("API-PAY-02 ghi nhận đủ tiền mặt: payment CONFIRMED và booking CONFIRMED trong database")
+    void recordDirectCashDepositConfirmsBookingAndPersistsPayment() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(90);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-CASH-FULL-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001901", "Khách đặt cọc tiền mặt đủ", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_DEPOSIT);
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "type", "DEPOSIT", "amount", booking.getDepositAmount(), "method", "CASH", "note", "Khách nộp trực tiếp"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/payments")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.type", is("DEPOSIT")))
+                .andExpect(jsonPath("$.data.amount", is(booking.getDepositAmount().intValue())))
+                .andExpect(jsonPath("$.data.method", is("CASH")))
+                .andExpect(jsonPath("$.data.status", is("CONFIRMED")))
+                .andExpect(jsonPath("$.data.bookingStatus", is("CONFIRMED")));
+
+        Long paymentId = jdbcTemplate.queryForObject(
+                "SELECT id FROM payments WHERE booking_id = ? AND type = 'DEPOSIT' AND method = 'CASH'",
+                Long.class, booking.getId());
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject("SELECT status FROM payments WHERE id = ?", String.class, paymentId));
+        assertEquals(manager1.getId(), jdbcTemplate.queryForObject("SELECT created_by FROM payments WHERE id = ?", Long.class, paymentId));
+        assertEquals(manager1.getId(), jdbcTemplate.queryForObject("SELECT confirmed_by FROM payments WHERE id = ?", Long.class, paymentId));
+        assertNotNull(jdbcTemplate.queryForObject("SELECT confirmed_at FROM payments WHERE id = ?", LocalDateTime.class, paymentId));
+        assertEquals("Khách nộp trực tiếp", jdbcTemplate.queryForObject("SELECT note FROM payments WHERE id = ?", String.class, paymentId));
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals(manager1.getId(), jdbcTemplate.queryForObject("SELECT approved_by FROM bookings WHERE id = ?", Long.class, booking.getId()));
+        assertNotNull(jdbcTemplate.queryForObject("SELECT approved_at FROM bookings WHERE id = ?", java.sql.Timestamp.class, booking.getId()));
+        assertEquals(2, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-PAY-02 ghi nhận cọc một phần: lưu tiền đã nhận nhưng booking vẫn chờ cọc")
+    void recordPartialDirectCashDepositKeepsBookingPendingDeposit() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(92);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-CASH-PART-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001902", "Khách đặt cọc một phần", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_DEPOSIT);
+        long partialAmount = booking.getDepositAmount() / 2;
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "type", "DEPOSIT", "amount", partialAmount, "method", "CASH"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/payments")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status", is("CONFIRMED")))
+                .andExpect(jsonPath("$.data.bookingStatus", is("PENDING_DEPOSIT")));
+
+        assertEquals("PENDING_DEPOSIT", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals(partialAmount, jdbcTemplate.queryForObject(
+                "SELECT SUM(amount) FROM payments WHERE booking_id = ? AND type = 'DEPOSIT' AND status = 'CONFIRMED'",
+                Long.class, booking.getId()));
+        assertNull(jdbcTemplate.queryForObject("SELECT approved_at FROM bookings WHERE id = ?", java.sql.Timestamp.class, booking.getId()));
+        assertEquals(2, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-PAY-02 từ chối khoản thu lớn hơn số cọc còn thiếu và không ghi thay đổi vào database")
+    void recordDirectDepositAboveRemainingAmountDoesNotChangeDatabase() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(94);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-CASH-OVER-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001903", "Khách nộp thừa", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_DEPOSIT);
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "type", "DEPOSIT", "amount", booking.getDepositAmount() + 1, "method", "CASH"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/payments")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("DEPOSIT_AMOUNT_EXCEEDS_REMAINING")));
+
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payments WHERE booking_id = ?", Integer.class, booking.getId()));
+        assertEquals("PENDING_DEPOSIT", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-PAY-02 ghi nhận cọc qua chuyển khoản (BANK_TRANSFER) kèm mã giao dịch")
+    void recordDirectBankTransferDepositConfirmsBookingAndPersistsPayment() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(91);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-BANK-FULL-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001904", "Khách chuyển khoản cọc", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_DEPOSIT);
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "type", "DEPOSIT",
+                "amount", booking.getDepositAmount(),
+                "method", "BANK_TRANSFER",
+                "referenceCode", "MB-TRF-99999",
+                "note", "Khách gửi bill qua Zalo"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/payments")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.type", is("DEPOSIT")))
+                .andExpect(jsonPath("$.data.amount", is(booking.getDepositAmount().intValue())))
+                .andExpect(jsonPath("$.data.method", is("BANK_TRANSFER")))
+                .andExpect(jsonPath("$.data.referenceCode", is("MB-TRF-99999")))
+                .andExpect(jsonPath("$.data.status", is("CONFIRMED")))
+                .andExpect(jsonPath("$.data.bookingStatus", is("CONFIRMED")));
+
+        Long paymentId = jdbcTemplate.queryForObject(
+                "SELECT id FROM payments WHERE booking_id = ? AND type = 'DEPOSIT' AND method = 'BANK_TRANSFER'",
+                Long.class, booking.getId());
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject("SELECT status FROM payments WHERE id = ?", String.class, paymentId));
+        assertEquals("MB-TRF-99999", jdbcTemplate.queryForObject("SELECT reference_code FROM payments WHERE id = ?", String.class, paymentId));
+        assertEquals("Khách gửi bill qua Zalo", jdbcTemplate.queryForObject("SELECT note FROM payments WHERE id = ?", String.class, paymentId));
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-PAY-02 từ chối ghi nhận cọc trực tiếp cho đơn do khách hàng tự đặt trực tuyến")
+    void recordDirectDepositRejectsCustomerOnlineBooking() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(93);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-ONLINE-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988001905", "Khách tự đặt", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_DEPOSIT);
+
+        User customer = userRepository.saveAndFlush(User.builder()
+                .email("cust.online.pay02." + UUID.randomUUID() + "@example.com")
+                .passwordHash("hashed")
+                .fullName("Khách tự đặt online")
+                .phone("0988001905")
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .build());
+        booking.setCustomerId(customer.getId());
+        booking.setCreatedBy(customer.getId());
+        bookingRepository.saveAndFlush(booking);
+
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "type", "DEPOSIT", "amount", booking.getDepositAmount(), "method", "CASH"));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/payments")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("BOOKING_NOT_MANAGER_CREATED")));
+
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payments WHERE booking_id = ?", Integer.class, booking.getId()));
+        assertEquals("PENDING_DEPOSIT", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+    }
+
     // ── API-MGR-BOOK-04: Điều chỉnh booking ─────────────────────────────────
 
     @Test
@@ -1056,5 +1362,209 @@ class ManagerBookingTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-06 hủy booking CONFIRMED: tính hoàn, tạo REFUND và giải phóng đêm phòng trong database")
+    void cancelConfirmedBookingCalculatesRefundAndUpdatesDatabase() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(120 + (int) (System.nanoTime() % 150));
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-CANCEL-" + UUID.randomUUID().toString().substring(0, 6),
+                "0988001881", "Khách hủy booking", checkIn, checkIn.plusDays(2), BookingStatus.CONFIRMED);
+        booking.setPolicySnapshot("{\"refundRules\":[{\"days_before_checkin\":0,\"refund_percent\":25}]}");
+        bookingRepository.saveAndFlush(booking);
+
+        Payment deposit = new Payment();
+        deposit.setBookingId(booking.getId());
+        deposit.setHomestayId(homestay1Id);
+        deposit.setType(Payment.PaymentType.DEPOSIT);
+        deposit.setAmount(booking.getDepositAmount());
+        deposit.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        deposit.setStatus(Payment.PaymentStatus.CONFIRMED);
+        deposit.setCreatedBy(manager1.getId());
+        deposit.setConfirmedBy(manager1.getId());
+        deposit.setConfirmedAt(LocalDateTime.now(ZoneOffset.UTC));
+        paymentRepository.saveAndFlush(deposit);
+
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "reason", "Khách đề nghị hủy chuyến", "requestedByCustomer", true));
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.status", is("CANCELLED")))
+                .andExpect(jsonPath("$.data.refundAmount", is(75_000)))
+                .andExpect(jsonPath("$.data.refundRequired", is(true)));
+
+        assertEquals("CANCELLED", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals(75_000L, jdbcTemplate.queryForObject("SELECT refund_amount FROM bookings WHERE id = ?", Long.class, booking.getId()));
+        assertEquals(manager1.getId(), jdbcTemplate.queryForObject("SELECT cancelled_by FROM bookings WHERE id = ?", Long.class, booking.getId()));
+        assertEquals("Khách yêu cầu: Khách đề nghị hủy chuyến", jdbcTemplate.queryForObject("SELECT cancel_reason FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+        assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payments WHERE booking_id = ? AND type = 'REFUND' AND status = 'PENDING' AND amount = 75000", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-06 Quản lý hủy hộ khách có hoàn tiền và nhập STK khách: lưu đúng thông tin ngân hàng")
+    void cancelConfirmedBookingWithCustomerBankDetailsPersistsBankInfo() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(130 + (int) (System.nanoTime() % 150));
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-C-BANK-" + UUID.randomUUID().toString().substring(0, 6),
+                "0988001899", "Khách gọi nhờ hủy", checkIn, checkIn.plusDays(2), BookingStatus.CONFIRMED);
+        booking.setPolicySnapshot("{\"refundRules\":[{\"days_before_checkin\":0,\"refund_percent\":50}]}");
+        bookingRepository.saveAndFlush(booking);
+
+        Payment deposit = new Payment();
+        deposit.setBookingId(booking.getId());
+        deposit.setHomestayId(homestay1Id);
+        deposit.setType(Payment.PaymentType.DEPOSIT);
+        deposit.setAmount(booking.getDepositAmount());
+        deposit.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        deposit.setStatus(Payment.PaymentStatus.CONFIRMED);
+        deposit.setCreatedBy(manager1.getId());
+        deposit.setConfirmedBy(manager1.getId());
+        deposit.setConfirmedAt(LocalDateTime.now(ZoneOffset.UTC));
+        paymentRepository.saveAndFlush(deposit);
+
+        String body = objectMapper.writeValueAsString(java.util.Map.of(
+                "reason", "Khách gọi nhờ hủy chuyển khoản hoàn",
+                "requestedByCustomer", true,
+                "bankName", "Vietcombank",
+                "bankAccountNumber", "0123456789",
+                "bankAccountHolder", "tran van b"
+        ));
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status", is("CANCELLED")))
+                .andExpect(jsonPath("$.data.refundRequired", is(true)));
+
+        Map<String, Object> refund = jdbcTemplate.queryForMap(
+                "SELECT bank_name, bank_account_number, bank_account_holder FROM payments WHERE booking_id = ? AND type = 'REFUND'",
+                booking.getId());
+        assertEquals("Vietcombank", refund.get("bank_name"));
+        assertEquals("0123456789", refund.get("bank_account_number"));
+        assertEquals("TRAN VAN B", refund.get("bank_account_holder"));
+
+        mockMvc.perform(get("/api/v1/manager/bookings/" + booking.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.payments[?(@.paymentType == 'REFUND')].bankName").value(hasItem("Vietcombank")))
+                .andExpect(jsonPath("$.data.payments[?(@.paymentType == 'REFUND')].bankAccountNumber").value(hasItem("0123456789")))
+                .andExpect(jsonPath("$.data.payments[?(@.paymentType == 'REFUND')].bankAccountHolder").value(hasItem("TRAN VAN B")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-06 Quản lý nhập STK hoặc tên chủ tài khoản không hợp lệ -> 400")
+    void cancelWithInvalidBankDetailsReturnsBadRequest() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(140 + (int) (System.nanoTime() % 150));
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-C-INV-" + UUID.randomUUID().toString().substring(0, 6),
+                "0988001898", "Khách hủy", checkIn, checkIn.plusDays(2), BookingStatus.CONFIRMED);
+
+        // STK chứa chữ cái -> 400
+        String bodyInvalidAcc = objectMapper.writeValueAsString(java.util.Map.of(
+                "reason", "Khách nhờ hủy",
+                "requestedByCustomer", true,
+                "bankName", "Vietcombank",
+                "bankAccountNumber", "123abc456",
+                "bankAccountHolder", "TRAN VAN B"
+        ));
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bodyInvalidAcc))
+                .andExpect(status().isBadRequest());
+
+        // Tên chủ TK chứa số -> 400
+        String bodyInvalidHolder = objectMapper.writeValueAsString(java.util.Map.of(
+                "reason", "Khách nhờ hủy",
+                "requestedByCustomer", true,
+                "bankName", "Vietcombank",
+                "bankAccountNumber", "0123456789",
+                "bankAccountHolder", "TRAN VAN 999"
+        ));
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bodyInvalidHolder))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-06 từ chối booking PENDING_APPROVAL và booking ngoài homestay; database không đổi")
+    void cancelRejectsUnreviewedDepositAndOutOfScopeBooking() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(190 + (int) (System.nanoTime() % 150));
+        Booking unreviewed = createSampleBooking(homestay1Id, room1, "HS-C-PEND-" + UUID.randomUUID().toString().substring(0, 6),
+                "0988001882", "Khách đang chờ duyệt cọc", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_APPROVAL);
+        Booking otherHomestay = createSampleBooking(homestay2Id, room2, "HS-C-SCOPE-" + UUID.randomUUID().toString().substring(0, 6),
+                "0988001883", "Khách cơ sở khác", checkIn.plusDays(3), checkIn.plusDays(5), BookingStatus.CONFIRMED);
+        String body = objectMapper.writeValueAsString(java.util.Map.of("reason", "Sự cố", "requestedByCustomer", false));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + unreviewed.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + tokenMgr1).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("BOOKING_STATE_CONFLICT")));
+        mockMvc.perform(post("/api/v1/manager/bookings/" + otherHomestay.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + tokenMgr1).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_SCOPE_VIOLATION")));
+
+        assertEquals("PENDING_APPROVAL", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, unreviewed.getId()));
+        assertEquals(2, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, unreviewed.getId()));
+        assertEquals("CONFIRMED", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, otherHomestay.getId()));
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payments WHERE booking_id IN (?, ?) AND type = 'REFUND'", Integer.class, unreviewed.getId(), otherHomestay.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-06 bắt buộc có lý do hủy và không đổi database nếu thiếu lý do")
+    void cancelRequiresReasonAndLeavesDatabaseUntouched() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(80 + (int) (System.nanoTime() % 100));
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-C-REASON-" + UUID.randomUUID().toString().substring(0, 6),
+                "0988001884", "Booking thiếu lý do", checkIn, checkIn.plusDays(2), BookingStatus.PENDING_DEPOSIT);
+        String body = objectMapper.writeValueAsString(java.util.Map.of("requestedByCustomer", false));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + tokenMgr1).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+
+        assertEquals("PENDING_DEPOSIT", jdbcTemplate.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertNull(jdbcTemplate.queryForObject("SELECT cancel_reason FROM bookings WHERE id = ?", String.class, booking.getId()));
+        assertEquals(2, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM booking_room_nights WHERE booking_id = ?", Integer.class, booking.getId()));
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payments WHERE booking_id = ? AND type = 'REFUND'", Integer.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-03 chỉ hiển thị các khoản cọc đã xác nhận trong tổng tiền đã thu")
+    void managerBookingDetailUsesConfirmedPaymentsFromDatabase() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(95 + (int) (System.nanoTime() % 100));
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-PAID-" + UUID.randomUUID().toString().substring(0, 6),
+                "0988001885", "Khách có cọc", checkIn, checkIn.plusDays(2), BookingStatus.CONFIRMED);
+        Payment confirmedDeposit = new Payment();
+        confirmedDeposit.setBookingId(booking.getId());
+        confirmedDeposit.setHomestayId(homestay1Id);
+        confirmedDeposit.setType(Payment.PaymentType.DEPOSIT);
+        confirmedDeposit.setAmount(180_000L);
+        confirmedDeposit.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        confirmedDeposit.setStatus(Payment.PaymentStatus.CONFIRMED);
+        confirmedDeposit.setCreatedBy(manager1.getId());
+        confirmedDeposit.setConfirmedBy(manager1.getId());
+        confirmedDeposit.setConfirmedAt(LocalDateTime.now(ZoneOffset.UTC));
+        paymentRepository.saveAndFlush(confirmedDeposit);
+
+        Payment pendingDeposit = createPendingDeposit(booking, 250_000L);
+
+        mockMvc.perform(get("/api/v1/manager/bookings/" + booking.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.paidAmount", is(180_000)))
+                .andExpect(jsonPath("$.data.outstandingAmount", is(820_000)));
+
+        assertEquals(180_000L, jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE booking_id = ? AND type = 'DEPOSIT' AND status = 'CONFIRMED'",
+                Long.class, booking.getId()));
+        assertEquals("PENDING", jdbcTemplate.queryForObject(
+                "SELECT status FROM payments WHERE id = ?", String.class, pendingDeposit.getId()));
     }
 }

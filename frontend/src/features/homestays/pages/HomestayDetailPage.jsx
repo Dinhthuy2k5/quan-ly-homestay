@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   BedDouble,
   Check,
@@ -23,7 +23,6 @@ import EmptyState from '../../../components/ui/EmptyState';
 import ErrorBanner from '../../../components/ui/ErrorBanner';
 import HomestayLocationMap from '../components/HomestayLocationMap';
 import HomestayPolicySection from '../components/HomestayPolicySection';
-import MultiRoomBookingModal from '../components/MultiRoomBookingModal';
 import { getAmenityMeta } from '../../../lib/amenities';
 import { getServiceIcon } from '../../../lib/services';
 import { formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
@@ -40,6 +39,7 @@ function DetailSkeleton() {
 
 export function HomestayDetailPage() {
   const { homestayId } = useParams();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [todayDate] = useState(() => {
     const date = new Date();
@@ -66,8 +66,7 @@ export function HomestayDetailPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   // Quản lý các phòng được chọn để đặt nhiều phòng cùng lúc
-  const [selectedRoomIds, setSelectedRoomIds] = useState(new Set());
-  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [selectedRoomIds, setSelectedRoomIds] = useState(() => new Set((searchParams.get('rooms') || '').split(',').filter(Boolean).map(Number)));
 
   // Quản lý chính sách & quy định lưu trú của homestay (API-PUB-POLICY-01)
   const [policies, setPolicies] = useState(null);
@@ -634,7 +633,15 @@ export function HomestayDetailPage() {
 
               <button
                 type="button"
-                onClick={() => setIsBookingModalOpen(true)}
+                onClick={() => {
+                  const params = new URLSearchParams({
+                    checkIn: checkInDate,
+                    checkOut: checkOutDate,
+                    guests: String(guestCount),
+                    rooms: selectedRooms.map((room) => String(room.roomId ?? room.id)).join(','),
+                  });
+                  navigate(`/homestays/${homestayId}/book?${params.toString()}`);
+                }}
                 className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-6 text-sm font-bold text-white shadow-xs hover:bg-[var(--color-primary-hover)] transition-colors"
               >
                 <span>Tiến hành đặt {selectedRooms.length} phòng</span>
@@ -644,17 +651,6 @@ export function HomestayDetailPage() {
         </div>
       )}
 
-      {/* Modal xác nhận đặt nhiều phòng */}
-      {isBookingModalOpen && (
-        <MultiRoomBookingModal
-          homestay={homestay}
-          selectedRooms={selectedRooms}
-          checkInDate={checkInDate}
-          checkOutDate={checkOutDate}
-          initialGuestCount={guestCount}
-          onClose={() => setIsBookingModalOpen(false)}
-        />
-      )}
     </article>
   );
 }
