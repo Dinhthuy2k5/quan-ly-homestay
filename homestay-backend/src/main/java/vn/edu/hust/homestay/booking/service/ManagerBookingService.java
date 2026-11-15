@@ -9,7 +9,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.edu.hust.homestay.auth.entity.User;
 import vn.edu.hust.homestay.auth.repository.UserRepository;
@@ -51,6 +50,10 @@ import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.entity.RoomType;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
 import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
+import vn.edu.hust.homestay.service.entity.BookingService;
+import vn.edu.hust.homestay.service.entity.Service;
+import vn.edu.hust.homestay.service.repository.BookingServiceRepository;
+import vn.edu.hust.homestay.service.repository.ServiceRepository;
 import vn.edu.hust.homestay.service.service.CustomerBookingServiceService;
 
 import java.math.BigDecimal;
@@ -85,7 +88,7 @@ import java.util.stream.Collectors;
  * - API-MGR-BOOK-03: Chi tiết booking
  * - API-MGR-BOOK-04: Điều chỉnh booking
  */
-@Service
+@org.springframework.stereotype.Service
 public class ManagerBookingService {
 
     private static final ZoneId BUSINESS_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
@@ -108,6 +111,8 @@ public class ManagerBookingService {
     private final PaymentRepository paymentRepository;
     private final CancellationRefundPolicyService cancellationRefundPolicyService;
     private final CustomerBookingServiceService bookingServiceOperations;
+    private final BookingServiceRepository bookingServiceRepository;
+    private final ServiceRepository serviceRepository;
     private final Path privateUploadRoot;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -125,6 +130,8 @@ public class ManagerBookingService {
             PaymentRepository paymentRepository,
             CancellationRefundPolicyService cancellationRefundPolicyService,
             CustomerBookingServiceService bookingServiceOperations,
+            BookingServiceRepository bookingServiceRepository,
+            ServiceRepository serviceRepository,
             @Value("${app.storage.private-upload-dir:storage/private}") String privateUploadDir
     ) {
         this.bookingRepository = bookingRepository;
@@ -140,6 +147,8 @@ public class ManagerBookingService {
         this.paymentRepository = paymentRepository;
         this.cancellationRefundPolicyService = cancellationRefundPolicyService;
         this.bookingServiceOperations = bookingServiceOperations;
+        this.bookingServiceRepository = bookingServiceRepository;
+        this.serviceRepository = serviceRepository;
         this.privateUploadRoot = Paths.get(privateUploadDir).toAbsolutePath().normalize();
     }
 
@@ -395,6 +404,21 @@ public class ManagerBookingService {
         Map<Long, Room> roomMap = roomIds.isEmpty() ? Map.of() :
                 roomRepository.findAllById(roomIds).stream().collect(Collectors.toMap(Room::getId, r -> r));
 
+        List<BookingService> bServices = bookingServiceRepository.findByBookingIdOrderByIdAsc(booking.getId());
+        Set<Long> serviceIds = bServices.stream().map(BookingService::getServiceId).collect(Collectors.toSet());
+        Map<Long, Service> serviceEntityMap = serviceIds.isEmpty() ? Map.of() :
+                serviceRepository.findAllById(serviceIds).stream()
+                        .collect(Collectors.toMap(Service::getId, s -> s));
+
+        List<ManagerBookingDetailResponse.ServiceSummary> serviceSummaries = bServices.stream().map(bs -> {
+            Room room = roomMap.get(bs.getRoomId());
+            String rName = room != null ? room.getName() : "Phòng #" + bs.getRoomId();
+            Service svc = serviceEntityMap.get(bs.getServiceId());
+            String sName = svc != null ? svc.getName() : "Dịch vụ #" + bs.getServiceId();
+            String unit = svc != null ? svc.getUnit() : null;
+            return ManagerBookingDetailResponse.ServiceSummary.from(bs, rName, sName, unit);
+        }).toList();
+
         Set<Long> roomTypeIds = roomMap.values().stream().map(Room::getRoomTypeId).collect(Collectors.toSet());
         Map<Long, String> roomTypeNameMap = roomTypeIds.isEmpty() ? Map.of() :
                 roomTypeRepository.findAllById(roomTypeIds).stream().collect(Collectors.toMap(RoomType::getId, RoomType::getName));
@@ -498,7 +522,7 @@ public class ManagerBookingService {
                                 payment.getProofUrl() != null, managerProofMimeType(payment.getProofUrl()), payment.getNote(),
                                 payment.getBankName(), payment.getBankAccountNumber(), payment.getBankAccountHolder()))
                         .toList(),
-                List.of()
+                serviceSummaries
         );
     }
 

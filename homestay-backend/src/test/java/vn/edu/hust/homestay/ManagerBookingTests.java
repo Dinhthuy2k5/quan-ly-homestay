@@ -32,6 +32,10 @@ import vn.edu.hust.homestay.payment.repository.PaymentRepository;
 import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
+import vn.edu.hust.homestay.service.entity.BookingService;
+import vn.edu.hust.homestay.service.entity.BookingService.BookingServiceStatus;
+import vn.edu.hust.homestay.service.repository.BookingServiceRepository;
+import vn.edu.hust.homestay.service.repository.ServiceRepository;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -65,6 +69,8 @@ class ManagerBookingTests {
     @Autowired private BookingRepository bookingRepository;
     @Autowired private BookingRoomRepository bookingRoomRepository;
     @Autowired private PaymentRepository paymentRepository;
+    @Autowired private BookingServiceRepository bookingServiceRepository;
+    @Autowired private ServiceRepository serviceRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private BookingRoomNightRepository bookingRoomNightRepository;
     @Autowired private JwtService jwtService;
@@ -692,7 +698,63 @@ class ManagerBookingTests {
                 .andExpect(jsonPath("$.data.rooms[0].roomName", is(room1.getName())))
                 .andExpect(jsonPath("$.data.rooms[0].nights", hasSize(2)))
                 .andExpect(jsonPath("$.data.rooms[0].nights[0].nightlyPrice", is(500_000)))
-                .andExpect(jsonPath("$.data.rooms[0].nights[0].appliedRuleName", is("BASE")));
+                .andExpect(jsonPath("$.data.rooms[0].nights[0].appliedRuleName", is("BASE")))
+                .andExpect(jsonPath("$.data.services", notNullValue()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-03: Chi tiết booking lấy kèm danh sách dịch vụ đã đăng ký")
+    void getBookingDetailWithServicesSuccess() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(50);
+        LocalDate checkOut = LocalDate.now().plusDays(52);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988555666", "Khách Dịch Vụ", checkIn, checkOut, BookingStatus.PENDING_DEPOSIT);
+
+        // Tạo 1 dịch vụ thuộc homestay 1 nếu chưa có
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseGet(() -> {
+            vn.edu.hust.homestay.service.entity.Service s = new vn.edu.hust.homestay.service.entity.Service();
+            s.setHomestayId(homestay1Id);
+            s.setCategoryId(1L);
+            s.setName("Bữa sáng tự chọn " + UUID.randomUUID().toString().substring(0, 5));
+            s.setUnit("suất");
+            s.setUnitPrice(70_000L);
+            s.setStatus(vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE);
+            return serviceRepository.saveAndFlush(s);
+        });
+
+        // Tạo 1 BookingService cho booking này
+        BookingService bs = new BookingService();
+        bs.setBookingId(booking.getId());
+        bs.setHomestayId(homestay1Id);
+        bs.setRoomId(room1.getId());
+        bs.setServiceId(testSvc.getId());
+        bs.setQuantity(2);
+        bs.setUnitPrice(testSvc.getUnitPrice());
+        bs.setTotalPrice(testSvc.getUnitPrice() * 2);
+        bs.setStatus(BookingServiceStatus.REGISTERED);
+        bs.setServiceDate(checkIn);
+        bs.setNote("Không hành lá");
+        bs.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs);
+
+        mockMvc.perform(get("/api/v1/manager/bookings/" + booking.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.services", hasSize(1)))
+                .andExpect(jsonPath("$.data.services[0].id", is(bs.getId().intValue())))
+                .andExpect(jsonPath("$.data.services[0].roomId", is(room1.getId().intValue())))
+                .andExpect(jsonPath("$.data.services[0].roomName", is(room1.getName())))
+                .andExpect(jsonPath("$.data.services[0].serviceId", is(testSvc.getId().intValue())))
+                .andExpect(jsonPath("$.data.services[0].serviceName", is(testSvc.getName())))
+                .andExpect(jsonPath("$.data.services[0].unit", is(testSvc.getUnit())))
+                .andExpect(jsonPath("$.data.services[0].quantity", is(2)))
+                .andExpect(jsonPath("$.data.services[0].unitPrice", is(testSvc.getUnitPrice().intValue())))
+                .andExpect(jsonPath("$.data.services[0].totalPrice", is((int) (testSvc.getUnitPrice() * 2))))
+                .andExpect(jsonPath("$.data.services[0].status", is("REGISTERED")))
+                .andExpect(jsonPath("$.data.services[0].note", is("Không hành lá")));
     }
 
     @Test

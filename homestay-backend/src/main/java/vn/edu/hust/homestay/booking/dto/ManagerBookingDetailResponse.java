@@ -1,6 +1,8 @@
 package vn.edu.hust.homestay.booking.dto;
 
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
+import vn.edu.hust.homestay.service.entity.BookingService;
+import vn.edu.hust.homestay.service.entity.BookingService.BookingServiceStatus;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -100,9 +102,47 @@ public record ManagerBookingDetailResponse(
 
     public record ServiceSummary(
             Long id,
+            Long roomId,
+            String roomName,
+            Long serviceId,
             String serviceName,
+            String unit,
             Integer quantity,
             Long unitPrice,
-            Long totalPrice
-    ) {}
+            Long totalPrice,
+            BookingServiceStatus status,
+            LocalDate serviceDate,
+            String note,
+            Instant createdAt
+    ) {
+        public ServiceSummary(Long id, String serviceName, Integer quantity, Long unitPrice, Long totalPrice) {
+            this(id, null, null, null, serviceName, null, quantity, unitPrice, totalPrice, null, null, null, null);
+        }
+
+        public static ServiceSummary from(
+                BookingService bs,
+                String roomName,
+                String serviceName,
+                String unit
+        ) {
+            long total = bs.getTotalPrice() != null
+                    ? bs.getTotalPrice()
+                    : Math.multiplyExact(bs.getUnitPrice(), bs.getQuantity().longValue());
+            return new ServiceSummary(
+                    bs.getId(),
+                    bs.getRoomId(),
+                    roomName,
+                    bs.getServiceId(),
+                    serviceName,
+                    unit,
+                    bs.getQuantity(),
+                    bs.getUnitPrice(),
+                    total,
+                    bs.getStatus(),
+                    bs.getServiceDate(),
+                    bs.getNote(),
+                    bs.getCreatedAt()
+            );
+        }
+    }
 }

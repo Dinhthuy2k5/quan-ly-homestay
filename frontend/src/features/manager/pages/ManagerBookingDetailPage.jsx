@@ -15,6 +15,7 @@ import {
   Phone,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Tag,
   User,
   UserCheck,
@@ -221,6 +222,9 @@ export default function ManagerBookingDetailPage() {
     payment.paymentType === 'DEPOSIT' && payment.status === 'CONFIRMED' ? sum + Number(payment.amount || 0) : sum, 0);
   const remainingDepositAmount = Math.max(0, Number(booking?.depositAmount || 0) - confirmedDepositAmount);
   const hasConfirmedDeposit = confirmedDepositAmount > 0 || Number(booking?.paidAmount || 0) > 0 || booking?.status === 'CONFIRMED';
+  const totalServicesPrice = (booking?.services || [])
+    .filter((s) => s.status !== 'CANCELLED')
+    .reduce((sum, s) => sum + Number(s.totalPrice || 0), 0);
 
   const handleRecordDirectDeposit = async (event) => {
     event.preventDefault();
@@ -702,6 +706,83 @@ export default function ManagerBookingDetailPage() {
             </div>
           </div>
 
+          {/* Card: Dịch vụ đã đăng ký theo đơn */}
+          <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-5">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-4">
+              <h3 className="text-base font-bold uppercase tracking-wider text-[var(--color-ink)] flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-[var(--color-primary)]" />
+                <span>Dịch vụ đã đăng ký ({booking.services?.length || 0} dịch vụ)</span>
+              </h3>
+            </div>
+
+            {booking.services && booking.services.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50 border-b border-[var(--color-border)] text-[var(--color-ink)] font-bold text-xs sm:text-sm">
+                      <tr>
+                        <th className="px-4 py-3 whitespace-nowrap">Dịch vụ</th>
+                        <th className="px-4 py-3 whitespace-nowrap">Phòng phục vụ</th>
+                        <th className="px-4 py-3 whitespace-nowrap">Ngày phục vụ</th>
+                        <th className="px-4 py-3 text-center whitespace-nowrap">Số lượng</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">Đơn giá</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">Thành tiền</th>
+                        <th className="px-4 py-3 text-center whitespace-nowrap">Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--color-border)]">
+                      {booking.services.map((svc) => (
+                        <tr key={svc.id} className="hover:bg-gray-50/50">
+                          <td className="px-4 py-3 text-sm sm:text-base text-[var(--color-ink)] font-medium">
+                            <div className="font-semibold">{svc.serviceName}</div>
+                            {svc.note && (
+                              <p className="text-xs text-[var(--color-muted)] italic font-normal mt-0.5">
+                                Ghi chú: {svc.note}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs sm:text-sm text-[var(--color-body)] whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-surface-soft)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink)] border border-[var(--color-border)]">
+                              <DoorOpen className="h-3 w-3 text-[var(--color-muted)]" />
+                              <span>{svc.roomName || `Phòng #${svc.roomId}`}</span>
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs sm:text-sm text-[var(--color-muted)] whitespace-nowrap">
+                            {svc.serviceDate ? formatDate(svc.serviceDate) : 'Trong kỳ lưu trú'}
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-xs sm:text-sm text-[var(--color-ink)] font-mono whitespace-nowrap">
+                            {svc.quantity} {svc.unit || ''}
+                          </td>
+                          <td className="px-4 py-3 text-right text-xs sm:text-sm text-[var(--color-muted)] font-mono whitespace-nowrap">
+                            {formatVnd(svc.unitPrice)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-bold text-sm sm:text-base text-[var(--color-primary)] font-mono whitespace-nowrap">
+                            {formatVnd(svc.totalPrice)}
+                          </td>
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                              svc.status === 'USED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : svc.status === 'CANCELLED'
+                                ? 'bg-gray-100 text-gray-600 line-through'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {svc.status === 'USED' ? 'Đã sử dụng' : svc.status === 'CANCELLED' ? 'Đã hủy' : 'Đã đăng ký'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-gray-50/50 p-6 text-center text-xs sm:text-sm text-[var(--color-muted)]">
+                Đơn đặt phòng này chưa đăng ký dịch vụ bổ sung nào.
+              </div>
+            )}
+          </div>
+
           {/* Card: Chính sách áp dụng (Snapshot khi tạo đơn) */}
           {parsedPolicy && (
             <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-4">
@@ -746,6 +827,13 @@ export default function ManagerBookingDetailPage() {
                 <span className="font-medium">Tổng tiền phòng:</span>
                 <span className="font-bold text-base sm:text-lg text-[var(--color-ink)]">{formatVnd(booking.roomTotalPrice)}</span>
               </div>
+
+              {totalServicesPrice > 0 && (
+                <div className="flex justify-between items-center text-[var(--color-body)]">
+                  <span className="font-medium">Tiền dịch vụ (tạm tính):</span>
+                  <span className="font-bold text-base sm:text-lg text-[var(--color-ink)]">{formatVnd(totalServicesPrice)}</span>
+                </div>
+              )}
 
               <div className="flex justify-between items-center text-[var(--color-body)]">
                 <span className="font-medium">Tiền cọc yêu cầu:</span>
