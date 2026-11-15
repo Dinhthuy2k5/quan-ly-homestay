@@ -11,6 +11,7 @@ import {
   List,
   LoaderCircle,
   PauseCircle,
+  Pencil,
   Plus,
   RotateCcw,
   Sparkles,
@@ -593,10 +594,14 @@ export default function ManagerServicesPage() {
                   </div>
                 </div>
 
-                <div className="text-right">
-                  <span className="text-[11px] font-mono text-[var(--color-muted)]">
-                    #{service.id}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/manager/services/${service.id}/edit`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs font-semibold text-[var(--color-ink)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] shadow-xs transition-colors"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    <span>Sửa</span>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -615,6 +620,7 @@ export default function ManagerServicesPage() {
                   <th className="px-5 py-3.5">Đơn vị</th>
                   <th className="px-5 py-3.5 text-right">Đơn giá</th>
                   <th className="px-5 py-3.5 text-center">Trạng thái</th>
+                  <th className="px-5 py-3.5 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
@@ -650,6 +656,15 @@ export default function ManagerServicesPage() {
                     </td>
                     <td className="px-5 py-3.5 text-center">
                       <StatusBadge type="service" status={service.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <Link
+                        to={`/manager/services/${service.id}/edit`}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-ink)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] shadow-xs transition-colors"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        <span>Sửa</span>
+                      </Link>
                     </td>
                   </tr>
                 ))}

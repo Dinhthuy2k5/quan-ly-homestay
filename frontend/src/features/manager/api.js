@@ -385,4 +385,28 @@ export async function createManagerServiceApi({ categoryId, name, unit, unitPric
   return res.data?.data;
 }
 
+/**
+ * Lấy chi tiết một dịch vụ thuộc homestay của Manager
+ */
+export async function getManagerServiceDetailApi(serviceId) {
+  const res = await apiClient.get(`/manager/services/${serviceId}`);
+  return res.data?.data;
+}
+
+/**
+ * API-MGR-SVC-03: Cập nhật dịch vụ
+ */
+export async function updateManagerServiceApi(serviceId, { categoryId, name, unit, unitPrice, description, status }) {
+  const payload = {};
+  if (categoryId !== undefined && categoryId !== null && categoryId !== '') payload.categoryId = Number(categoryId);
+  if (name !== undefined) payload.name = name.trim();
+  if (unit !== undefined) payload.unit = unit.trim();
+  if (unitPrice !== undefined && unitPrice !== null && unitPrice !== '') payload.unitPrice = Number(unitPrice);
+  if (description !== undefined) payload.description = description.trim();
+  if (status !== undefined) payload.status = status;
+
+  const res = await apiClient.patch(`/manager/services/${serviceId}`, payload);
+  return res.data?.data;
+}
+
 

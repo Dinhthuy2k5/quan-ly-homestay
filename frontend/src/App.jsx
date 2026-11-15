@@ -15,6 +15,7 @@ import ResetPasswordPage from './features/auth/pages/ResetPasswordPage';
 import AccountPage from './features/account/pages/AccountPage';
 import CustomerBookingsPage from './features/bookings/pages/CustomerBookingsPage';
 import CustomerBookingDetailPage from './features/bookings/pages/CustomerBookingDetailPage';
+import CustomerAdjustBookingPage from './features/bookings/pages/CustomerAdjustBookingPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import ForbiddenPage from './pages/ForbiddenPage';
 
@@ -30,6 +31,7 @@ import ManagerBookingDetailPage from './features/manager/pages/ManagerBookingDet
 import ManagerAdjustBookingPage from './features/manager/pages/ManagerAdjustBookingPage';
 import ManagerServicesPage from './features/manager/pages/ManagerServicesPage';
 import ManagerCreateServicePage from './features/manager/pages/ManagerCreateServicePage';
+import ManagerEditServicePage from './features/manager/pages/ManagerEditServicePage';
 
 function SearchResultsRoute() {
   const location = useLocation();
@@ -100,6 +102,14 @@ export function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/customer/bookings/:bookingId/adjust"
+              element={
+                <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                  <CustomerAdjustBookingPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/bookings" element={<Navigate to="/customer/bookings" replace />} />
 
             {/* Khu vực Quản lý Homestay & Phòng (Tuần 3: API-MGR-01 đến 07) */}
@@ -123,6 +133,7 @@ export function App() {
               <Route path="price-rules" element={<ManagerPriceRulesPage />} />
               <Route path="services" element={<ManagerServicesPage />} />
               <Route path="services/create" element={<ManagerCreateServicePage />} />
+              <Route path="services/:serviceId/edit" element={<ManagerEditServicePage />} />
             </Route>
 
             {/* Trang 403 Forbidden */}

@@ -11,6 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,6 +26,7 @@ import vn.edu.hust.homestay.common.response.PagedResult;
 import vn.edu.hust.homestay.service.dto.CreateManagerServiceRequest;
 import vn.edu.hust.homestay.service.dto.ManagerCreateServiceResponse;
 import vn.edu.hust.homestay.service.dto.ManagerServiceSummaryResponse;
+import vn.edu.hust.homestay.service.dto.UpdateManagerServiceRequest;
 import vn.edu.hust.homestay.service.entity.Service.ServiceStatus;
 import vn.edu.hust.homestay.service.service.ManagerServiceService;
 
@@ -89,6 +92,33 @@ public class ManagerServiceController {
     ) {
         ManagerCreateServiceResponse response = managerServiceService.createService(principal, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
+    }
+
+    /**
+     * Xem chi tiết dịch vụ cơ sở
+     */
+    @Operation(summary = "Xem chi tiết dịch vụ cơ sở")
+    @GetMapping("/{serviceId}")
+    public ResponseEntity<ApiResponse<ManagerServiceSummaryResponse>> getServiceDetail(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long serviceId
+    ) {
+        ManagerServiceSummaryResponse response = managerServiceService.getServiceDetail(principal, serviceId);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    /**
+     * API-MGR-SVC-03: Cập nhật dịch vụ
+     */
+    @Operation(summary = "API-MGR-SVC-03: Cập nhật dịch vụ")
+    @PatchMapping("/{serviceId}")
+    public ResponseEntity<ApiResponse<ManagerServiceSummaryResponse>> updateService(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long serviceId,
+            @Valid @RequestBody UpdateManagerServiceRequest request
+    ) {
+        ManagerServiceSummaryResponse response = managerServiceService.updateService(principal, serviceId, request);
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     private Sort parseSort(String sort) {

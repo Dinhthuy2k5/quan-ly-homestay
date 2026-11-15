@@ -232,7 +232,7 @@ export default function ManagerAdjustBookingPage() {
     if (checkInDate < minCheckInStr) {
       setFormError(
         isConfirmed
-          ? `Chính sách homestay yêu cầu điều chỉnh trước ngày nhận phòng tối thiểu 3 ngày (từ ${minCheckInStr} trở đi).`
+          ? `Chính sách homestay yêu cầu điều chỉnh trước ngày nhận phòng tối thiểu 3 ngày (từ ${formatDate(minCheckInStr)} trở đi).`
           : 'Ngày nhận phòng không được ở trong quá khứ.'
       );
       return;
@@ -492,7 +492,7 @@ export default function ManagerAdjustBookingPage() {
                     className="h-11 sm:h-12 w-full rounded-xl border border-[var(--color-border)] bg-white pl-10 pr-3 text-sm sm:text-base font-semibold text-[var(--color-ink)] transition-all focus:outline-none focus:ring-2 focus:border-[var(--color-primary)] focus:ring-[var(--color-primary-soft)]"
                   />
                 </div>
-                <span className="mt-1 block text-xs sm:text-sm text-[var(--color-muted)]">Nhận phòng từ {CHECK_IN_TIME} (Tối thiểu từ {minCheckInStr})</span>
+                <span className="mt-1 block text-xs sm:text-sm text-[var(--color-muted)]">Nhận phòng từ {CHECK_IN_TIME} (Tối thiểu từ {formatDate(minCheckInStr)})</span>
               </div>
 
               {/* Ngày trả phòng */}
@@ -718,25 +718,25 @@ export default function ManagerAdjustBookingPage() {
             </div>
 
             {/* Quick Summary Comparison */}
-            <div className="rounded-xl bg-[var(--color-surface-soft)] p-4 space-y-3 border border-[var(--color-border)] text-sm sm:text-base">
-              <div className="flex items-center justify-between text-[var(--color-body)]">
-                <span className="font-medium">Lịch trình trước:</span>
-                <span className="font-semibold text-[var(--color-muted)] line-through">
+            <div className="rounded-xl bg-[var(--color-surface-soft)] p-4 space-y-3 border border-[var(--color-border)] text-sm">
+              <div className="flex items-center justify-between gap-3 text-[var(--color-body)]">
+                <span className="font-medium text-[var(--color-muted)] shrink-0">Lịch trình trước:</span>
+                <span className="font-semibold text-[var(--color-muted)] line-through whitespace-nowrap text-right">
                   {formatDate(booking.checkInDate)} → {formatDate(booking.checkOutDate)} ({originalNights} đêm)
                 </span>
               </div>
-              <div className="flex items-center justify-between text-[var(--color-body)]">
-                <span className="font-medium">Lịch trình mới:</span>
-                <span className="font-bold text-[var(--color-ink)]">
+              <div className="flex items-center justify-between gap-3 text-[var(--color-body)]">
+                <span className="font-semibold text-[var(--color-ink)] shrink-0">Lịch trình mới:</span>
+                <span className="font-bold text-[var(--color-primary)] whitespace-nowrap text-right">
                   {formatDate(checkInDate)} → {formatDate(checkOutDate)} ({nights} đêm)
                 </span>
               </div>
-              <div className="border-t border-[var(--color-border)] pt-2.5 flex items-center justify-between text-[var(--color-body)]">
-                <span className="font-medium">Số khách khai báo:</span>
+              <div className="border-t border-[var(--color-border)] pt-2.5 flex items-center justify-between gap-3 text-[var(--color-body)]">
+                <span className="font-medium text-[var(--color-body)] shrink-0">Số khách khai báo:</span>
                 <span className="font-bold text-[var(--color-ink)]">{guestCount} người</span>
               </div>
-              <div className="flex items-center justify-between text-[var(--color-body)]">
-                <span className="font-medium">Tổng sức chứa phòng:</span>
+              <div className="flex items-center justify-between gap-3 text-[var(--color-body)]">
+                <span className="font-medium text-[var(--color-body)] shrink-0">Tổng sức chứa phòng:</span>
                 <span className={`font-bold ${guestCount > totalCapacity && totalCapacity > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
                   {totalCapacity} khách ({selectedRoomIds.size} phòng)
                 </span>

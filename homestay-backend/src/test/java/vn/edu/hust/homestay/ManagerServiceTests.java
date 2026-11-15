@@ -30,6 +30,7 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -473,6 +474,271 @@ class ManagerServiceTests {
 
         // Anonymous -> 401
         mockMvc.perform(post("/api/v1/manager/services")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/manager/services/{serviceId}: Xem chi tiết dịch vụ thành công")
+    void getServiceDetail_Success() throws Exception {
+        mockMvc.perform(get("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.id", is(svc1.getId().intValue())))
+                .andExpect(jsonPath("$.data.name", is(svc1.getName())))
+                .andExpect(jsonPath("$.data.unit", is(svc1.getUnit())))
+                .andExpect(jsonPath("$.data.unitPrice", is(svc1.getUnitPrice().intValue())))
+                .andExpect(jsonPath("$.data.status", is("ACTIVE")))
+                .andExpect(jsonPath("$.data.categoryName", is(cat1.getName())));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/manager/services/{serviceId}: Không tìm thấy dịch vụ - 404 SERVICE_NOT_FOUND")
+    void getServiceDetail_NotFound() throws Exception {
+        mockMvc.perform(get("/api/v1/manager/services/999999")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_NOT_FOUND")));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/manager/services/{serviceId}: Quản lý xem dịch vụ cơ sở khác - 403 HOMESTAY_SCOPE_VIOLATION")
+    void getServiceDetail_ScopeViolation() throws Exception {
+        mockMvc.perform(get("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr2)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_SCOPE_VIOLATION")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Cập nhật dịch vụ thành công - 200 OK")
+    void updateService_Success() throws Exception {
+        String body = """
+                {
+                    "unitPrice": 120000,
+                    "description": "Bữa sáng đặc sản Tây Bắc nếp nương kèm trà hoa cúc",
+                    "unit": "phần",
+                    "status": "INACTIVE"
+                }
+                """;
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.id", is(svc1.getId().intValue())))
+                .andExpect(jsonPath("$.data.unitPrice", is(120000)))
+                .andExpect(jsonPath("$.data.description", is("Bữa sáng đặc sản Tây Bắc nếp nương kèm trà hoa cúc")))
+                .andExpect(jsonPath("$.data.unit", is("phần")))
+                .andExpect(jsonPath("$.data.status", is("INACTIVE")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Cập nhật tên dịch vụ và đổi danh mục thành công")
+    void updateService_UpdateNameAndCategory_Success() throws Exception {
+        String newName = "Xe tay ga Vision đời mới " + UUID.randomUUID().toString().substring(0, 8);
+        String body = """
+                {
+                    "categoryId": %d,
+                    "name": "%s"
+                }
+                """.formatted(cat2.getId(), newName);
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.name", is(newName)))
+                .andExpect(jsonPath("$.data.categoryId", is(cat2.getId().intValue())))
+                .andExpect(jsonPath("$.data.categoryName", is(cat2.getName())));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Giữ nguyên tên của chính dịch vụ này khi cập nhật trường khác - Không bị báo trùng")
+    void updateService_KeepSameName_Success() throws Exception {
+        String body = """
+                {
+                    "name": "%s",
+                    "unitPrice": 85000
+                }
+                """.formatted(svc1.getName());
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.unitPrice", is(85000)));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Đổi tên dịch vụ trùng với dịch vụ khác trong cùng cơ sở - 409 Conflict (SERVICE_NAME_EXISTS)")
+    void updateService_DuplicateName_Fails() throws Exception {
+        String body = """
+                {
+                    "name": "%s"
+                }
+                """.formatted(svc2.getName());
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_NAME_EXISTS")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Chuyển sang danh mục của homestay khác - 400 Bad Request (SERVICE_CATEGORY_SCOPE_MISMATCH)")
+    void updateService_WrongCategory_Fails() throws Exception {
+        String body = """
+                {
+                    "categoryId": %d
+                }
+                """.formatted(catHs2.getId());
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_CATEGORY_SCOPE_MISMATCH")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Cập nhật dịch vụ không thuộc cơ sở mình quản lý - 403 Forbidden (HOMESTAY_SCOPE_VIOLATION)")
+    void updateService_CrossHomestay_Forbidden() throws Exception {
+        String body = """
+                {
+                    "unitPrice": 999999
+                }
+                """;
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr2)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_SCOPE_VIOLATION")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Cập nhật dịch vụ không tồn tại - 404 Not Found (SERVICE_NOT_FOUND)")
+    void updateService_NotFound_Fails() throws Exception {
+        String body = """
+                {
+                    "unitPrice": 999999
+                }
+                """;
+
+        mockMvc.perform(patch("/api/v1/manager/services/999999")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_NOT_FOUND")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Đơn giá âm hoặc vượt 1 tỷ bị từ chối 400 Bad Request")
+    void updateService_InvalidUnitPrice_Fails() throws Exception {
+        String bodyNegative = """
+                {
+                    "unitPrice": -5000
+                }
+                """;
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bodyNegative))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)));
+
+        String bodyExceeds = """
+                {
+                    "unitPrice": 1500000000
+                }
+                """;
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bodyExceeds))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Tên dịch vụ rỗng bị từ chối 400 Bad Request")
+    void updateService_EmptyName_Fails() throws Exception {
+        String body = """
+                {
+                    "name": "   "
+                }
+                """;
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("INVALID_SERVICE_NAME")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Manager chưa phân công homestay - 400 HOMESTAY_NOT_ASSIGNED")
+    void updateService_UnassignedManager_Fails() throws Exception {
+        String body = """
+                {
+                    "unitPrice": 90000
+                }
+                """;
+
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenUnassigned)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_NOT_ASSIGNED")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-03: Customer hoặc không có token bị từ chối")
+    void updateService_UnauthorizedOrForbidden() throws Exception {
+        String body = """
+                {
+                    "unitPrice": 90000
+                }
+                """;
+
+        // Customer -> 403
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
+                        .header("Authorization", "Bearer " + tokenCustomer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden());
+
+        // Anonymous -> 401
+        mockMvc.perform(patch("/api/v1/manager/services/" + svc1.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isUnauthorized());

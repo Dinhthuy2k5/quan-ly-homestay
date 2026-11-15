@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -32,7 +32,6 @@ import {
 } from 'lucide-react';
 import { cancelCustomerBookingApi, cancelCustomerBookingServiceApi, fetchCustomerBookingDetailApi, fetchCustomerBookingServicesApi, fetchCustomerDepositProofApi, registerCustomerBookingServiceApi, submitCustomerDepositApi } from '../api';
 import { fetchHomestayServices } from '../../homestays/api';
-import CustomerAdjustBookingModal from '../components/CustomerAdjustBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
@@ -50,14 +49,21 @@ function previousDateKey(value) {
 
 export default function CustomerBookingDetailPage() {
   const { bookingId } = useParams();
+  const location = useLocation();
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
-  const [adjustModalOpen, setAdjustModalOpen] = useState(false);
-  const [adjustSuccessMsg, setAdjustSuccessMsg] = useState('');
+  const [adjustSuccessMsg, setAdjustSuccessMsg] = useState(() => location.state?.adjustSuccessToast || '');
+
+  useEffect(() => {
+    if (location.state?.adjustSuccessToast) {
+      setAdjustSuccessMsg(location.state.adjustSuccessToast);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state?.adjustSuccessToast]);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelBankName, setCancelBankName] = useState('');
@@ -481,17 +487,14 @@ export default function CustomerBookingDetailPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {canAdjust && (
-            <button
-              type="button"
-              onClick={() => {
-                setAdjustSuccessMsg('');
-                setAdjustModalOpen(true);
-              }}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-bold text-[var(--color-ink)] shadow-xs hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all"
+            <Link
+              to={`/customer/bookings/${booking.id}/adjust`}
+              state={{ booking }}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-xs sm:text-sm font-bold text-[var(--color-ink)] shadow-xs hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all"
             >
               <Edit3 className="h-4 w-4 text-[var(--color-primary)]" />
               <span>Điều chỉnh đặt phòng</span>
-            </button>
+            </Link>
           )}
           {canCancel && (
             <button
@@ -1278,20 +1281,6 @@ export default function CustomerBookingDetailPage() {
           </div>
         </div>
       </div>
-
-      {adjustModalOpen && (
-        <CustomerAdjustBookingModal
-          booking={booking}
-          onClose={() => setAdjustModalOpen(false)}
-          onSuccess={(updated) => {
-            setAdjustModalOpen(false);
-            setAdjustSuccessMsg(
-              `Đã cập nhật đơn đặt #${updated.bookingCode || booking.code} thành công!`
-            );
-            handleRefresh();
-          }}
-        />
-      )}
 
       {serviceModalOpen && (
         <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !serviceSubmitting) setServiceModalOpen(false); }}>

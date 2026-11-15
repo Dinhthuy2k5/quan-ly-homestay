@@ -27,6 +27,18 @@ public interface ServiceRepository extends JpaRepository<Service, Long> {
 
     boolean existsByHomestayIdAndNameAndIdNot(Long homestayId, String name, Long id);
 
+    @Query("""
+        SELECT COUNT(s) > 0 FROM Service s
+        WHERE s.homestayId = :homestayId
+          AND LOWER(s.name) = LOWER(:name)
+          AND s.id <> :id
+    """)
+    boolean existsByHomestayIdAndNameIgnoreCaseAndIdNot(
+            @Param("homestayId") Long homestayId,
+            @Param("name") String name,
+            @Param("id") Long id
+    );
+
     boolean existsByCategoryIdAndHomestayId(Long categoryId, Long homestayId);
 
     @Query("""
