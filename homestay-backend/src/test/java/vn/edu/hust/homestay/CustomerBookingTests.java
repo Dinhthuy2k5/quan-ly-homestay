@@ -1260,6 +1260,68 @@ class CustomerBookingTests {
     }
 
     @Test
+    @DisplayName("API-CUS-05: Gửi chứng từ đặt cọc khi còn trong thời hạn giữ chỗ thành công")
+    void submitDeposit_WithinHoldWindow_Success() throws Exception {
+        LocalDate checkIn = findFreeCheckInDate(5);
+        CreateBookingRequest req = bookingRequest(checkIn, 2, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        org.springframework.mock.web.MockMultipartFile proofFile = new org.springframework.mock.web.MockMultipartFile(
+                "proofFile", "receipt.jpg", "image/jpeg",
+                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46});
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/v1/customer/bookings/" + bookingId + "/deposit-submissions")
+                        .file(proofFile)
+                        .param("amount", "200000")
+                        .param("method", "BANK_TRANSFER")
+                        .param("referenceCode", "FT261125TEST")
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.status", is("PENDING")))
+                .andExpect(jsonPath("$.data.bookingStatus", is("PENDING_APPROVAL")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-05: Gửi chứng từ đặt cọc khi đã quá hạn giữ chỗ bị từ chối 409 BOOKING_STATE_CONFLICT")
+    void submitDeposit_HoldExpired_FailsWithConflict() throws Exception {
+        LocalDate checkIn = findFreeCheckInDate(5);
+        CreateBookingRequest req = bookingRequest(checkIn, 2, 2);
+        String responseJson = mockMvc.perform(post("/api/v1/customer/bookings")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long bookingId = objectMapper.readTree(responseJson).path("data").path("id").asLong();
+
+        // Giả lập booking hết hạn giữ chỗ (holdExpiresAt trong quá khứ theo UTC)
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
+        booking.setHoldExpiresAt(LocalDateTime.ofInstant(Instant.now().minusSeconds(120), ZoneOffset.UTC));
+        bookingRepository.saveAndFlush(booking);
+
+        org.springframework.mock.web.MockMultipartFile proofFile = new org.springframework.mock.web.MockMultipartFile(
+                "proofFile", "receipt.jpg", "image/jpeg",
+                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46});
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/v1/customer/bookings/" + bookingId + "/deposit-submissions")
+                        .file(proofFile)
+                        .param("amount", "200000")
+                        .param("method", "BANK_TRANSFER")
+                        .param("referenceCode", "FT261125EXP")
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("BOOKING_STATE_CONFLICT")));
+    }
+
+    @Test
     @DisplayName("API-CUS-09: Khách hàng điều chỉnh danh sách phòng (roomIds) thành công")
     void adjustBookingChangeRoomsSuccess() throws Exception {
         LocalDate checkIn = findFreeCheckInDate(3);

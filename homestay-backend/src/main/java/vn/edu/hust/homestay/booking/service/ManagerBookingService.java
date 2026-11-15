@@ -197,6 +197,9 @@ public class ManagerBookingService {
                         }, Collectors.toList())
                 ));
 
+        Homestay homestay = homestayRepository.findById(homestayId).orElse(null);
+        String homestayName = homestay != null ? homestay.getName() : null;
+
         List<ManagerBookingSummaryResponse> responses = bookings.stream().map(b -> {
             OffsetDateTime holdExpiresAt = b.getHoldExpiresAt() == null ? null :  // giờ chuẩn quốc tế
                     b.getHoldExpiresAt().atOffset(ZoneOffset.UTC)
@@ -205,6 +208,8 @@ public class ManagerBookingService {
             return new ManagerBookingSummaryResponse(
                     b.getId(),
                     b.getCode(),
+                    b.getHomestayId(),
+                    homestayName,
                     b.getContactName(),
                     b.getContactPhone(),
                     b.getContactEmail(),

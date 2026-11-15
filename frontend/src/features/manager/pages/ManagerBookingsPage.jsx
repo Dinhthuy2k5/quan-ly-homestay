@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   Calendar,
@@ -21,8 +21,6 @@ import {
   X,
 } from 'lucide-react';
 import { getManagerBookingsApi } from '../api';
-import ManagerAdjustBookingModal from '../components/ManagerAdjustBookingModal';
-import ManagerCreateBookingModal from '../components/ManagerCreateBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
 
@@ -65,6 +63,7 @@ function BookingCardSkeleton() {
 export default function ManagerBookingsPage() {
   const { homestay } = useOutletContext() || {};
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
 
   const currentStatus = searchParams.get('status') || '';
   const currentPage = Math.max(0, Number(searchParams.get('page') || 0));
@@ -83,9 +82,15 @@ export default function ManagerBookingsPage() {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [copiedCode, setCopiedCode] = useState(null);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createdBookingToast, setCreatedBookingToast] = useState(null);
-  const [adjustingBooking, setAdjustingBooking] = useState(null);
+
+  // Hiển thị thông báo khi tạo đơn đặt phòng thành công từ trang ManagerCreateBookingPage
+  useEffect(() => {
+    if (location.state?.createdBooking) {
+      setCreatedBookingToast(location.state.createdBooking);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     let active = true;
@@ -203,14 +208,13 @@ export default function ManagerBookingsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setCreateModalOpen(true)}
+          <Link
+            to="/manager/bookings/create"
             className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-[var(--color-primary-hover)] transition-colors"
           >
             <UserPlus className="h-4 w-4" />
             <span>Đặt phòng hộ khách</span>
-          </button>
+          </Link>
 
           <button
             type="button"
@@ -498,15 +502,15 @@ export default function ManagerBookingsPage() {
                   <div className="flex items-center gap-2">
                     <StatusBadge type="booking" status={booking.status} />
                     {booking.source === 'MANAGER' && (booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
-                      <button
-                        type="button"
-                        onClick={() => setAdjustingBooking(booking)}
+                      <Link
+                        to={`/manager/bookings/${booking.id}/adjust`}
+                        state={{ booking: { ...booking, homestayId: booking.homestayId || homestay?.id, homestayName: booking.homestayName || homestay?.name } }}
                         className="inline-flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] transition-colors"
                         title="Điều chỉnh thời gian, số khách hoặc phòng"
                       >
                         <Edit3 className="h-3.5 w-3.5 text-[var(--color-muted)]" />
                         <span>Điều chỉnh</span>
-                      </button>
+                      </Link>
                     )}
                     <Link
                       to={`/manager/bookings/${booking.id}`}
@@ -652,34 +656,6 @@ export default function ManagerBookingsPage() {
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-      )}
-      {/* Create Booking Modal */}
-      {createModalOpen && (
-        <ManagerCreateBookingModal
-          homestay={homestay}
-          onClose={() => setCreateModalOpen(false)}
-          onSuccess={(created) => {
-            setCreateModalOpen(false);
-            setCreatedBookingToast(created);
-            setReloadKey((k) => k + 1);
-          }}
-        />
-      )}
-
-      {/* Adjust Booking Modal */}
-      {adjustingBooking && (
-        <ManagerAdjustBookingModal
-          booking={adjustingBooking}
-          onClose={() => setAdjustingBooking(null)}
-          onSuccess={(updated) => {
-            setAdjustingBooking(null);
-            setCreatedBookingToast({
-              code: updated.code || adjustingBooking.code,
-              message: `Đã điều chỉnh đơn #${updated.code || adjustingBooking.code} thành công! Tổng tiền phòng mới: ${formatVnd(updated.roomTotalPrice)}.`,
-            });
-            setReloadKey((k) => k + 1);
-          }}
-        />
       )}
     </div>
   );

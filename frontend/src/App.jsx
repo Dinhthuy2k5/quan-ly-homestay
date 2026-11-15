@@ -25,7 +25,9 @@ import ManagerRoomDetailPage from './features/manager/pages/ManagerRoomDetailPag
 import ManagerRoomTypesPage from './features/manager/pages/ManagerRoomTypesPage';
 import ManagerPriceRulesPage from './features/manager/pages/ManagerPriceRulesPage';
 import ManagerBookingsPage from './features/manager/pages/ManagerBookingsPage';
+import ManagerCreateBookingPage from './features/manager/pages/ManagerCreateBookingPage';
 import ManagerBookingDetailPage from './features/manager/pages/ManagerBookingDetailPage';
+import ManagerAdjustBookingPage from './features/manager/pages/ManagerAdjustBookingPage';
 import ManagerServicesPage from './features/manager/pages/ManagerServicesPage';
 import ManagerCreateServicePage from './features/manager/pages/ManagerCreateServicePage';
 
@@ -112,7 +114,9 @@ export function App() {
               <Route index element={<Navigate to="homestay" replace />} />
               <Route path="homestay" element={<ManagerHomestayPage />} />
               <Route path="bookings" element={<ManagerBookingsPage />} />
+              <Route path="bookings/create" element={<ManagerCreateBookingPage />} />
               <Route path="bookings/:bookingId" element={<ManagerBookingDetailPage />} />
+              <Route path="bookings/:bookingId/adjust" element={<ManagerAdjustBookingPage />} />
               <Route path="rooms" element={<ManagerRoomsPage />} />
               <Route path="rooms/:roomId" element={<ManagerRoomDetailPage />} />
               <Route path="room-types" element={<ManagerRoomTypesPage />} />

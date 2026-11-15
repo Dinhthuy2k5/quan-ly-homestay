@@ -144,9 +144,10 @@ public class CustomerBookingService {
                         ? BusinessException.forbidden("BOOKING_NOT_OWNED", "Đây không phải đơn đặt phòng của bạn")
                         : BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
 
+        LocalDateTime nowUtc = LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC);
         if (booking.getStatus() != BookingStatus.PENDING_DEPOSIT
                 || booking.getHoldExpiresAt() == null
-                || !booking.getHoldExpiresAt().isAfter(LocalDateTime.now(BUSINESS_TIME_ZONE))) {
+                || !booking.getHoldExpiresAt().isAfter(nowUtc)) {
             throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng không còn trong thời hạn nhận chứng từ đặt cọc");
         }
         if (amount == null || amount <= 0) {

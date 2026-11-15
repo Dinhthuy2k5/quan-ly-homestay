@@ -14,6 +14,8 @@ import java.util.List;
 public record ManagerBookingSummaryResponse(
         Long id,
         String code,
+        Long homestayId,
+        String homestayName,
         String contactName,
         String contactPhone,
         String contactEmail,
