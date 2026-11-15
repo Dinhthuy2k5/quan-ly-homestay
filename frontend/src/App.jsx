@@ -26,6 +26,8 @@ import ManagerRoomTypesPage from './features/manager/pages/ManagerRoomTypesPage'
 import ManagerPriceRulesPage from './features/manager/pages/ManagerPriceRulesPage';
 import ManagerBookingsPage from './features/manager/pages/ManagerBookingsPage';
 import ManagerBookingDetailPage from './features/manager/pages/ManagerBookingDetailPage';
+import ManagerServicesPage from './features/manager/pages/ManagerServicesPage';
+import ManagerCreateServicePage from './features/manager/pages/ManagerCreateServicePage';
 
 function SearchResultsRoute() {
   const location = useLocation();
@@ -115,6 +117,8 @@ export function App() {
               <Route path="rooms/:roomId" element={<ManagerRoomDetailPage />} />
               <Route path="room-types" element={<ManagerRoomTypesPage />} />
               <Route path="price-rules" element={<ManagerPriceRulesPage />} />
+              <Route path="services" element={<ManagerServicesPage />} />
+              <Route path="services/create" element={<ManagerCreateServicePage />} />
             </Route>
 
             {/* Trang 403 Forbidden */}

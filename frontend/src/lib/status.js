@@ -34,9 +34,20 @@ export const NIGHT_STATUS = {
   BOOKED: { label: 'Đã đặt', color: 'info' },
 };
 
+export const SERVICE_STATUS = {
+  ACTIVE: { label: 'Đang hoạt động', color: 'success' },
+  INACTIVE: { label: 'Tạm ngừng', color: 'neutral' },
+};
+
+export const BOOKING_SERVICE_STATUS = {
+  REGISTERED: { label: 'Đã đăng ký', color: 'info' },
+  USED: { label: 'Đã sử dụng', color: 'success' },
+  CANCELLED: { label: 'Đã hủy', color: 'neutral' },
+};
+
 /**
  * Trả về thông tin trạng thái theo nhóm và mã
- * @param {'room'|'homestay'|'booking'|'payment'|'night'} type
+ * @param {'room'|'homestay'|'booking'|'payment'|'night'|'service'|'bookingService'} type
  * @param {string} code
  * @returns {{ label: string, color: string }}
  */
@@ -59,6 +70,12 @@ export function getStatusInfo(type, code) {
       break;
     case 'night':
       dict = NIGHT_STATUS;
+      break;
+    case 'service':
+      dict = SERVICE_STATUS;
+      break;
+    case 'bookingService':
+      dict = BOOKING_SERVICE_STATUS;
       break;
     default:
       dict = null;

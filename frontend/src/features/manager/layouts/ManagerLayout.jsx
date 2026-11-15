@@ -10,6 +10,7 @@ import {
   CircleDollarSign,
   CalendarCheck,
   ChevronRight,
+  Sparkles,
 } from 'lucide-react';
 import { getAssignedHomestayApi } from '../api';
 import StatusBadge from '../../../components/ui/StatusBadge';
@@ -31,6 +32,12 @@ const NAV_ITEMS = [
     to: '/manager/rooms',
     label: 'Quản lý phòng',
     icon: BedDouble,
+    end: false,
+  },
+  {
+    to: '/manager/services',
+    label: 'Quản lý dịch vụ',
+    icon: Sparkles,
     end: false,
   },
   {

@@ -343,3 +343,46 @@ export async function deleteManagerMediaApi(mediaId) {
   const res = await apiClient.delete(`/manager/media/${mediaId}`);
   return res.data?.data;
 }
+
+/**
+ * API-MGR-SVC-01: Danh sách dịch vụ cơ sở của Manager
+ */
+export async function getManagerServicesApi({ status, categoryId, page = 0, size = 20, sort = 'name,asc' } = {}) {
+  const params = {};
+  if (status) params.status = status;
+  if (categoryId) params.categoryId = categoryId;
+  if (sort) params.sort = sort;
+  params.page = page;
+  params.size = size;
+
+  const res = await apiClient.get('/manager/services', { params });
+  return {
+    items: res.data?.data || [],
+    meta: res.data?.meta || { page: 0, size: 20, totalElements: 0, totalPages: 0, first: true, last: true },
+  };
+}
+
+/**
+ * Lấy danh mục dịch vụ thuộc homestay để Manager xem và phân loại dịch vụ
+ */
+export async function getManagerServiceCategoriesApi() {
+  const res = await apiClient.get('/manager/service-categories');
+  return res.data?.data || [];
+}
+
+/**
+ * API-MGR-SVC-02: Khai báo dịch vụ mới thuộc homestay của Manager
+ */
+export async function createManagerServiceApi({ categoryId, name, unit, unitPrice, description }) {
+  const payload = {
+    categoryId: Number(categoryId),
+    name: name?.trim(),
+    unit: unit?.trim(),
+    unitPrice: Number(unitPrice),
+    ...(description?.trim() ? { description: description.trim() } : {}),
+  };
+  const res = await apiClient.post('/manager/services', payload);
+  return res.data?.data;
+}
+
+
