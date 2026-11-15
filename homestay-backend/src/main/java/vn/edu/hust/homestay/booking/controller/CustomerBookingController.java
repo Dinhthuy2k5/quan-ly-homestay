@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.core.io.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
@@ -42,6 +43,7 @@ import vn.edu.hust.homestay.common.response.PageMeta;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceRequest;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceResponse;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSummaryResponse;
+import vn.edu.hust.homestay.service.dto.CustomerCancelBookingServiceResponse;
 import vn.edu.hust.homestay.service.service.CustomerBookingServiceService;
 
 import java.util.List;
@@ -194,6 +196,17 @@ public class CustomerBookingController {
     ) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(
                 bookingServiceOperations.registerService(principal, bookingId, roomId, request)));
+    }
+
+    @Operation(summary = "API-CUS-08: Hủy dịch vụ đã đăng ký thuộc booking")
+    @DeleteMapping("/{bookingId}/services/{bookingServiceId}")
+    public ResponseEntity<ApiResponse<CustomerCancelBookingServiceResponse>> cancelBookingService(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @PathVariable Long bookingServiceId
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                bookingServiceOperations.cancelBookingService(principal, bookingId, bookingServiceId)));
     }
 
     private Sort parseSort(String sort) {

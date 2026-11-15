@@ -43,6 +43,12 @@ export async function registerCustomerBookingServiceApi(bookingId, roomId, reque
   return res.data?.data || null;
 }
 
+/** API-CUS-08: Hủy dịch vụ đã đăng ký thuộc booking của khách. */
+export async function cancelCustomerBookingServiceApi(bookingId, bookingServiceId) {
+  const res = await apiClient.delete(`/customer/bookings/${bookingId}/services/${bookingServiceId}`);
+  return res.data?.data || null;
+}
+
 /**
  * API-CUS-09: Điều chỉnh thông tin đặt phòng cá nhân.
  * @param {number|string} bookingId

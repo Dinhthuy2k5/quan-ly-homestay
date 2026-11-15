@@ -49,6 +49,7 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -70,6 +71,7 @@ class CustomerBookingTests {
     @Autowired private BookingRoomNightRepository bookingRoomNightRepository;
     @Autowired private PaymentRepository paymentRepository;
     @Autowired private vn.edu.hust.homestay.booking.repository.BookingRoomRepository bookingRoomRepository;
+    @Autowired private jakarta.persistence.EntityManager entityManager;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private JwtService jwtService;
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -346,6 +348,104 @@ class CustomerBookingTests {
                 .andExpect(jsonPath("$.data.status", is("REGISTERED")));
         assertEquals("REGISTERED", jdbcTemplate.queryForObject(
                 "SELECT status FROM booking_services WHERE booking_id = ?", String.class, booking.getId()));
+    }
+
+    @Test
+    @DisplayName("API-CUS-08 hủy dịch vụ đã đăng ký thành công: cập nhật status thành CANCELLED")
+    void customerCancelsRegisteredServiceSuccessfully() throws Exception {
+        Booking booking = createConfirmedBookingWithDeposit(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(4));
+        Long roomId = bookingRoomRepository.findByBookingId(booking.getId()).getFirst().getRoomId();
+        long serviceId = createActiveService(booking.getHomestayId(), 150_000L);
+
+        // 1. Đăng ký dịch vụ
+        String createRes = mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("serviceId", serviceId, "quantity", 2))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        long bookingServiceId = objectMapper.readTree(createRes).path("data").path("id").asLong();
+
+        // 2. Hủy dịch vụ theo bookingServiceId
+        mockMvc.perform(delete("/api/v1/customer/bookings/" + booking.getId() + "/services/" + bookingServiceId)
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.id", is((int) bookingServiceId)))
+                .andExpect(jsonPath("$.data.status", is("CANCELLED")));
+
+        assertEquals("CANCELLED", jdbcTemplate.queryForObject(
+                "SELECT status FROM booking_services WHERE id = ?", String.class, bookingServiceId));
+
+        // 3. Hủy lại dịch vụ đã hủy -> 409 SERVICE_CANCELLATION_NOT_ALLOWED
+        mockMvc.perform(delete("/api/v1/customer/bookings/" + booking.getId() + "/services/" + bookingServiceId)
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("SERVICE_CANCELLATION_NOT_ALLOWED")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-08 từ chối hủy dịch vụ khi không thuộc booking hoặc không sở hữu booking")
+    void customerCancelServiceRejectsUnownedOrNonExistentLine() throws Exception {
+        Booking booking = createConfirmedBookingWithDeposit(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(5));
+        Long roomId = bookingRoomRepository.findByBookingId(booking.getId()).getFirst().getRoomId();
+        long serviceId = createActiveService(booking.getHomestayId(), 90_000L);
+
+        String createRes = mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("serviceId", serviceId, "quantity", 1))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long bookingServiceId = objectMapper.readTree(createRes).path("data").path("id").asLong();
+
+        // 1. Không sở hữu booking -> 403 BOOKING_NOT_OWNED
+        User otherCustomer = userRepository.saveAndFlush(User.builder()
+                .email("other-cancel-service-" + UUID.randomUUID() + "@example.com")
+                .passwordHash("test-hash")
+                .fullName("Khách khác")
+                .phone("0912999888")
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .build());
+        String otherToken = jwtService.generateAccessToken(otherCustomer);
+
+        mockMvc.perform(delete("/api/v1/customer/bookings/" + booking.getId() + "/services/" + bookingServiceId)
+                        .header("Authorization", "Bearer " + otherToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code", is("BOOKING_NOT_OWNED")));
+
+        // 2. Không tìm thấy dòng dịch vụ trong booking này -> 404 SERVICE_LINE_NOT_FOUND
+        mockMvc.perform(delete("/api/v1/customer/bookings/" + booking.getId() + "/services/999999999")
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("SERVICE_LINE_NOT_FOUND")));
+    }
+
+    @Test
+    @DisplayName("API-CUS-08 từ chối hủy khi dịch vụ đã được sử dụng (USED)")
+    void customerCannotCancelUsedService() throws Exception {
+        Booking booking = createConfirmedBookingWithDeposit(LocalDate.now(BUSINESS_TIME_ZONE).plusDays(3));
+        Long roomId = bookingRoomRepository.findByBookingId(booking.getId()).getFirst().getRoomId();
+        long serviceId = createActiveService(booking.getHomestayId(), 100_000L);
+
+        String createRes = mockMvc.perform(post("/api/v1/customer/bookings/" + booking.getId() + "/rooms/" + roomId + "/services")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("serviceId", serviceId, "quantity", 1))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long bookingServiceId = objectMapper.readTree(createRes).path("data").path("id").asLong();
+
+        // Chuyển trạng thái sang USED trong DB
+        jdbcTemplate.update("UPDATE booking_services SET status = 'USED' WHERE id = ?", bookingServiceId);
+        entityManager.clear();
+
+        mockMvc.perform(delete("/api/v1/customer/bookings/" + booking.getId() + "/services/" + bookingServiceId)
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("SERVICE_ALREADY_USED")));
     }
 
     private long createActiveService(Long homestayId, long unitPrice) {

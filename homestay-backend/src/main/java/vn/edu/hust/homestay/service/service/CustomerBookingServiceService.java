@@ -5,18 +5,20 @@ import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.entity.Booking;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.repository.BookingRepository;
-import vn.edu.hust.homestay.booking.repository.BookingRoomNightRepository;
+import vn.edu.hust.homestay.booking.repository.BookingRoomRepository;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceRequest;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSelectionRequest;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceResponse;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSummaryResponse;
+import vn.edu.hust.homestay.service.dto.CustomerCancelBookingServiceResponse;
 import vn.edu.hust.homestay.service.entity.BookingService;
 import vn.edu.hust.homestay.service.entity.Service;
 import vn.edu.hust.homestay.service.repository.BookingServiceRepository;
 import vn.edu.hust.homestay.service.repository.ServiceRepository;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 
@@ -24,18 +26,18 @@ import java.util.Set;
 public class CustomerBookingServiceService {
 
     private final BookingRepository bookingRepository;
-    private final BookingRoomNightRepository bookingRoomNightRepository;
+    private final BookingRoomRepository bookingRoomRepository;
     private final ServiceRepository serviceRepository;
     private final BookingServiceRepository bookingServiceRepository;
 
     public CustomerBookingServiceService(
             BookingRepository bookingRepository,
-            BookingRoomNightRepository bookingRoomNightRepository,
+            BookingRoomRepository bookingRoomRepository,
             ServiceRepository serviceRepository,
             BookingServiceRepository bookingServiceRepository
     ) {
         this.bookingRepository = bookingRepository;
-        this.bookingRoomNightRepository = bookingRoomNightRepository;
+        this.bookingRoomRepository = bookingRoomRepository;
         this.serviceRepository = serviceRepository;
         this.bookingServiceRepository = bookingServiceRepository;
     }
@@ -62,9 +64,7 @@ public class CustomerBookingServiceService {
             throw BusinessException.conflict("SERVICE_BOOKING_CLOSED", "Đơn đặt phòng hiện không nhận đăng ký dịch vụ");
         }
 
-        boolean roomIsCurrentlyBooked = bookingRoomNightRepository.findByBookingId(booking.getId()).stream()
-                .anyMatch(night -> night.getId().getRoomId().equals(roomId));
-        if (!roomIsCurrentlyBooked) {
+        if (!bookingRoomRepository.existsByBookingIdAndRoomId(booking.getId(), roomId)) {
             throw BusinessException.badRequest("ROOM_NOT_IN_BOOKING", "Phòng không thuộc đơn đặt phòng này");
         }
 
@@ -74,6 +74,38 @@ public class CustomerBookingServiceService {
         BookingService saved = bookingServiceRepository.saveAndFlush(bookingService);
         long totalPrice = Math.multiplyExact(saved.getUnitPrice(), saved.getQuantity().longValue());
         return CustomerBookingServiceResponse.from(saved, service.getName(), totalPrice);
+    }
+
+    @Transactional
+    public CustomerCancelBookingServiceResponse cancelBookingService(
+            UserPrincipal principal,
+            Long bookingId,
+            Long bookingServiceId
+    ) {
+        Booking booking = findOwnedBooking(principal, bookingId, true);
+        if (!canRegisterService(booking)) {
+            throw BusinessException.conflict("SERVICE_CANCELLATION_NOT_ALLOWED", "Đơn đặt phòng hiện không cho phép hủy dịch vụ");
+        }
+
+        BookingService bookingService = bookingServiceRepository.findByIdAndBookingId(bookingServiceId, booking.getId())
+                .orElseThrow(() -> BusinessException.notFound("SERVICE_LINE_NOT_FOUND", "Không tìm thấy dòng dịch vụ cần hủy"));
+
+        if (bookingService.getStatus() == BookingService.BookingServiceStatus.USED) {
+            throw BusinessException.conflict("SERVICE_ALREADY_USED", "Dịch vụ đã được sử dụng, không thể hủy");
+        }
+
+        if (bookingService.getStatus() == BookingService.BookingServiceStatus.CANCELLED) {
+            throw BusinessException.conflict("SERVICE_CANCELLATION_NOT_ALLOWED", "Dịch vụ này đã được hủy trước đó");
+        }
+
+        if (bookingService.getServiceDate() != null
+                && bookingService.getServiceDate().isBefore(LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")))) {
+            throw BusinessException.conflict("SERVICE_CANCELLATION_NOT_ALLOWED", "Không thể hủy dịch vụ có ngày sử dụng trong quá khứ");
+        }
+
+        bookingService.setStatus(BookingService.BookingServiceStatus.CANCELLED);
+        BookingService saved = bookingServiceRepository.saveAndFlush(bookingService);
+        return CustomerCancelBookingServiceResponse.from(saved.getId(), saved.getStatus());
     }
 
     public void createInitialServices(

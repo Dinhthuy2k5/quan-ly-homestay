@@ -25,11 +25,12 @@ import {
   ShieldCheck,
   Sparkles,
   Tag,
+  Trash2,
   Upload,
   Users,
   X,
 } from 'lucide-react';
-import { cancelCustomerBookingApi, fetchCustomerBookingDetailApi, fetchCustomerBookingServicesApi, fetchCustomerDepositProofApi, registerCustomerBookingServiceApi, submitCustomerDepositApi } from '../api';
+import { cancelCustomerBookingApi, cancelCustomerBookingServiceApi, fetchCustomerBookingDetailApi, fetchCustomerBookingServicesApi, fetchCustomerDepositProofApi, registerCustomerBookingServiceApi, submitCustomerDepositApi } from '../api';
 import { fetchHomestayServices } from '../../homestays/api';
 import CustomerAdjustBookingModal from '../components/CustomerAdjustBookingModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
@@ -101,6 +102,9 @@ export default function CustomerBookingDetailPage() {
   const [serviceSubmitError, setServiceSubmitError] = useState('');
   const [serviceSubmitting, setServiceSubmitting] = useState(false);
   const [serviceSuccess, setServiceSuccess] = useState('');
+  const [cancelServiceTarget, setCancelServiceTarget] = useState(null);
+  const [cancellingService, setCancellingService] = useState(false);
+  const [cancelServiceError, setCancelServiceError] = useState('');
   const [expandHouseRules, setExpandHouseRules] = useState(false);
 
   const [todayTimestamp] = useState(() => {
@@ -363,6 +367,24 @@ export default function CustomerBookingDetailPage() {
       setServiceSubmitError(getErrorMessage(err) || 'Không thể đăng ký dịch vụ. Vui lòng thử lại.');
     } finally {
       setServiceSubmitting(false);
+    }
+  };
+
+  const handleConfirmCancelService = async () => {
+    if (!cancelServiceTarget) return;
+    setCancellingService(true);
+    setCancelServiceError('');
+    try {
+      await cancelCustomerBookingServiceApi(booking.id, cancelServiceTarget.id);
+      setBookingServices((current) =>
+        current.map((s) => (s.id === cancelServiceTarget.id ? { ...s, status: 'CANCELLED' } : s))
+      );
+      setServiceSuccess(`Đã hủy dịch vụ ${cancelServiceTarget.serviceName}.`);
+      setCancelServiceTarget(null);
+    } catch (err) {
+      setCancelServiceError(getErrorMessage(err) || 'Không thể hủy dịch vụ. Vui lòng thử lại.');
+    } finally {
+      setCancellingService(false);
     }
   };
 
@@ -752,6 +774,20 @@ export default function CustomerBookingDetailPage() {
                         <div className="flex items-center gap-3">
                           <span className="font-semibold tabular-nums text-[var(--color-ink)]">{formatVnd(service.totalPrice)}</span>
                           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass}`}>{statusText}</span>
+                          {service.status === 'REGISTERED' && ['PENDING_DEPOSIT', 'PENDING_APPROVAL', 'CONFIRMED', 'CHECKED_IN'].includes(booking.status) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCancelServiceError('');
+                                setCancelServiceTarget(service);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/60 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition-colors"
+                              title="Hủy đăng ký dịch vụ này"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              <span>Hủy</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                       {(service.serviceDate || service.note) && (
@@ -1321,6 +1357,56 @@ export default function CustomerBookingDetailPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Modal xác nhận hủy dịch vụ đã đăng ký (API-CUS-08) */}
+      {cancelServiceTarget && (
+        <div role="dialog" aria-modal="true" aria-labelledby="cancel-service-title" className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => !cancellingService && setCancelServiceTarget(null)} />
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+              <h3 id="cancel-service-title" className="text-base font-bold text-[var(--color-ink)] flex items-center gap-2">
+                <Trash2 className="h-5 w-5 text-rose-600" />
+                Hủy dịch vụ đã đăng ký
+              </h3>
+              <button
+                type="button"
+                disabled={cancellingService}
+                onClick={() => setCancelServiceTarget(null)}
+                className="grid h-8 w-8 place-items-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface-soft)]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-[var(--color-body)]">
+              Bạn có chắc chắn muốn hủy dịch vụ <strong className="text-[var(--color-ink)]">{cancelServiceTarget.serviceName}</strong> (cho {booking.rooms?.find((r) => r.roomId === cancelServiceTarget.roomId)?.roomName || `Phòng #${cancelServiceTarget.roomId}`}) không?
+            </p>
+            {cancelServiceError && (
+              <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">
+                {cancelServiceError}
+              </p>
+            )}
+            <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={cancellingService}
+                onClick={() => setCancelServiceTarget(null)}
+                className="min-h-10 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)]"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                disabled={cancellingService}
+                onClick={handleConfirmCancelService}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {cancellingService && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                {cancellingService ? 'Đang hủy…' : 'Xác nhận hủy dịch vụ'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

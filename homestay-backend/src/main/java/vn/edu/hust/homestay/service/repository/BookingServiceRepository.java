@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 import vn.edu.hust.homestay.service.entity.BookingService;
 
 import java.util.List;
+import java.util.Optional;
 import vn.edu.hust.homestay.service.entity.BookingService.BookingServiceStatus;
 
 @Repository
@@ -13,5 +14,7 @@ public interface BookingServiceRepository extends JpaRepository<BookingService, 
     List<BookingService> findByBookingIdOrderByIdAsc(Long bookingId);
 
     List<BookingService> findByBookingIdAndStatus(Long bookingId, BookingServiceStatus status);
+
+    Optional<BookingService> findByIdAndBookingId(Long id, Long bookingId);
 
 }
