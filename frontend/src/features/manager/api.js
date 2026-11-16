@@ -228,6 +228,7 @@ export async function createManagerBookingApi({
   checkOutDate,
   guestCount,
   note,
+  services,
 }) {
   const payload = {
     contactName: contactName?.trim(),
@@ -238,6 +239,13 @@ export async function createManagerBookingApi({
     checkOutDate,
     guestCount: Number(guestCount),
     note: note?.trim() || null,
+    services: (services || []).map((item) => ({
+      roomId: Number(item.roomId),
+      serviceId: Number(item.serviceId),
+      quantity: Number(item.quantity),
+      serviceDate: item.serviceDate || null,
+      note: item.note?.trim() || null,
+    })),
   };
   const res = await apiClient.post('/manager/bookings', payload);
   return res.data?.data;
@@ -408,5 +416,31 @@ export async function updateManagerServiceApi(serviceId, { categoryId, name, uni
   const res = await apiClient.patch(`/manager/services/${serviceId}`, payload);
   return res.data?.data;
 }
+
+/**
+ * API-MGR-SVC-05: Đặt dịch vụ hộ khách
+ * POST /api/v1/manager/bookings/{bookingId}/services
+ */
+export async function bookManagerServiceApi(bookingId, { roomId, serviceId, quantity, serviceDate, note }) {
+  const payload = {
+    roomId: Number(roomId),
+    serviceId: Number(serviceId),
+    quantity: Number(quantity),
+    serviceDate: serviceDate || null,
+    note: note ? note.trim() : null,
+  };
+  const res = await apiClient.post(`/manager/bookings/${bookingId}/services`, payload);
+  return res.data?.data;
+}
+
+/**
+ * API-MGR-SVC-06: Hủy dịch vụ hộ khách
+ * DELETE /api/v1/manager/bookings/{bookingId}/services/{bookingServiceId}
+ */
+export async function cancelManagerServiceApi(bookingId, bookingServiceId) {
+  const res = await apiClient.delete(`/manager/bookings/${bookingId}/services/${bookingServiceId}`);
+  return res.data?.data;
+}
+
 
 

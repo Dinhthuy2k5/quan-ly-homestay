@@ -13,6 +13,7 @@ import {
   FileText,
   Mail,
   Phone,
+  Plus,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -22,7 +23,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { cancelManagerBookingApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
+import { bookManagerServiceApi, cancelManagerBookingApi, cancelManagerServiceApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, getManagerServicesApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
 import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { fileUrl } from '../../../lib/api/client';
@@ -86,6 +87,21 @@ export default function ManagerBookingDetailPage() {
   const [copiedPaymentId, setCopiedPaymentId] = useState(null);
   const [cancelError, setCancelError] = useState('');
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
+  const [bookServiceModalOpen, setBookServiceModalOpen] = useState(false);
+  const [activeServices, setActiveServices] = useState([]);
+  const [loadingActiveServices, setLoadingActiveServices] = useState(false);
+  const [selectedServiceRoomId, setSelectedServiceRoomId] = useState('');
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [serviceQuantity, setServiceQuantity] = useState(1);
+  const [serviceDate, setServiceDate] = useState('');
+  const [serviceNote, setServiceNote] = useState('');
+  const [bookServiceSubmitting, setBookServiceSubmitting] = useState(false);
+  const [bookServiceError, setBookServiceError] = useState('');
+
+  const [cancelServiceId, setCancelServiceId] = useState(null); // bookingServiceId đang chờ xác nhận hủy
+  const [cancelServiceSubmitting, setCancelServiceSubmitting] = useState(false);
+  const [cancelServiceError, setCancelServiceError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -225,6 +241,81 @@ export default function ManagerBookingDetailPage() {
   const totalServicesPrice = (booking?.services || [])
     .filter((s) => s.status !== 'CANCELLED')
     .reduce((sum, s) => sum + Number(s.totalPrice || 0), 0);
+
+  const handleOpenBookServiceModal = async () => {
+    setBookServiceError('');
+    setBookServiceModalOpen(true);
+    if (booking?.rooms?.length > 0) {
+      setSelectedServiceRoomId(String(booking.rooms[0].roomId));
+    }
+    setServiceQuantity(1);
+    setServiceDate(booking?.checkInDate || '');
+    setServiceNote('');
+    setLoadingActiveServices(true);
+    try {
+      const res = await getManagerServicesApi({ status: 'ACTIVE', size: 100 });
+      const items = res.items || [];
+      setActiveServices(items);
+      if (items.length > 0) {
+        setSelectedServiceId(String(items[0].id));
+      }
+    } catch (err) {
+      setBookServiceError(getErrorMessage(err) || 'Không thể tải danh sách dịch vụ của cơ sở.');
+    } finally {
+      setLoadingActiveServices(false);
+    }
+  };
+
+  const handleBookServiceSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedServiceRoomId) {
+      setBookServiceError('Vui lòng chọn phòng phục vụ');
+      return;
+    }
+    if (!selectedServiceId) {
+      setBookServiceError('Vui lòng chọn dịch vụ');
+      return;
+    }
+    const qty = Number(serviceQuantity);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 100) {
+      setBookServiceError('Số lượng phải là số nguyên từ 1 đến 100');
+      return;
+    }
+    setBookServiceSubmitting(true);
+    setBookServiceError('');
+    try {
+      await bookManagerServiceApi(booking.id, {
+        roomId: Number(selectedServiceRoomId),
+        serviceId: Number(selectedServiceId),
+        quantity: qty,
+        serviceDate: serviceDate || null,
+        note: serviceNote ? serviceNote.trim() : null,
+      });
+      setBookServiceModalOpen(false);
+      setAdjustSuccessToast('Đặt dịch vụ hộ khách thành công!');
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setBookServiceError(getErrorMessage(err) || 'Không thể đặt dịch vụ hộ khách.');
+    } finally {
+      setBookServiceSubmitting(false);
+    }
+  };
+
+  const handleCancelService = async () => {
+    if (!cancelServiceId) return;
+    setCancelServiceSubmitting(true);
+    setCancelServiceError('');
+    try {
+      await cancelManagerServiceApi(booking.id, cancelServiceId);
+      setCancelServiceId(null);
+      setAdjustSuccessToast('Đã hủy dịch vụ thành công.');
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setCancelServiceError(getErrorMessage(err) || 'Không thể hủy dịch vụ. Hãy thử lại.');
+    } finally {
+      setCancelServiceSubmitting(false);
+    }
+  };
 
   const handleRecordDirectDeposit = async (event) => {
     event.preventDefault();
@@ -708,59 +799,72 @@ export default function ManagerBookingDetailPage() {
 
           {/* Card: Dịch vụ đã đăng ký theo đơn */}
           <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-5">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-4">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-4 flex-wrap gap-2">
               <h3 className="text-base font-bold uppercase tracking-wider text-[var(--color-ink)] flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-[var(--color-primary)]" />
                 <span>Dịch vụ đã đăng ký ({booking.services?.length || 0} dịch vụ)</span>
               </h3>
+              {booking.status !== 'CANCELLED' && booking.status !== 'CHECKED_OUT' && (
+                <button
+                  type="button"
+                  onClick={handleOpenBookServiceModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--color-primary)] text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Đặt dịch vụ hộ khách</span>
+                </button>
+              )}
             </div>
 
             {booking.services && booking.services.length > 0 ? (
               <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-gray-50 border-b border-[var(--color-border)] text-[var(--color-ink)] font-bold text-xs sm:text-sm">
+                  <table className="w-full text-left text-xs sm:text-sm">
+                    <thead className="bg-gray-50 border-b border-[var(--color-border)] text-[var(--color-ink)] font-bold text-xs">
                       <tr>
-                        <th className="px-4 py-3 whitespace-nowrap">Dịch vụ</th>
-                        <th className="px-4 py-3 whitespace-nowrap">Phòng phục vụ</th>
-                        <th className="px-4 py-3 whitespace-nowrap">Ngày phục vụ</th>
-                        <th className="px-4 py-3 text-center whitespace-nowrap">Số lượng</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap">Đơn giá</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap">Thành tiền</th>
-                        <th className="px-4 py-3 text-center whitespace-nowrap">Trạng thái</th>
+                        <th className="px-3 py-2.5 whitespace-nowrap">Dịch vụ</th>
+                        <th className="px-2 py-2.5 whitespace-nowrap">Phòng</th>
+                        <th className="px-2 py-2.5 whitespace-nowrap">Ngày phục vụ</th>
+                        <th className="px-2 py-2.5 text-center whitespace-nowrap">Số lượng</th>
+                        <th className="px-2 py-2.5 text-right whitespace-nowrap">Đơn giá</th>
+                        <th className="px-2 py-2.5 text-right whitespace-nowrap">Thành tiền</th>
+                        <th className="px-2 py-2.5 text-center whitespace-nowrap">Trạng thái</th>
+                        {booking.status !== 'CANCELLED' && booking.status !== 'CHECKED_OUT' && (
+                          <th className="px-2 py-2.5 text-center whitespace-nowrap">Thao tác</th>
+                        )}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[var(--color-border)]">
+                    <tbody className="divide-y divide-[var(--color-border)] text-xs">
                       {booking.services.map((svc) => (
                         <tr key={svc.id} className="hover:bg-gray-50/50">
-                          <td className="px-4 py-3 text-sm sm:text-base text-[var(--color-ink)] font-medium">
-                            <div className="font-semibold">{svc.serviceName}</div>
+                          <td className="px-3 py-2 text-[var(--color-ink)] font-medium">
+                            <div className="font-semibold whitespace-nowrap text-xs sm:text-sm">{svc.serviceName}</div>
                             {svc.note && (
-                              <p className="text-xs text-[var(--color-muted)] italic font-normal mt-0.5">
-                                Ghi chú: {svc.note}
+                              <p className="text-[11px] text-[var(--color-muted)] italic font-normal truncate max-w-[140px]" title={svc.note}>
+                                {svc.note}
                               </p>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-xs sm:text-sm text-[var(--color-body)] whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-surface-soft)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink)] border border-[var(--color-border)]">
-                              <DoorOpen className="h-3 w-3 text-[var(--color-muted)]" />
+                          <td className="px-2 py-2 text-[var(--color-body)] whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-surface-soft)] px-2 py-0.5 text-xs font-medium text-[var(--color-ink)] border border-[var(--color-border)]">
+                              <DoorOpen className="h-3 w-3 text-[var(--color-muted)] shrink-0" />
                               <span>{svc.roomName || `Phòng #${svc.roomId}`}</span>
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-xs sm:text-sm text-[var(--color-muted)] whitespace-nowrap">
+                          <td className="px-2 py-2 text-[var(--color-muted)] whitespace-nowrap text-xs">
                             {svc.serviceDate ? formatDate(svc.serviceDate) : 'Trong kỳ lưu trú'}
                           </td>
-                          <td className="px-4 py-3 text-center font-bold text-xs sm:text-sm text-[var(--color-ink)] font-mono whitespace-nowrap">
+                          <td className="px-2 py-2 text-center font-bold text-[var(--color-ink)] font-mono whitespace-nowrap text-xs">
                             {svc.quantity} {svc.unit || ''}
                           </td>
-                          <td className="px-4 py-3 text-right text-xs sm:text-sm text-[var(--color-muted)] font-mono whitespace-nowrap">
+                          <td className="px-2 py-2 text-right text-[var(--color-muted)] font-mono whitespace-nowrap text-xs">
                             {formatVnd(svc.unitPrice)}
                           </td>
-                          <td className="px-4 py-3 text-right font-bold text-sm sm:text-base text-[var(--color-primary)] font-mono whitespace-nowrap">
+                          <td className="px-2 py-2 text-right font-bold text-[var(--color-primary)] font-mono whitespace-nowrap text-xs sm:text-sm">
                             {formatVnd(svc.totalPrice)}
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          <td className="px-2 py-2 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                               svc.status === 'USED'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : svc.status === 'CANCELLED'
@@ -770,6 +874,22 @@ export default function ManagerBookingDetailPage() {
                               {svc.status === 'USED' ? 'Đã sử dụng' : svc.status === 'CANCELLED' ? 'Đã hủy' : 'Đã đăng ký'}
                             </span>
                           </td>
+                          {booking.status !== 'CANCELLED' && booking.status !== 'CHECKED_OUT' && (
+                            <td className="px-2 py-2 text-center whitespace-nowrap">
+                              {svc.status === 'REGISTERED' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => { setCancelServiceId(svc.id); setCancelServiceError(''); }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 bg-white hover:bg-rose-50 transition-colors cursor-pointer"
+                                >
+                                  <X className="h-3 w-3" />
+                                  Hủy
+                                </button>
+                              ) : (
+                                <span className="text-xs text-[var(--color-muted)]">—</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -1377,6 +1497,209 @@ export default function ManagerBookingDetailPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Modal: Đặt dịch vụ hộ khách */}
+      {bookServiceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <form
+            onSubmit={handleBookServiceSubmit}
+            className="w-full max-w-lg rounded-2xl bg-white p-5 sm:p-6 shadow-xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-[var(--color-primary)]" />
+                <h4 className="text-base font-bold text-[var(--color-ink)]">Đặt dịch vụ hộ khách</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBookServiceModalOpen(false)}
+                className="text-[var(--color-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {loadingActiveServices ? (
+              <div className="py-8 text-center text-sm text-[var(--color-muted)]">
+                Đang tải danh sách dịch vụ của cơ sở...
+              </div>
+            ) : activeServices.length === 0 ? (
+              <div className="py-6 text-center text-sm text-[var(--color-muted)]">
+                Cơ sở homestay này hiện chưa có dịch vụ nào đang hoạt động.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--color-body)] uppercase mb-1">
+                    Chọn phòng phục vụ *
+                  </label>
+                  <select
+                    value={selectedServiceRoomId}
+                    onChange={(e) => setSelectedServiceRoomId(e.target.value)}
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] outline-none"
+                    required
+                  >
+                    {(booking.rooms || []).map((r) => (
+                      <option key={r.roomId} value={r.roomId}>
+                        {r.roomName || `Phòng #${r.roomId}`} {r.roomTypeName ? `(${r.roomTypeName})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--color-body)] uppercase mb-1">
+                    Chọn dịch vụ *
+                  </label>
+                  <select
+                    value={selectedServiceId}
+                    onChange={(e) => setSelectedServiceId(e.target.value)}
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] outline-none"
+                    required
+                  >
+                    {activeServices.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} — {formatVnd(s.unitPrice)} / {s.unit}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--color-body)] uppercase mb-1">
+                      Số lượng *
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={serviceQuantity}
+                      onChange={(e) => setServiceQuantity(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] outline-none font-medium"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--color-body)] uppercase mb-1">
+                      Ngày phục vụ
+                    </label>
+                    <input
+                      type="date"
+                      min={booking.checkInDate}
+                      max={booking.checkOutDate}
+                      value={serviceDate}
+                      onChange={(e) => setServiceDate(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--color-body)] uppercase mb-1">
+                    Ghi chú yêu cầu của khách
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={255}
+                    value={serviceNote}
+                    onChange={(e) => setServiceNote(e.target.value)}
+                    placeholder="VD: Không hành lá, giao phòng lúc 7h30..."
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] outline-none"
+                  />
+                </div>
+
+                {/* Tạm tính thành tiền */}
+                {(() => {
+                  const sel = activeServices.find((s) => String(s.id) === String(selectedServiceId));
+                  const unitPrice = sel ? sel.unitPrice : 0;
+                  const qty = Number(serviceQuantity) || 0;
+                  const total = unitPrice * qty;
+                  return (
+                    <div className="rounded-xl bg-[var(--color-surface-soft)] p-3 border border-[var(--color-border)] flex items-center justify-between text-sm">
+                      <span className="text-[var(--color-muted)] font-medium">Thành tiền tạm tính:</span>
+                      <span className="text-base font-bold text-[var(--color-primary)]">
+                        {formatVnd(total)}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {bookServiceError && (
+              <p role="alert" className="text-sm text-rose-700 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+                {bookServiceError}
+              </p>
+            )}
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2">
+              <button
+                type="button"
+                disabled={bookServiceSubmitting}
+                onClick={() => setBookServiceModalOpen(false)}
+                className="min-h-10 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={bookServiceSubmitting || loadingActiveServices || activeServices.length === 0}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
+              >
+                {bookServiceSubmitting ? 'Đang lưu…' : 'Xác nhận đặt dịch vụ'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Xác nhận hủy dịch vụ */}
+      {cancelServiceId !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-svc-title"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-100">
+                <XCircle className="h-5 w-5 text-rose-600" />
+              </div>
+              <div>
+                <h4 id="cancel-svc-title" className="text-base font-bold text-[var(--color-ink)]">Xác nhận hủy dịch vụ</h4>
+                <p className="text-sm text-[var(--color-body)] mt-1">
+                  Dịch vụ sẽ được đánh dấu <strong>Đã hủy</strong> và không thể khôi phục. Bạn chắc chắn muốn tiếp tục?
+                </p>
+              </div>
+            </div>
+
+            {cancelServiceError && (
+              <p className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-700">{cancelServiceError}</p>
+            )}
+
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                type="button"
+                disabled={cancelServiceSubmitting}
+                onClick={() => { setCancelServiceId(null); setCancelServiceError(''); }}
+                className="min-h-9 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] cursor-pointer"
+              >
+                Không, giữ lại
+              </button>
+              <button
+                type="button"
+                disabled={cancelServiceSubmitting}
+                onClick={handleCancelService}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
+              >
+                {cancelServiceSubmitting ? 'Đang hủy…' : 'Xác nhận hủy'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

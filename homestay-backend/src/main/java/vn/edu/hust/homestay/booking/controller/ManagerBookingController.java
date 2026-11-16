@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.core.io.Resource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,6 +38,8 @@ import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositResponse;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.service.ManagerBookingService;
+import vn.edu.hust.homestay.service.dto.ManagerBookServiceRequest;
+import vn.edu.hust.homestay.service.dto.ManagerBookingServiceResponse;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.common.response.PageMeta;
@@ -169,6 +172,28 @@ public class ManagerBookingController {
             @Valid @RequestBody ManagerCancelBookingRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.ok(managerBookingService.cancelBooking(principal, bookingId, request)));
+    }
+
+    @Operation(summary = "API-MGR-SVC-05: Đặt dịch vụ hộ khách")
+    @PostMapping("/{bookingId}/services")
+    public ResponseEntity<ApiResponse<ManagerBookingServiceResponse>> bookServiceForGuest(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @Valid @RequestBody ManagerBookServiceRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(
+                managerBookingService.bookServiceForGuest(principal, bookingId, request)));
+    }
+
+    @Operation(summary = "API-MGR-SVC-06: Hủy dịch vụ hộ khách")
+    @DeleteMapping("/{bookingId}/services/{bookingServiceId}")
+    public ResponseEntity<ApiResponse<ManagerBookingServiceResponse>> cancelBookingServiceForGuest(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @PathVariable Long bookingServiceId
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                managerBookingService.cancelBookingServiceForGuest(principal, bookingId, bookingServiceId)));
     }
 
     @Operation(summary = "Lấy chứng từ đặt cọc của booking để Manager đối chiếu")

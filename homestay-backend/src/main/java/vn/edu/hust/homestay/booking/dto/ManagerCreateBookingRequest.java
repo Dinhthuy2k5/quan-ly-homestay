@@ -1,5 +1,6 @@
 package vn.edu.hust.homestay.booking.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -8,6 +9,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Builder;
+import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSelectionRequest;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -48,5 +50,7 @@ public record ManagerCreateBookingRequest(
         Integer guestCount,
 
         @Size(max = 500, message = "Ghi chú không được quá 500 ký tự")
-        String note
+        String note,
+
+        List<@Valid CustomerBookingServiceSelectionRequest> services
 ) {}

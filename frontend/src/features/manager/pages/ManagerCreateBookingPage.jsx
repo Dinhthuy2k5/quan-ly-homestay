@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { createManagerBookingApi, getAssignedHomestayApi } from '../api';
 import { searchAvailableRooms } from '../../homestays/api';
+import BookingServiceSelector from '../../homestays/components/BookingServiceSelector';
 import { formatDate, formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
 import { EMAIL_REGEX, PHONE_REGEX } from '../../../lib/validation';
 import { getErrorMessage } from '../../../lib/errors';
@@ -57,6 +58,9 @@ export default function ManagerCreateBookingPage() {
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [selectedRoomIds, setSelectedRoomIds] = useState(new Set());
   const [roomSearchError, setRoomSearchError] = useState('');
+
+  // Optional Services selection
+  const [services, setServices] = useState([]);
 
   // Submission & Validation states
   const [fieldErrors, setFieldErrors] = useState({});
@@ -124,6 +128,25 @@ export default function ManagerCreateBookingPage() {
       active = false;
     };
   }, [homestay?.id, checkInDate, checkOutDate]);
+
+  // Tự động dọn bỏ dịch vụ nếu phòng tương ứng bị bỏ chọn
+  useEffect(() => {
+    setServices((prev) => prev.filter((s) => selectedRoomIds.has(Number(s.roomId))));
+  }, [selectedRoomIds]);
+
+  // Cập nhật hoặc xóa ngày phục vụ nếu ngày phục vụ nằm ngoài khoảng checkIn - checkOut mới
+  useEffect(() => {
+    if (!checkInDate || !checkOutDate) return;
+    setServices((prev) =>
+      prev.map((s) => {
+        if (!s.serviceDate) return s;
+        if (s.serviceDate < checkInDate || s.serviceDate >= checkOutDate) {
+          return { ...s, serviceDate: '' };
+        }
+        return s;
+      })
+    );
+  }, [checkInDate, checkOutDate]);
 
   // Bản đồ phòng khả dụng
   const roomsMap = useMemo(() => {
@@ -265,6 +288,7 @@ export default function ManagerCreateBookingPage() {
         checkOutDate,
         guestCount: Number(guestCount),
         note: note.trim() || undefined,
+        services,
       });
 
       // Điều hướng về danh sách đơn đặt phòng kèm thông báo flash toast
@@ -743,6 +767,20 @@ export default function ManagerCreateBookingPage() {
               </div>
             )}
           </div>
+
+          {/* Card 3: Dịch vụ tùy chọn (Đăng ký kèm phòng) */}
+          {selectedRoomsList.length > 0 && homestay?.id && (
+            <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-7 shadow-xs">
+              <BookingServiceSelector
+                homestayId={homestay.id}
+                rooms={selectedRoomsList.map((room) => ({ id: room.roomId ?? room.id, name: room.roomName || room.name }))}
+                checkInDate={checkInDate}
+                checkOutDate={checkOutDate}
+                value={services}
+                onChange={setServices}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right Column: Sticky Summary & Financial Breakdown (5 / 12 width) */}
@@ -840,6 +878,15 @@ export default function ManagerCreateBookingPage() {
                   {formatVnd(totalEstimatedPrice)}
                 </span>
               </div>
+
+              {services.length > 0 && (
+                <div className="flex justify-between items-center text-[var(--color-body)] text-xs sm:text-sm">
+                  <span className="font-medium">Dịch vụ đăng ký kèm:</span>
+                  <span className="font-bold text-[var(--color-ink)]">
+                    {services.length} dịch vụ
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-center justify-between text-amber-900 bg-amber-50/80 p-3.5 rounded-xl border border-amber-200 font-medium">
                 <div>

@@ -20,6 +20,8 @@ import vn.edu.hust.homestay.auth.repository.UserRepository;
 import vn.edu.hust.homestay.auth.security.JwtService;
 import vn.edu.hust.homestay.booking.dto.ManagerAdjustBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingRequest;
+import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSelectionRequest;
+import vn.edu.hust.homestay.service.dto.ManagerBookServiceRequest;
 import vn.edu.hust.homestay.booking.entity.Booking;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.entity.BookingRoom;
@@ -48,6 +50,7 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -392,6 +395,128 @@ class ManagerBookingTests {
 
         List<BookingRoomNight> bNights = bookingRoomNightRepository.findByBookingId(saved.getId());
         assertEquals(2, bNights.size());
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-02: Đặt phòng hộ khách kèm dịch vụ thành công, lưu bản ghi booking_services")
+    void createBookingWithServicesSuccess() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(25);
+        LocalDate checkOut = LocalDate.now().plusDays(28);
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        CustomerBookingServiceSelectionRequest svcReq = new CustomerBookingServiceSelectionRequest(
+                room1.getId(),
+                testSvc.getId(),
+                2,
+                checkIn.plusDays(1),
+                "Ăn tối phục vụ tại phòng"
+        );
+
+        ManagerCreateBookingRequest req = ManagerCreateBookingRequest.builder()
+                .contactName("Lê Văn Kèm Dịch Vụ")
+                .contactPhone("0981122334")
+                .contactEmail("kemdv@example.com")
+                .roomIds(List.of(room1.getId()))
+                .checkInDate(checkIn)
+                .checkOutDate(checkOut)
+                .guestCount(2)
+                .note("Đặt kèm dịch vụ")
+                .services(List.of(svcReq))
+                .build();
+
+        mockMvc.perform(post("/api/v1/manager/bookings")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.code", startsWith("HS-")));
+
+        Booking saved = bookingRepository.findAll().stream()
+                .filter(b -> "Lê Văn Kèm Dịch Vụ".equals(b.getContactName()))
+                .findFirst()
+                .orElseThrow();
+
+        List<BookingService> bServices = bookingServiceRepository.findByBookingIdOrderByIdAsc(saved.getId());
+        assertEquals(1, bServices.size());
+        BookingService bs = bServices.get(0);
+        assertEquals(room1.getId(), bs.getRoomId());
+        assertEquals(testSvc.getId(), bs.getServiceId());
+        assertEquals(2, bs.getQuantity());
+        assertEquals(testSvc.getUnitPrice(), bs.getUnitPrice());
+        assertEquals(BookingServiceStatus.REGISTERED, bs.getStatus());
+        assertEquals(checkIn.plusDays(1), bs.getServiceDate());
+        assertEquals("Ăn tối phục vụ tại phòng", bs.getNote());
+        assertEquals(manager1.getId(), bs.getRecordedBy());
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-02: Dịch vụ đăng ký phòng không thuộc booking thì trả về 400 ROOM_NOT_IN_BOOKING")
+    void createBookingWithServiceInvalidRoom() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+        LocalDate checkOut = LocalDate.now().plusDays(32);
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        CustomerBookingServiceSelectionRequest svcReq = new CustomerBookingServiceSelectionRequest(
+                room2.getId(), // room2 thuộc homestay2, không có trong booking
+                testSvc.getId(),
+                1,
+                checkIn,
+                null
+        );
+
+        ManagerCreateBookingRequest req = ManagerCreateBookingRequest.builder()
+                .contactName("Phạm Văn Lỗi Phòng DV")
+                .contactPhone("0981122335")
+                .roomIds(List.of(room1.getId()))
+                .checkInDate(checkIn)
+                .checkOutDate(checkOut)
+                .guestCount(1)
+                .services(List.of(svcReq))
+                .build();
+
+        mockMvc.perform(post("/api/v1/manager/bookings")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("ROOM_NOT_IN_BOOKING")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-02: Dịch vụ đăng ký ngày nằm ngoài khoảng lưu trú thì trả về 400 SERVICE_DATE_OUTSIDE_BOOKING")
+    void createBookingWithServiceDateOutsideBooking() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(35);
+        LocalDate checkOut = LocalDate.now().plusDays(37);
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        CustomerBookingServiceSelectionRequest svcReq = new CustomerBookingServiceSelectionRequest(
+                room1.getId(),
+                testSvc.getId(),
+                1,
+                checkOut.plusDays(1), // Ngoài khoảng checkIn - checkOut
+                null
+        );
+
+        ManagerCreateBookingRequest req = ManagerCreateBookingRequest.builder()
+                .contactName("Vũ Văn Lỗi Ngày DV")
+                .contactPhone("0981122336")
+                .roomIds(List.of(room1.getId()))
+                .checkInDate(checkIn)
+                .checkOutDate(checkOut)
+                .guestCount(1)
+                .services(List.of(svcReq))
+                .build();
+
+        mockMvc.perform(post("/api/v1/manager/bookings")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("SERVICE_DATE_OUTSIDE_BOOKING")));
     }
 
     @Test
@@ -1628,5 +1753,359 @@ class ManagerBookingTests {
                 Long.class, booking.getId()));
         assertEquals("PENDING", jdbcTemplate.queryForObject(
                 "SELECT status FROM payments WHERE id = ?", String.class, pendingDeposit.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-05 đặt dịch vụ hộ khách thành công trả về 201 Created")
+    void bookServiceForGuestSuccess() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(100 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(3);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-ADD-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988666777", "Khách Đặt DV Hộ", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseGet(() -> {
+            vn.edu.hust.homestay.service.entity.Service s = new vn.edu.hust.homestay.service.entity.Service();
+            s.setHomestayId(homestay1Id);
+            s.setCategoryId(1L);
+            s.setName("Nước dừa tươi " + UUID.randomUUID().toString().substring(0, 5));
+            s.setUnit("trái");
+            s.setUnitPrice(35_000L);
+            s.setStatus(vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE);
+            return serviceRepository.saveAndFlush(s);
+        });
+
+        ManagerBookServiceRequest request = new ManagerBookServiceRequest(
+                room1.getId(),
+                testSvc.getId(),
+                3,
+                checkIn.plusDays(1),
+                "Phục vụ lúc 8h sáng"
+        );
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/services")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.id", notNullValue()))
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.roomId", is(room1.getId().intValue())))
+                .andExpect(jsonPath("$.data.serviceId", is(testSvc.getId().intValue())))
+                .andExpect(jsonPath("$.data.serviceName", is(testSvc.getName())))
+                .andExpect(jsonPath("$.data.quantity", is(3)))
+                .andExpect(jsonPath("$.data.unitPrice", is(testSvc.getUnitPrice().intValue())))
+                .andExpect(jsonPath("$.data.totalPrice", is((int) (testSvc.getUnitPrice() * 3))))
+                .andExpect(jsonPath("$.data.status", is("REGISTERED")))
+                .andExpect(jsonPath("$.data.serviceDate", is(checkIn.plusDays(1).toString())))
+                .andExpect(jsonPath("$.data.note", is("Phục vụ lúc 8h sáng")));
+
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM booking_services WHERE booking_id = ? AND service_id = ? AND quantity = 3",
+                Integer.class, booking.getId(), testSvc.getId()));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-05 thất bại khi phòng không thuộc booking (ROOM_NOT_IN_BOOKING)")
+    void bookServiceForGuestRoomNotInBooking() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(110 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-R-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988666778", "Khách Phòng Sai", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        ManagerBookServiceRequest request = new ManagerBookServiceRequest(
+                room2.getId(), // phòng thuộc homestay khác hoặc không có trong booking
+                testSvc.getId(),
+                1,
+                checkIn,
+                null
+        );
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/services")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("ROOM_NOT_IN_BOOKING")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-05 thất bại khi dịch vụ không tồn tại (SERVICE_NOT_FOUND)")
+    void bookServiceForGuestServiceNotFound() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(115 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-NF-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988666779", "Khách DV K Tồn Tại", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        ManagerBookServiceRequest request = new ManagerBookServiceRequest(
+                room1.getId(),
+                999999L,
+                1,
+                checkIn,
+                null
+        );
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/services")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_NOT_FOUND")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-05 thất bại khi booking đã bị hủy (BOOKING_STATE_CONFLICT)")
+    void bookServiceForGuestBookingCancelled() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(120 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-CAN-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988666780", "Khách Booking Hủy", checkIn, checkOut, BookingStatus.CANCELLED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        ManagerBookServiceRequest request = new ManagerBookServiceRequest(
+                room1.getId(),
+                testSvc.getId(),
+                1,
+                checkIn,
+                null
+        );
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/services")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("BOOKING_STATE_CONFLICT")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-05 thất bại khi ngày dịch vụ nằm ngoài kỳ lưu trú (SERVICE_DATE_OUTSIDE_BOOKING)")
+    void bookServiceForGuestServiceDateOutsideBooking() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(125 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-DATE-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988666781", "Khách Ngày DV Sai", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        ManagerBookServiceRequest request = new ManagerBookServiceRequest(
+                room1.getId(),
+                testSvc.getId(),
+                1,
+                checkOut.plusDays(1), // ngày dịch vụ sau check-out
+                null
+        );
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/services")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_DATE_OUTSIDE_BOOKING")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-06 khi hủy booking chuyển toàn bộ dịch vụ REGISTERED sang CANCELLED")
+    void cancelBookingCancelsRegisteredServices() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(130 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(3);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-CAN-ALL-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988666782", "Khách Hủy Đơn Kèm DV", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        BookingService bs = new BookingService();
+        bs.setBookingId(booking.getId());
+        bs.setHomestayId(homestay1Id);
+        bs.setRoomId(room1.getId());
+        bs.setServiceId(testSvc.getId());
+        bs.setQuantity(2);
+        bs.setUnitPrice(testSvc.getUnitPrice());
+        bs.setStatus(BookingServiceStatus.REGISTERED);
+        bs.setServiceDate(checkIn.plusDays(1));
+        bs.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs);
+
+        String cancelBody = objectMapper.writeValueAsString(Map.of(
+                "reason", "Khách báo bận việc đột xuất",
+                "requestedByCustomer", true
+        ));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cancelBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)));
+
+        BookingService updatedBs = bookingServiceRepository.findById(bs.getId()).orElseThrow();
+        assertEquals(BookingServiceStatus.CANCELLED, updatedBs.getStatus());
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-04 điều chỉnh booking tự động dọn các dịch vụ bị mất phòng hoặc lệch ngày lưu trú")
+    void adjustBookingInvalidatesOutdatedServices() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(140 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(4);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-ADJ-CLN-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988666783", "Khách Đổi Ngày Kèm DV", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        // DV1: ngày checkIn (sẽ còn nằm trong khoảng sau khi thu ngắn)
+        BookingService bs1 = new BookingService();
+        bs1.setBookingId(booking.getId());
+        bs1.setHomestayId(homestay1Id);
+        bs1.setRoomId(room1.getId());
+        bs1.setServiceId(testSvc.getId());
+        bs1.setQuantity(1);
+        bs1.setUnitPrice(testSvc.getUnitPrice());
+        bs1.setStatus(BookingServiceStatus.REGISTERED);
+        bs1.setServiceDate(checkIn);
+        bs1.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs1);
+
+        // DV2: ngày checkIn + 3 (sẽ bị rớt ra ngoài khi thu ngắn còn 2 đêm)
+        BookingService bs2 = new BookingService();
+        bs2.setBookingId(booking.getId());
+        bs2.setHomestayId(homestay1Id);
+        bs2.setRoomId(room1.getId());
+        bs2.setServiceId(testSvc.getId());
+        bs2.setQuantity(1);
+        bs2.setUnitPrice(testSvc.getUnitPrice());
+        bs2.setStatus(BookingServiceStatus.REGISTERED);
+        bs2.setServiceDate(checkIn.plusDays(3));
+        bs2.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs2);
+
+        // Thu ngắn kỳ lưu trú thành checkIn -> checkIn + 2 (ngày checkIn + 3 bị loại)
+        ManagerAdjustBookingRequest adjustReq = new ManagerAdjustBookingRequest(
+                checkIn,
+                checkIn.plusDays(2),
+                List.of(room1.getId()),
+                2,
+                "Rút ngắn số đêm"
+        );
+
+        mockMvc.perform(patch("/api/v1/manager/bookings/" + booking.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(adjustReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)));
+
+        // bs1 vẫn còn
+        assertTrue(bookingServiceRepository.findById(bs1.getId()).isPresent());
+        // bs2 đã bị xóa
+        assertTrue(bookingServiceRepository.findById(bs2.getId()).isEmpty());
+    }
+
+    // ===========================
+    // API-MGR-SVC-06: Hủy dịch vụ hộ khách
+    // ===========================
+
+    @Test
+    @DisplayName("API-MGR-SVC-06 hủy dịch vụ REGISTERED thành công, trả về status CANCELLED")
+    void cancelBookingServiceForGuestSuccess() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(150 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-C06-OK-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988700001", "Khách Hủy DV OK", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        BookingService bs = new BookingService();
+        bs.setBookingId(booking.getId());
+        bs.setHomestayId(homestay1Id);
+        bs.setRoomId(room1.getId());
+        bs.setServiceId(testSvc.getId());
+        bs.setQuantity(1);
+        bs.setUnitPrice(testSvc.getUnitPrice());
+        bs.setStatus(BookingServiceStatus.REGISTERED);
+        bs.setServiceDate(checkIn);
+        bs.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs);
+
+        mockMvc.perform(delete("/api/v1/manager/bookings/" + booking.getId() + "/services/" + bs.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.status", is("CANCELLED")));
+
+        BookingService updated = bookingServiceRepository.findById(bs.getId()).orElseThrow();
+        assertEquals(BookingServiceStatus.CANCELLED, updated.getStatus());
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-06 hủy dịch vụ USED trả về 409 SERVICE_ALREADY_USED")
+    void cancelBookingServiceForGuestAlreadyUsed() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(160 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-C06-USED-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988700002", "Khách Hủy DV Used", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        BookingService bs = new BookingService();
+        bs.setBookingId(booking.getId());
+        bs.setHomestayId(homestay1Id);
+        bs.setRoomId(room1.getId());
+        bs.setServiceId(testSvc.getId());
+        bs.setQuantity(1);
+        bs.setUnitPrice(testSvc.getUnitPrice());
+        bs.setStatus(BookingServiceStatus.USED);
+        bs.setServiceDate(checkIn);
+        bs.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs);
+
+        mockMvc.perform(delete("/api/v1/manager/bookings/" + booking.getId() + "/services/" + bs.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("SERVICE_ALREADY_USED")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-SVC-06 manager thuộc cơ sở khác không thể hủy dịch vụ — HOMESTAY_SCOPE_VIOLATION")
+    void cancelBookingServiceForGuestOutOfScope() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(170 + (int) (System.nanoTime() % 100));
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-SVC-C06-SCP-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988700003", "Khách Ngoài Phạm Vi", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        BookingService bs = new BookingService();
+        bs.setBookingId(booking.getId());
+        bs.setHomestayId(homestay1Id);
+        bs.setRoomId(room1.getId());
+        bs.setServiceId(testSvc.getId());
+        bs.setQuantity(1);
+        bs.setUnitPrice(testSvc.getUnitPrice());
+        bs.setStatus(BookingServiceStatus.REGISTERED);
+        bs.setServiceDate(checkIn);
+        bs.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs);
+
+        // manager2 thuộc homestay2 cố hủy dịch vụ của booking thuộc homestay1
+        mockMvc.perform(delete("/api/v1/manager/bookings/" + booking.getId() + "/services/" + bs.getId())
+                        .header("Authorization", "Bearer " + tokenMgr2))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_SCOPE_VIOLATION")));
     }
 }
