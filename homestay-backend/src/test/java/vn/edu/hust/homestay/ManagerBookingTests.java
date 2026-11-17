@@ -557,6 +557,118 @@ class ManagerBookingTests {
     }
 
     @Test
+    @DisplayName("API-MGR-BOOK-02 Tra cứu tài khoản khách hàng theo SĐT hoặc Email thành công")
+    void lookupCustomerByPhoneAndEmail() throws Exception {
+        String phone = "0981239999";
+        String email = "cust-lookup-" + UUID.randomUUID() + "@example.com";
+        User customer = userRepository.saveAndFlush(User.builder()
+                .email(email)
+                .passwordHash("hashed")
+                .fullName("Nguyễn Khách Lookup")
+                .phone(phone)
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .build());
+
+        // Tra cứu theo SĐT
+        mockMvc.perform(get("/api/v1/manager/bookings/customer-lookup?phone=" + phone)
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.id", is(customer.getId().intValue())))
+                .andExpect(jsonPath("$.data.fullName", is("Nguyễn Khách Lookup")));
+
+        // Tra cứu theo Email
+        mockMvc.perform(get("/api/v1/manager/bookings/customer-lookup?email=" + email)
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.id", is(customer.getId().intValue())));
+
+        // Không tìm thấy
+        mockMvc.perform(get("/api/v1/manager/bookings/customer-lookup?phone=0900000000")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-02: Đặt phòng khớp theo Email khi khách đổi SĐT khác")
+    void createBookingMatchesCustomerByEmail() throws Exception {
+        String regPhone = "0989111222";
+        String newPhone = "0989333444";
+        String email = "cust-email-match-" + UUID.randomUUID() + "@example.com";
+        User customer = userRepository.saveAndFlush(User.builder()
+                .email(email)
+                .passwordHash("hashed")
+                .fullName("Trần Khách Đổi Số")
+                .phone(regPhone)
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .build());
+
+        ManagerCreateBookingRequest req = ManagerCreateBookingRequest.builder()
+                .contactName("Trần Khách Đổi Số")
+                .contactPhone(newPhone)
+                .contactEmail(email)
+                .roomIds(List.of(room1.getId()))
+                .checkInDate(LocalDate.now().plusDays(40))
+                .checkOutDate(LocalDate.now().plusDays(42))
+                .guestCount(1)
+                .build();
+
+        mockMvc.perform(post("/api/v1/manager/bookings")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success", is(true)));
+
+        Booking saved = bookingRepository.findAll().stream()
+                .filter(b -> newPhone.equals(b.getContactPhone()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(customer.getId(), saved.getCustomerId());
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-02: Không tự động liên kết customerId nếu SĐT thuộc về tài khoản MANAGER hoặc ADMIN")
+    void createBookingDoesNotLinkManagerOrAdminAccount() throws Exception {
+        String adminPhone = "0988999111";
+        userRepository.saveAndFlush(User.builder()
+                .email("admin-acc-" + UUID.randomUUID() + "@example.com")
+                .passwordHash("hashed")
+                .fullName("Quản Trị Viên")
+                .phone(adminPhone)
+                .role(Role.ADMIN)
+                .status(UserStatus.ACTIVE)
+                .build());
+
+        ManagerCreateBookingRequest req = ManagerCreateBookingRequest.builder()
+                .contactName("Khách Trùng SĐT Admin")
+                .contactPhone(adminPhone)
+                .roomIds(List.of(room1.getId()))
+                .checkInDate(LocalDate.now().plusDays(45))
+                .checkOutDate(LocalDate.now().plusDays(47))
+                .guestCount(1)
+                .build();
+
+        mockMvc.perform(post("/api/v1/manager/bookings")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success", is(true)));
+
+        Booking saved = bookingRepository.findAll().stream()
+                .filter(b -> adminPhone.equals(b.getContactPhone()))
+                .findFirst()
+                .orElseThrow();
+        assertNull(saved.getCustomerId()); // Không bị gán nhầm tài khoản ADMIN!
+    }
+
+    @Test
     @DisplayName("API-MGR-BOOK-02: Manager chưa được gán cơ sở bị từ chối 400 HOMESTAY_NOT_ASSIGNED")
     void createBookingRejectsUnassignedManager() throws Exception {
         User unassigned = userRepository.saveAndFlush(User.builder()

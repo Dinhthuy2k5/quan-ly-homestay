@@ -26,6 +26,7 @@ import {
 import { bookManagerServiceApi, cancelManagerBookingApi, cancelManagerServiceApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, getManagerServicesApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
 import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
+import BankSelect from '../../../components/ui/BankSelect';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
@@ -819,51 +820,51 @@ export default function ManagerBookingDetailPage() {
             {booking.services && booking.services.length > 0 ? (
               <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs sm:text-sm">
+                  <table className="w-full text-left text-xs">
                     <thead className="bg-gray-50 border-b border-[var(--color-border)] text-[var(--color-ink)] font-bold text-xs">
                       <tr>
-                        <th className="px-3 py-2.5 whitespace-nowrap">Dịch vụ</th>
-                        <th className="px-2 py-2.5 whitespace-nowrap">Phòng</th>
-                        <th className="px-2 py-2.5 whitespace-nowrap">Ngày phục vụ</th>
-                        <th className="px-2 py-2.5 text-center whitespace-nowrap">Số lượng</th>
-                        <th className="px-2 py-2.5 text-right whitespace-nowrap">Đơn giá</th>
-                        <th className="px-2 py-2.5 text-right whitespace-nowrap">Thành tiền</th>
-                        <th className="px-2 py-2.5 text-center whitespace-nowrap">Trạng thái</th>
+                        <th className="px-2.5 py-2 whitespace-nowrap">Dịch vụ</th>
+                        <th className="px-2 py-2 whitespace-nowrap">Phòng</th>
+                        <th className="px-2 py-2 whitespace-nowrap">Ngày phục vụ</th>
+                        <th className="px-2 py-2 text-center whitespace-nowrap">Số lượng</th>
+                        <th className="px-2 py-2 text-right whitespace-nowrap">Đơn giá</th>
+                        <th className="px-2 py-2 text-right whitespace-nowrap">Thành tiền</th>
+                        <th className="px-2 py-2 text-center whitespace-nowrap">Trạng thái</th>
                         {booking.status !== 'CANCELLED' && booking.status !== 'CHECKED_OUT' && (
-                          <th className="px-2 py-2.5 text-center whitespace-nowrap">Thao tác</th>
+                          <th className="px-2 py-2 text-center whitespace-nowrap">Thao tác</th>
                         )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--color-border)] text-xs">
                       {booking.services.map((svc) => (
                         <tr key={svc.id} className="hover:bg-gray-50/50">
-                          <td className="px-3 py-2 text-[var(--color-ink)] font-medium">
-                            <div className="font-semibold whitespace-nowrap text-xs sm:text-sm">{svc.serviceName}</div>
+                          <td className="px-2.5 py-1.5 text-[var(--color-ink)] font-medium whitespace-nowrap">
+                            <span className="font-semibold text-xs whitespace-nowrap">{svc.serviceName}</span>
                             {svc.note && (
-                              <p className="text-[11px] text-[var(--color-muted)] italic font-normal truncate max-w-[140px]" title={svc.note}>
-                                {svc.note}
-                              </p>
+                              <span className="ml-1 text-[11px] text-[var(--color-muted)] italic font-normal" title={svc.note}>
+                                ({svc.note})
+                              </span>
                             )}
                           </td>
-                          <td className="px-2 py-2 text-[var(--color-body)] whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-surface-soft)] px-2 py-0.5 text-xs font-medium text-[var(--color-ink)] border border-[var(--color-border)]">
+                          <td className="px-2 py-1.5 text-[var(--color-body)] whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-surface-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-ink)] border border-[var(--color-border)]">
                               <DoorOpen className="h-3 w-3 text-[var(--color-muted)] shrink-0" />
                               <span>{svc.roomName || `Phòng #${svc.roomId}`}</span>
                             </span>
                           </td>
-                          <td className="px-2 py-2 text-[var(--color-muted)] whitespace-nowrap text-xs">
+                          <td className="px-2 py-1.5 text-[var(--color-muted)] whitespace-nowrap text-xs">
                             {svc.serviceDate ? formatDate(svc.serviceDate) : 'Trong kỳ lưu trú'}
                           </td>
-                          <td className="px-2 py-2 text-center font-bold text-[var(--color-ink)] font-mono whitespace-nowrap text-xs">
+                          <td className="px-2 py-1.5 text-center font-bold text-[var(--color-ink)] font-mono whitespace-nowrap text-xs">
                             {svc.quantity} {svc.unit || ''}
                           </td>
-                          <td className="px-2 py-2 text-right text-[var(--color-muted)] font-mono whitespace-nowrap text-xs">
+                          <td className="px-2 py-1.5 text-right text-[var(--color-muted)] font-mono whitespace-nowrap text-xs">
                             {formatVnd(svc.unitPrice)}
                           </td>
-                          <td className="px-2 py-2 text-right font-bold text-[var(--color-primary)] font-mono whitespace-nowrap text-xs sm:text-sm">
+                          <td className="px-2 py-1.5 text-right font-bold text-[var(--color-primary)] font-mono whitespace-nowrap text-xs">
                             {formatVnd(svc.totalPrice)}
                           </td>
-                          <td className="px-2 py-2 text-center whitespace-nowrap">
+                          <td className="px-2 py-1.5 text-center whitespace-nowrap">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                               svc.status === 'USED'
                                 ? 'bg-emerald-100 text-emerald-800'
@@ -875,7 +876,7 @@ export default function ManagerBookingDetailPage() {
                             </span>
                           </td>
                           {booking.status !== 'CANCELLED' && booking.status !== 'CHECKED_OUT' && (
-                            <td className="px-2 py-2 text-center whitespace-nowrap">
+                            <td className="px-2 py-1.5 text-center whitespace-nowrap">
                               {svc.status === 'REGISTERED' ? (
                                 <button
                                   type="button"
@@ -1427,28 +1428,12 @@ export default function ManagerBookingDetailPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-[var(--color-ink)] mb-1">Tên ngân hàng</label>
-                    <input
-                      type="text"
-                      list="manager-cancel-bank-list"
-                      maxLength={100}
+                    <BankSelect
                       value={cancelBankName}
-                      onChange={(e) => setCancelBankName(e.target.value)}
+                      onChange={(val) => setCancelBankName(val)}
                       placeholder="VD: Vietcombank, MB..."
-                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
+                      className="py-2 text-sm"
                     />
-                    <datalist id="manager-cancel-bank-list">
-                      <option value="Vietcombank" />
-                      <option value="Techcombank" />
-                      <option value="MB Bank" />
-                      <option value="BIDV" />
-                      <option value="VietinBank" />
-                      <option value="Agribank" />
-                      <option value="ACB" />
-                      <option value="VPBank" />
-                      <option value="TPBank" />
-                      <option value="VIB" />
-                      <option value="Sacombank" />
-                    </datalist>
                   </div>
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-[var(--color-ink)] mb-1">Số tài khoản</label>

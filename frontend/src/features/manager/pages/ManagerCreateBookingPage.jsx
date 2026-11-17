@@ -24,7 +24,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { createManagerBookingApi, getAssignedHomestayApi } from '../api';
+import { createManagerBookingApi, getAssignedHomestayApi, lookupManagerCustomerApi } from '../api';
 import { searchAvailableRooms } from '../../homestays/api';
 import BookingServiceSelector from '../../homestays/components/BookingServiceSelector';
 import { formatDate, formatVnd, getNextDate, nightsBetween } from '../../../lib/format';
@@ -61,6 +61,11 @@ export default function ManagerCreateBookingPage() {
 
   // Optional Services selection
   const [services, setServices] = useState([]);
+
+  // Customer account lookup & auto-fill states
+  const [lookupCustomer, setLookupCustomer] = useState(null);
+  const [lookingUpCustomer, setLookingUpCustomer] = useState(false);
+  const [linkedCustomer, setLinkedCustomer] = useState(null);
 
   // Submission & Validation states
   const [fieldErrors, setFieldErrors] = useState({});
@@ -147,6 +152,73 @@ export default function ManagerCreateBookingPage() {
       })
     );
   }, [checkInDate, checkOutDate]);
+
+  // Tra cứu tự động tài khoản khách hàng khi quản lý nhập SĐT hoặc Email
+  useEffect(() => {
+    const phone = contactPhone.trim();
+    const email = contactEmail.trim();
+
+    // Nếu thông tin nhập không còn khớp với tài khoản đã liên kết, tự động hủy liên kết
+    if (linkedCustomer) {
+      const matchPhone = !linkedCustomer.phone || linkedCustomer.phone === phone;
+      const matchEmail = !linkedCustomer.email || linkedCustomer.email.toLowerCase() === email.toLowerCase();
+      if (!matchPhone && !matchEmail) {
+        setLinkedCustomer(null);
+      }
+    }
+
+    const hasValidPhone = PHONE_REGEX.test(phone);
+    const hasValidEmail = EMAIL_REGEX.test(email);
+
+    if (!hasValidPhone && !hasValidEmail) {
+      setLookupCustomer(null);
+      setLookingUpCustomer(false);
+      return undefined;
+    }
+
+    let active = true;
+    setLookingUpCustomer(true);
+    const timer = setTimeout(() => {
+      lookupManagerCustomerApi({
+        phone: hasValidPhone ? phone : undefined,
+        email: hasValidEmail ? email : undefined,
+      })
+        .then((customer) => {
+          if (!active) return;
+          setLookupCustomer(customer || null);
+        })
+        .catch(() => {
+          if (!active) return;
+          setLookupCustomer(null);
+        })
+        .finally(() => {
+          if (active) setLookingUpCustomer(false);
+        });
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [contactPhone, contactEmail, linkedCustomer]);
+
+  const handleApplyCustomer = () => {
+    if (!lookupCustomer) return;
+    if (lookupCustomer.fullName) setContactName(lookupCustomer.fullName);
+    if (lookupCustomer.phone) setContactPhone(lookupCustomer.phone);
+    if (lookupCustomer.email) setContactEmail(lookupCustomer.email);
+    setLinkedCustomer(lookupCustomer);
+    setFieldErrors((prev) => ({
+      ...prev,
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+    }));
+  };
+
+  const handleUnlinkCustomer = () => {
+    setLinkedCustomer(null);
+  };
 
   // Bản đồ phòng khả dụng
   const roomsMap = useMemo(() => {
@@ -288,6 +360,7 @@ export default function ManagerCreateBookingPage() {
         checkOutDate,
         guestCount: Number(guestCount),
         note: note.trim() || undefined,
+        customerId: linkedCustomer?.id || undefined,
         services,
       });
 
@@ -390,6 +463,54 @@ export default function ManagerCreateBookingPage() {
             </div>
 
             <div className="space-y-4">
+              {/* Banner liên kết / gợi ý tài khoản khách hàng */}
+              {linkedCustomer ? (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-emerald-50 border border-emerald-200 p-3.5 text-xs sm:text-sm text-emerald-900 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <UserCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <div className="truncate">
+                      <span className="font-bold text-emerald-950">Đã liên kết tài khoản: {linkedCustomer.fullName}</span>
+                      <span className="text-emerald-700 ml-1.5 font-mono text-xs">(ID #{linkedCustomer.id}{linkedCustomer.email ? ` • ${linkedCustomer.email}` : ''})</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUnlinkCustomer}
+                    className="self-start sm:self-auto rounded-lg px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:text-rose-600 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
+                  >
+                    Hủy liên kết
+                  </button>
+                </div>
+              ) : lookupCustomer ? (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-blue-50 border border-blue-200 p-3.5 text-xs sm:text-sm text-blue-900 animate-in fade-in duration-200">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <Sparkles className="h-4.5 w-4.5 text-blue-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-bold text-blue-950">
+                        Tìm thấy tài khoản hệ thống: {lookupCustomer.fullName}
+                      </p>
+                      <p className="text-blue-800 text-xs mt-0.5 truncate">
+                        SĐT: <span className="font-mono font-semibold">{lookupCustomer.phone || '—'}</span>
+                        {lookupCustomer.email && <> • Email: <span className="font-semibold">{lookupCustomer.email}</span></>}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleApplyCustomer}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-white text-xs font-bold hover:opacity-90 shadow-xs cursor-pointer shrink-0 self-start sm:self-auto"
+                  >
+                    <UserCheck className="h-3.5 w-3.5" />
+                    <span>Áp dụng tài khoản</span>
+                  </button>
+                </div>
+              ) : lookingUpCustomer ? (
+                <div className="flex items-center gap-2 text-xs text-[var(--color-muted)] italic py-0.5">
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin text-[var(--color-primary)]" />
+                  <span>Đang kiểm tra tài khoản khách hàng...</span>
+                </div>
+              ) : null}
+
               {/* Họ tên khách */}
               <div>
                 <label htmlFor="guest-name" className="block text-sm font-semibold text-[var(--color-ink)] mb-1.5">
@@ -816,6 +937,14 @@ export default function ManagerCreateBookingPage() {
                   {totalCapacity} khách ({selectedRoomsList.length} phòng)
                 </span>
               </div>
+              {contactName && (
+                <div className="flex items-center justify-between text-[var(--color-body)] pt-2 border-t border-[var(--color-border)] text-xs sm:text-sm">
+                  <span className="font-medium">Khách liên hệ:</span>
+                  <span className="font-bold text-[var(--color-ink)] truncate max-w-[170px]" title={contactName}>
+                    {contactName} {linkedCustomer ? <span className="text-emerald-700 font-normal">(TK #{linkedCustomer.id})</span> : ''}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Guest capacity warning */}

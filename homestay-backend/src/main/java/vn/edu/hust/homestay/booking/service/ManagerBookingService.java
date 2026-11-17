@@ -10,7 +10,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
+import vn.edu.hust.homestay.auth.entity.Role;
 import vn.edu.hust.homestay.auth.entity.User;
+import vn.edu.hust.homestay.auth.entity.UserStatus;
 import vn.edu.hust.homestay.auth.repository.UserRepository;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.booking.dto.ManagerAdjustBookingRequest;
@@ -20,6 +22,7 @@ import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse.BookingRoomSummary;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.ManagerCustomerLookupResponse;
 import vn.edu.hust.homestay.booking.dto.DepositReviewRequest;
 import vn.edu.hust.homestay.booking.dto.DepositReviewResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositRequest;
@@ -307,10 +310,26 @@ public class ManagerBookingService {
             throw BusinessException.conflict("ROOM_NOT_AVAILABLE", "Phòng không còn khả dụng trong khoảng thời gian đã chọn");
         }
 
-        // 8. Tra cứu customerId nếu số điện thoại trùng với tài khoản đã đăng ký trong hệ thống
-        Long customerId = userRepository.findByPhone(request.contactPhone().trim())
-                .map(User::getId)
-                .orElse(null);
+        // 8. Tra cứu customerId: ưu tiên customerId nếu được chỉ định, hoặc đối soát theo email/SĐT khách hàng
+        Long customerId = null;
+        if (request.customerId() != null) {
+            customerId = userRepository.findById(request.customerId())
+                    .filter(u -> u.getRole() == Role.CUSTOMER && u.getStatus() == UserStatus.ACTIVE)
+                    .map(User::getId)
+                    .orElse(null);
+        }
+        if (customerId == null && request.contactEmail() != null && !request.contactEmail().isBlank()) {
+            customerId = userRepository.findByEmail(request.contactEmail().trim().toLowerCase())
+                    .filter(u -> u.getRole() == Role.CUSTOMER && u.getStatus() == UserStatus.ACTIVE)
+                    .map(User::getId)
+                    .orElse(null);
+        }
+        if (customerId == null && request.contactPhone() != null && !request.contactPhone().isBlank()) {
+            customerId = userRepository.findByPhone(request.contactPhone().trim())
+                    .filter(u -> u.getRole() == Role.CUSTOMER && u.getStatus() == UserStatus.ACTIVE)
+                    .map(User::getId)
+                    .orElse(null);
+        }
 
         // 9. Lưu bản ghi Booking
         Instant now = Instant.now();
@@ -366,6 +385,28 @@ public class ManagerBookingService {
                 savedBooking.getDepositAmount(),
                 holdExpiresAtOffset
         );
+    }
+
+    /**
+     * Tra cứu tài khoản khách hàng theo SĐT hoặc Email (cho Manager khi đặt phòng hộ khách).
+     * Chỉ trả về tài khoản vai trò CUSTOMER và đang ACTIVE.
+     */
+    @Transactional(readOnly = true)
+    public ManagerCustomerLookupResponse lookupCustomer(UserPrincipal principal, String phone, String email) {
+        validateAndGetHomestayId(principal);
+
+        User user = null;
+        if (email != null && !email.isBlank()) {
+            user = userRepository.findByEmail(email.trim().toLowerCase())
+                    .filter(u -> u.getRole() == Role.CUSTOMER && u.getStatus() == UserStatus.ACTIVE)
+                    .orElse(null);
+        }
+        if (user == null && phone != null && !phone.isBlank()) {
+            user = userRepository.findByPhone(phone.trim())
+                    .filter(u -> u.getRole() == Role.CUSTOMER && u.getStatus() == UserStatus.ACTIVE)
+                    .orElse(null);
+        }
+        return user != null ? ManagerCustomerLookupResponse.from(user) : null;
     }
 
     /**

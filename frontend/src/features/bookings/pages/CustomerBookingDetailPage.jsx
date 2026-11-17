@@ -33,6 +33,7 @@ import {
 import { cancelCustomerBookingApi, cancelCustomerBookingServiceApi, fetchCustomerBookingDetailApi, fetchCustomerBookingServicesApi, fetchCustomerDepositProofApi, registerCustomerBookingServiceApi, submitCustomerDepositApi } from '../api';
 import { fetchHomestayServices } from '../../homestays/api';
 import StatusBadge from '../../../components/ui/StatusBadge';
+import BankSelect from '../../../components/ui/BankSelect';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
@@ -1433,28 +1434,12 @@ export default function CustomerBookingDetailPage() {
                     <label className="block text-2xs font-semibold text-sky-950 mb-1">
                       Ngân hàng <span className="text-rose-600">*</span>
                     </label>
-                    <input
-                      type="text"
-                      list="customer-cancel-bank-list"
+                    <BankSelect
                       required
                       value={cancelBankName}
-                      onChange={(e) => setCancelBankName(e.target.value)}
-                      placeholder="Chọn hoặc nhập tên ngân hàng"
-                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[var(--color-primary)]"
+                      onChange={(val) => setCancelBankName(val)}
+                      placeholder="Chọn hoặc tìm tên ngân hàng"
                     />
-                    <datalist id="customer-cancel-bank-list">
-                      <option value="Vietcombank" />
-                      <option value="Techcombank" />
-                      <option value="MB Bank" />
-                      <option value="BIDV" />
-                      <option value="VietinBank" />
-                      <option value="Agribank" />
-                      <option value="ACB" />
-                      <option value="VPBank" />
-                      <option value="TPBank" />
-                      <option value="VIB" />
-                      <option value="Sacombank" />
-                    </datalist>
                   </div>
                   <div>
                     <label className="block text-2xs font-semibold text-sky-950 mb-1">

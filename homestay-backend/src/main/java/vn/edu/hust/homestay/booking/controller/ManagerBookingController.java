@@ -29,6 +29,7 @@ import vn.edu.hust.homestay.booking.dto.ManagerBookingDetailResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerBookingSummaryResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingResponse;
+import vn.edu.hust.homestay.booking.dto.ManagerCustomerLookupResponse;
 import vn.edu.hust.homestay.booking.dto.DepositReviewRequest;
 import vn.edu.hust.homestay.booking.dto.DepositReviewResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingRequest;
@@ -113,6 +114,16 @@ public class ManagerBookingController {
     ) {
         ManagerCreateBookingResponse response = managerBookingService.createBooking(principal, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
+    }
+
+    @Operation(summary = "Tra cứu tài khoản khách hàng theo SĐT hoặc Email")
+    @GetMapping("/customer-lookup")
+    public ResponseEntity<ApiResponse<ManagerCustomerLookupResponse>> lookupCustomer(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) String phone,
+            @RequestParam(required = false) String email
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(managerBookingService.lookupCustomer(principal, phone, email)));
     }
 
     /**

@@ -52,5 +52,7 @@ public record ManagerCreateBookingRequest(
         @Size(max = 500, message = "Ghi chú không được quá 500 ký tự")
         String note,
 
+        Long customerId,
+
         List<@Valid CustomerBookingServiceSelectionRequest> services
 ) {}

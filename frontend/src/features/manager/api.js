@@ -217,6 +217,18 @@ export async function getManagerBookingsApi({
 }
 
 /**
+ * Tra cứu tài khoản khách hàng theo SĐT hoặc Email
+ * GET /api/v1/manager/bookings/customer-lookup
+ */
+export async function lookupManagerCustomerApi({ phone, email } = {}) {
+  const params = {};
+  if (phone) params.phone = phone.trim();
+  if (email) params.email = email.trim();
+  const res = await apiClient.get('/manager/bookings/customer-lookup', { params });
+  return res.data?.data;
+}
+
+/**
  * API-MGR-BOOK-02: Đặt phòng hộ khách
  */
 export async function createManagerBookingApi({
@@ -228,6 +240,7 @@ export async function createManagerBookingApi({
   checkOutDate,
   guestCount,
   note,
+  customerId,
   services,
 }) {
   const payload = {
@@ -239,6 +252,7 @@ export async function createManagerBookingApi({
     checkOutDate,
     guestCount: Number(guestCount),
     note: note?.trim() || null,
+    customerId: customerId ? Number(customerId) : null,
     services: (services || []).map((item) => ({
       roomId: Number(item.roomId),
       serviceId: Number(item.serviceId),
