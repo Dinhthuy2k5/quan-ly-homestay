@@ -465,6 +465,17 @@ export default function ManagerBookingsPage() {
           {items.map((booking) => {
             const nights = nightsBetween(booking.checkInDate, booking.checkOutDate);
             const isCopied = copiedCode === booking.code;
+            const todayStr = (() => {
+              const d = new Date();
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            })();
+            const canCheckIn = Boolean(
+              booking.status === 'CONFIRMED' &&
+              booking.checkInDate &&
+              booking.checkOutDate &&
+              todayStr >= booking.checkInDate &&
+              todayStr < booking.checkOutDate
+            );
 
             return (
               <div
@@ -502,7 +513,7 @@ export default function ManagerBookingsPage() {
 
                   <div className="flex items-center gap-2">
                     <StatusBadge type="booking" status={booking.status} />
-                    {booking.status === 'CONFIRMED' && (
+                    {canCheckIn && (
                       <Link
                         to={`/manager/bookings/${booking.id}`}
                         state={{ openCheckIn: true }}

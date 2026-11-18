@@ -1309,6 +1309,16 @@ public class ManagerBookingService {
             throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Chỉ cho phép check-in với đơn đặt phòng ở trạng thái đã xác nhận (CONFIRMED)");
         }
 
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        if (today.isBefore(booking.getCheckInDate())) {
+            throw BusinessException.badRequest("CHECK_IN_TOO_EARLY",
+                    "Chưa đến ngày nhận phòng (" + booking.getCheckInDate() + "). Không thể thực hiện check-in sớm");
+        }
+        if (!today.isBefore(booking.getCheckOutDate())) {
+            throw BusinessException.badRequest("CHECK_IN_EXPIRED",
+                    "Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: " + booking.getCheckOutDate() + "). Không thể check-in");
+        }
+
         if (request != null) {
             if (request.actualGuestCount() != null) {
                 if (request.actualGuestCount() <= 0) {

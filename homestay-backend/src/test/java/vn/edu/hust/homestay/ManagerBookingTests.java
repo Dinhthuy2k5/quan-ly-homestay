@@ -448,7 +448,7 @@ class ManagerBookingTests {
         assertEquals(BookingServiceStatus.REGISTERED, bs.getStatus());
         assertEquals(checkIn.plusDays(1), bs.getServiceDate());
         assertEquals("Ăn tối phục vụ tại phòng", bs.getNote());
-        assertEquals(manager1.getId(), bs.getRecordedBy());
+        assertEquals(manager1.getId(), bs.getRequestedBy());
     }
 
     @Test
@@ -2226,9 +2226,9 @@ class ManagerBookingTests {
     // =========================================================================
 
     @Test
-    @DisplayName("API-MGR-STAY-01: Check-in thành công cho booking CONFIRMED không có body")
+    @DisplayName("API-MGR-STAY-01: Check-in thành công cho booking CONFIRMED không có body (check-in đúng ngày)")
     void checkIn_ConfirmedBooking_Success() throws Exception {
-        LocalDate checkIn = LocalDate.now().plusDays(210);
+        LocalDate checkIn = LocalDate.now();
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-01-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800001", "Khách CheckIn 1", checkIn, checkOut, BookingStatus.CONFIRMED);
@@ -2245,9 +2245,60 @@ class ManagerBookingTests {
     }
 
     @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thành công khi khách đến muộn (Late check-in trong kỳ lưu trú)")
+    void checkIn_LateCheckIn_Success() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-LATE-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800010", "Khách Đến Muộn", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.status", is("CHECKED_IN")));
+
+        Booking updated = bookingRepository.findById(booking.getId()).orElseThrow();
+        assertEquals(BookingStatus.CHECKED_IN, updated.getStatus());
+        assertEquals(checkIn, updated.getCheckInDate());
+        assertEquals(checkOut, updated.getCheckOutDate());
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại khi chưa đến ngày nhận phòng - 400 CHECK_IN_TOO_EARLY")
+    void checkIn_TooEarly_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(2);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-EARLY-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800011", "Khách CheckIn Sớm", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CHECK_IN_TOO_EARLY")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại khi đã đến hoặc quá ngày trả phòng - 400 CHECK_IN_EXPIRED")
+    void checkIn_Expired_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(3);
+        LocalDate checkOut = LocalDate.now();
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-EXP-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800012", "Khách Quá Hạn", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CHECK_IN_EXPIRED")));
+    }
+
+    @Test
     @DisplayName("API-MGR-STAY-01: Check-in thành công với actualGuestCount và note")
     void checkIn_WithActualGuestCountAndNote_Success() throws Exception {
-        LocalDate checkIn = LocalDate.now().plusDays(215);
+        LocalDate checkIn = LocalDate.now();
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-02-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800002", "Khách CheckIn 2", checkIn, checkOut, BookingStatus.CONFIRMED);
@@ -2255,7 +2306,7 @@ class ManagerBookingTests {
         String body = """
                 {
                     "actualGuestCount": 1,
-                    "note": "Đã kiểm tra CCCD, nhận phòng sớm"
+                    "note": "Đã kiểm tra CCCD, nhận phòng"
                 }
                 """;
 
@@ -2271,13 +2322,13 @@ class ManagerBookingTests {
         Booking updated = bookingRepository.findById(booking.getId()).orElseThrow();
         assertEquals(BookingStatus.CHECKED_IN, updated.getStatus());
         assertEquals(1, (int) updated.getGuestCount());
-        assertTrue(updated.getNote() != null && updated.getNote().contains("Đã kiểm tra CCCD, nhận phòng sớm"));
+        assertTrue(updated.getNote() != null && updated.getNote().contains("Đã kiểm tra CCCD, nhận phòng"));
     }
 
     @Test
     @DisplayName("API-MGR-STAY-01: Check-in thất bại khi actualGuestCount vượt quá sức chứa phòng - 400 ROOM_CAPACITY_EXCEEDED")
     void checkIn_ExceedCapacity_Fails() throws Exception {
-        LocalDate checkIn = LocalDate.now().plusDays(220);
+        LocalDate checkIn = LocalDate.now();
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-03-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800003", "Khách CheckIn 3", checkIn, checkOut, BookingStatus.CONFIRMED);
@@ -2332,7 +2383,7 @@ class ManagerBookingTests {
     @Test
     @DisplayName("API-MGR-STAY-01: Check-in thất bại khi booking thuộc cơ sở homestay khác - 403 HOMESTAY_SCOPE_VIOLATION")
     void checkIn_WrongHomestay_Fails() throws Exception {
-        LocalDate checkIn = LocalDate.now().plusDays(235);
+        LocalDate checkIn = LocalDate.now();
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-06-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800006", "Khách CheckIn 6", checkIn, checkOut, BookingStatus.CONFIRMED);
@@ -2348,7 +2399,7 @@ class ManagerBookingTests {
     @Test
     @DisplayName("API-MGR-STAY-01: Check-in thất bại khi manager chưa được phân công cơ sở - 400 HOMESTAY_NOT_ASSIGNED")
     void checkIn_UnassignedManager_Fails() throws Exception {
-        LocalDate checkIn = LocalDate.now().plusDays(240);
+        LocalDate checkIn = LocalDate.now();
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-07-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800007", "Khách CheckIn 7", checkIn, checkOut, BookingStatus.CONFIRMED);

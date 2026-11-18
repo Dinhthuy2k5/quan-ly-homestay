@@ -113,10 +113,18 @@ export default function ManagerBookingDetailPage() {
 
   useEffect(() => {
     if (booking && booking.status === 'CONFIRMED' && location.state?.openCheckIn) {
-      setCheckInError('');
-      setCheckInNote('');
-      setActualGuestCount(booking.guestCount || 1);
-      setCheckInModalOpen(true);
+      const today = (() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      })();
+      const tooEarly = booking.checkInDate && today < booking.checkInDate;
+      const expired = booking.checkOutDate && today >= booking.checkOutDate;
+      if (!tooEarly && !expired) {
+        setCheckInError('');
+        setCheckInNote('');
+        setActualGuestCount(booking.guestCount || 1);
+        setCheckInModalOpen(true);
+      }
       window.history.replaceState({}, document.title);
     }
   }, [booking, location.state]);
@@ -260,6 +268,19 @@ export default function ManagerBookingDetailPage() {
     .filter((s) => s.status !== 'CANCELLED')
     .reduce((sum, s) => sum + Number(s.totalPrice || 0), 0);
   const totalRoomsCapacity = (booking?.rooms || []).reduce((sum, r) => sum + Number(r.maxGuests || 0), 0);
+
+  const getTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayStr = getTodayStr();
+  const isCheckInTooEarly = Boolean(booking?.checkInDate && todayStr < booking.checkInDate);
+  const isCheckInExpired = Boolean(booking?.checkOutDate && todayStr >= booking.checkOutDate);
+  const isLateCheckIn = Boolean(booking?.checkInDate && booking?.checkOutDate && todayStr > booking.checkInDate && todayStr < booking.checkOutDate);
+  const canCheckIn = Boolean(booking?.status === 'CONFIRMED' && !isCheckInTooEarly && !isCheckInExpired);
 
   const handleOpenBookServiceModal = async () => {
     setBookServiceError('');
@@ -428,6 +449,14 @@ export default function ManagerBookingDetailPage() {
   };
 
   const handleOpenCheckInModal = () => {
+    if (isCheckInTooEarly) {
+      setCheckInError(`Chưa đến ngày nhận phòng (${formatDate(booking.checkInDate)}). Không thể check-in sớm.`);
+      return;
+    }
+    if (isCheckInExpired) {
+      setCheckInError(`Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: ${formatDate(booking.checkOutDate)}). Không thể check-in.`);
+      return;
+    }
     setCheckInError('');
     setCheckInNote('');
     setActualGuestCount(booking?.guestCount || 1);
@@ -437,6 +466,15 @@ export default function ManagerBookingDetailPage() {
   const handleCheckIn = async (e) => {
     e.preventDefault();
     setCheckInError('');
+
+    if (isCheckInTooEarly) {
+      setCheckInError(`Chưa đến ngày nhận phòng (${formatDate(booking.checkInDate)}). Không thể check-in sớm.`);
+      return;
+    }
+    if (isCheckInExpired) {
+      setCheckInError(`Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: ${formatDate(booking.checkOutDate)}). Không thể check-in.`);
+      return;
+    }
 
     const count = Number(actualGuestCount);
     if (!count || count < 1) {
@@ -456,7 +494,11 @@ export default function ManagerBookingDetailPage() {
       });
       setCheckInModalOpen(false);
       setCheckInNote('');
-      setAdjustSuccessToast('Ghi nhận nhận phòng (Check-in) thành công! Khách đang lưu trú tại cơ sở.');
+      setAdjustSuccessToast(
+        isLateCheckIn
+          ? 'Ghi nhận nhận phòng (Check-in) thành công! Khách nhận phòng muộn, tiền phòng tính trọn gói kỳ lưu trú.'
+          : 'Ghi nhận nhận phòng (Check-in) thành công! Khách đang lưu trú tại cơ sở.'
+      );
       setReloadKey((k) => k + 1);
     } catch (err) {
       setCheckInError(getErrorMessage(err) || 'Không thể thực hiện nhận phòng. Vui lòng thử lại.');
@@ -519,14 +561,32 @@ export default function ManagerBookingDetailPage() {
 
         <div className="flex flex-wrap items-center gap-2.5">
           {booking.status === 'CONFIRMED' && (
-            <button
-              type="button"
-              onClick={handleOpenCheckInModal}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs cursor-pointer"
-            >
-              <LogIn className="h-4 w-4" />
-              <span>Check-in nhận phòng</span>
-            </button>
+            canCheckIn ? (
+              <button
+                type="button"
+                onClick={handleOpenCheckInModal}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs cursor-pointer"
+              >
+                <LogIn className="h-4 w-4" />
+                <span>{isLateCheckIn ? 'Check-in nhận phòng (muộn)' : 'Check-in nhận phòng'}</span>
+              </button>
+            ) : isCheckInTooEarly ? (
+              <div
+                className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800"
+                title={`Chưa đến ngày nhận phòng (${formatDate(booking.checkInDate)})`}
+              >
+                <Clock className="h-4 w-4 text-sky-600" />
+                <span>Chờ ngày nhận phòng ({formatDate(booking.checkInDate)})</span>
+              </div>
+            ) : isCheckInExpired ? (
+              <div
+                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+                title={`Đã quá ngày trả phòng (${formatDate(booking.checkOutDate)})`}
+              >
+                <AlertCircle className="h-4 w-4 text-rose-600" />
+                <span>Đã quá hạn lưu trú</span>
+              </div>
+            ) : null
           )}
           {(booking.status === 'PENDING_DEPOSIT' || booking.status === 'CONFIRMED') && (
             <button
@@ -1064,23 +1124,51 @@ export default function ManagerBookingDetailPage() {
 
           {/* Ready for Check-in Card (When CONFIRMED) */}
           {booking.status === 'CONFIRMED' && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-xs space-y-3">
-              <div className="flex items-center gap-2.5 text-emerald-900 font-bold text-sm sm:text-base">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-                <span>Sẵn sàng nhận phòng (Check-in)</span>
+            canCheckIn ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-xs space-y-3">
+                <div className="flex items-center gap-2.5 text-emerald-900 font-bold text-sm sm:text-base">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <span>{isLateCheckIn ? 'Khách nhận phòng muộn (Check-in)' : 'Sẵn sàng nhận phòng (Check-in)'}</span>
+                </div>
+                {isLateCheckIn ? (
+                  <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed">
+                    Khách đến nhận phòng muộn hơn ngày bắt đầu ({formatDate(booking.checkInDate)}). Homestay đã giữ phòng cho khách, do đó <strong>tiền phòng vẫn tính trọn gói toàn bộ kỳ lưu trú ({nights} đêm)</strong> theo quy định.
+                  </p>
+                ) : (
+                  <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed">
+                    Đơn đã được xác nhận. Khi khách đến cơ sở homestay, hãy đối chiếu thông tin và nhấn nút bên dưới để ghi nhận nhận phòng (chuyển sang <strong>Đang lưu trú</strong>).
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleOpenCheckInModal}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs cursor-pointer"
+                >
+                  <LogIn className="h-4 w-4" />
+                  <span>{isLateCheckIn ? 'Tiến hành Check-in nhận phòng (muộn)' : 'Tiến hành Check-in nhận phòng'}</span>
+                </button>
               </div>
-              <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed">
-                Đơn đã được xác nhận. Khi khách đến cơ sở homestay, hãy đối chiếu thông tin và nhấn nút bên dưới để ghi nhận nhận phòng (chuyển sang <strong>Đang lưu trú</strong>).
-              </p>
-              <button
-                type="button"
-                onClick={handleOpenCheckInModal}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs cursor-pointer"
-              >
-                <LogIn className="h-4 w-4" />
-                <span>Tiến hành Check-in nhận phòng</span>
-              </button>
-            </div>
+            ) : isCheckInTooEarly ? (
+              <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-xs space-y-2">
+                <div className="flex items-center gap-2.5 text-sky-900 font-bold text-sm sm:text-base">
+                  <Clock className="h-5 w-5 text-sky-600 shrink-0" />
+                  <span>Chưa đến ngày nhận phòng</span>
+                </div>
+                <p className="text-xs sm:text-sm text-sky-800 leading-relaxed">
+                  Ngày nhận phòng theo đơn là <strong>{formatDate(booking.checkInDate)}</strong>. Quản lý chỉ có thể ghi nhận Check-in khi đến ngày nhận phòng. Nếu khách muốn nhận phòng sớm hơn, vui lòng sử dụng chức năng <strong>Điều chỉnh đơn</strong> để bổ sung ngày trước khi check-in.
+                </p>
+              </div>
+            ) : isCheckInExpired ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-5 shadow-xs space-y-2">
+                <div className="flex items-center gap-2.5 text-rose-900 font-bold text-sm sm:text-base">
+                  <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />
+                  <span>Đơn đặt phòng đã quá hạn lưu trú</span>
+                </div>
+                <p className="text-xs sm:text-sm text-rose-800 leading-relaxed">
+                  Kỳ lưu trú đã kết thúc vào ngày <strong>{formatDate(booking.checkOutDate)}</strong>. Khách không đến nhận phòng trong toàn bộ thời gian đã đặt.
+                </p>
+              </div>
+            ) : null
           )}
 
           {/* In-Stay Info Card (When CHECKED_IN) */}
@@ -1656,6 +1744,18 @@ export default function ManagerBookingDetailPage() {
                 </div>
               )}
             </div>
+
+            {isLateCheckIn && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+                <p className="font-semibold text-amber-950 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-amber-600" />
+                  <span>Lưu ý nhận phòng muộn:</span>
+                </p>
+                <p className="text-amber-800 leading-relaxed">
+                  Khách đến trễ hơn ngày đặt ban đầu ({formatDate(booking.checkInDate)}). Homestay đã giữ phòng nên toàn bộ tiền phòng ({nights} đêm) vẫn được tính đủ theo cam kết.
+                </p>
+              </div>
+            )}
 
             {/* Inputs */}
             <div className="space-y-4">
