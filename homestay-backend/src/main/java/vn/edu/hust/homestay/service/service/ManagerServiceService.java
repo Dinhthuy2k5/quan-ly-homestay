@@ -9,6 +9,7 @@ import vn.edu.hust.homestay.common.response.PagedResult;
 import vn.edu.hust.homestay.service.dto.CreateManagerServiceRequest;
 import vn.edu.hust.homestay.service.dto.ManagerCreateServiceResponse;
 import vn.edu.hust.homestay.service.dto.ManagerServiceSummaryResponse;
+import vn.edu.hust.homestay.service.dto.SaveServiceCategoryRequest;
 import vn.edu.hust.homestay.service.dto.ServiceCategoryResponse;
 import vn.edu.hust.homestay.service.dto.UpdateManagerServiceRequest;
 import vn.edu.hust.homestay.service.entity.Service;
@@ -75,6 +76,7 @@ public class ManagerServiceService {
     public ManagerCreateServiceResponse createService(UserPrincipal principal, CreateManagerServiceRequest request) {
         Long homestayId = validateAndGetHomestayId(principal);
 
+        // đưa các giá trị hardcode vào  config
         if (request == null) {
             throw BusinessException.badRequest("INVALID_REQUEST", "Dữ liệu yêu cầu không được để trống");
         }
@@ -270,5 +272,86 @@ public class ManagerServiceService {
             throw BusinessException.badRequest("HOMESTAY_NOT_ASSIGNED", "Tài khoản quản lý chưa được phân công cơ sở");
         }
         return principal.getHomestayId();
+    }
+
+    // ─── Category CRUD ───────────────────────────────────────────────────────
+
+    /**
+     * API-MGR-CAT-02: Tạo danh mục dịch vụ mới cho homestay.
+     */
+    @Transactional
+    public ServiceCategoryResponse createCategory(UserPrincipal principal, SaveServiceCategoryRequest request) {
+        Long homestayId = validateAndGetHomestayId(principal);
+
+        if (request == null || request.name() == null || request.name().trim().isEmpty()) {
+            throw BusinessException.badRequest("INVALID_CATEGORY_NAME", "Tên danh mục không được để trống");
+        }
+
+        String name = request.name().trim();
+        if (name.length() > 100) {
+            throw BusinessException.badRequest("INVALID_CATEGORY_NAME", "Tên danh mục không được vượt quá 100 ký tự");
+        }
+
+        // Check trùng tên (case-insensitive) trong cùng homestay
+        boolean exists = serviceCategoryRepository.existsByHomestayIdAndNameIgnoreCase(homestayId, name);
+        if (exists) {
+            throw BusinessException.conflict("CATEGORY_NAME_EXISTS", "Tên danh mục đã tồn tại trong homestay này");
+        }
+
+        ServiceCategory category = new ServiceCategory();
+        category.setHomestayId(homestayId);
+        category.setName(name);
+
+        return ServiceCategoryResponse.from(serviceCategoryRepository.save(category));
+    }
+
+    /**
+     * API-MGR-CAT-03: Đổi tên danh mục dịch vụ.
+     */
+    @Transactional
+    public ServiceCategoryResponse updateCategory(UserPrincipal principal, Long categoryId, SaveServiceCategoryRequest request) {
+        Long homestayId = validateAndGetHomestayId(principal);
+
+        ServiceCategory category = serviceCategoryRepository.findByIdAndHomestayId(categoryId, homestayId)
+                .orElseThrow(() -> BusinessException.notFound("CATEGORY_NOT_FOUND", "Không tìm thấy danh mục dịch vụ"));
+
+        if (request == null || request.name() == null || request.name().trim().isEmpty()) {
+            throw BusinessException.badRequest("INVALID_CATEGORY_NAME", "Tên danh mục không được để trống");
+        }
+
+        String name = request.name().trim();
+        if (name.length() > 100) {
+            throw BusinessException.badRequest("INVALID_CATEGORY_NAME", "Tên danh mục không được vượt quá 100 ký tự");
+        }
+
+        // Check trùng tên với danh mục khác trong cùng homestay
+        boolean exists = serviceCategoryRepository.existsByHomestayIdAndNameIgnoreCaseAndIdNot(homestayId, name, categoryId);
+        if (exists) {
+            throw BusinessException.conflict("CATEGORY_NAME_EXISTS", "Tên danh mục đã tồn tại trong homestay này");
+        }
+
+        category.setName(name);
+        return ServiceCategoryResponse.from(serviceCategoryRepository.save(category));
+    }
+
+    /**
+     * API-MGR-CAT-04: Xóa danh mục dịch vụ (chỉ được xóa nếu chưa có dịch vụ nào dùng).
+     */
+    @Transactional
+    public void deleteCategory(UserPrincipal principal, Long categoryId) {
+        Long homestayId = validateAndGetHomestayId(principal);
+
+        ServiceCategory category = serviceCategoryRepository.findByIdAndHomestayId(categoryId, homestayId)
+                .orElseThrow(() -> BusinessException.notFound("CATEGORY_NOT_FOUND", "Không tìm thấy danh mục dịch vụ"));
+
+        // Chặn xóa nếu còn dịch vụ đang dùng danh mục này (tránh FK violation)
+        if (serviceRepository.existsByCategoryIdAndHomestayId(categoryId, homestayId)) {
+            throw BusinessException.conflict(
+                    "CATEGORY_HAS_SERVICES",
+                    "Danh mục này đang có dịch vụ. Hãy chuyển hoặc xóa dịch vụ trước khi xóa danh mục."
+            );
+        }
+
+        serviceCategoryRepository.delete(category);
     }
 }

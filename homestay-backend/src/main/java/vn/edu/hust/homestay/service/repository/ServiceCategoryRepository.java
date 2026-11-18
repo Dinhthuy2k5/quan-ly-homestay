@@ -18,5 +18,9 @@ public interface ServiceCategoryRepository extends JpaRepository<ServiceCategory
 
     boolean existsByHomestayIdAndName(Long homestayId, String name);
 
+    boolean existsByHomestayIdAndNameIgnoreCase(Long homestayId, String name);
+
     boolean existsByHomestayIdAndNameAndIdNot(Long homestayId, String name, Long id);
+
+    boolean existsByHomestayIdAndNameIgnoreCaseAndIdNot(Long homestayId, String name, Long id);
 }

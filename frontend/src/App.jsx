@@ -32,6 +32,7 @@ import ManagerAdjustBookingPage from './features/manager/pages/ManagerAdjustBook
 import ManagerServicesPage from './features/manager/pages/ManagerServicesPage';
 import ManagerCreateServicePage from './features/manager/pages/ManagerCreateServicePage';
 import ManagerEditServicePage from './features/manager/pages/ManagerEditServicePage';
+import ManagerServiceCategoriesPage from './features/manager/pages/ManagerServiceCategoriesPage';
 
 function SearchResultsRoute() {
   const location = useLocation();
@@ -134,6 +135,7 @@ export function App() {
               <Route path="services" element={<ManagerServicesPage />} />
               <Route path="services/create" element={<ManagerCreateServicePage />} />
               <Route path="services/:serviceId/edit" element={<ManagerEditServicePage />} />
+              <Route path="services/categories" element={<ManagerServiceCategoriesPage />} />
             </Route>
 
             {/* Trang 403 Forbidden */}

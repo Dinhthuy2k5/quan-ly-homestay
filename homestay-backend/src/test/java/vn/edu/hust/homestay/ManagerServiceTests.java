@@ -29,6 +29,7 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -742,5 +743,178 @@ class ManagerServiceTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // =========================================================================
+    // Category CRUD Tests (API-MGR-CAT-01 -> API-MGR-CAT-04)
+    // =========================================================================
+
+    @Test
+    @DisplayName("API-MGR-CAT-01: Lấy danh sách danh mục thành công - chỉ thuộc homestay của manager")
+    void getCategories_Success() throws Exception {
+        mockMvc.perform(get("/api/v1/manager/service-categories")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data", hasSize(greaterThanOrEqualTo(2))))
+                .andExpect(jsonPath("$.data[*].id", hasItems(cat1.getId().intValue(), cat2.getId().intValue())))
+                .andExpect(jsonPath("$.data[*].id", not(hasItem(catHs2.getId().intValue()))));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-01: Lấy danh mục khi chưa phân công cơ sở - 400 HOMESTAY_NOT_ASSIGNED")
+    void getCategories_UnassignedManager_Fails() throws Exception {
+        mockMvc.perform(get("/api/v1/manager/service-categories")
+                        .header("Authorization", "Bearer " + tokenUnassigned))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_NOT_ASSIGNED")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-01: Customer gọi API danh mục bị từ chối 403")
+    void getCategories_Customer_Forbidden() throws Exception {
+        mockMvc.perform(get("/api/v1/manager/service-categories")
+                        .header("Authorization", "Bearer " + tokenCustomer))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-02: Tạo danh mục mới thành công - 201 Created")
+    void createCategory_Success() throws Exception {
+        String name = "Giặt là cao cấp " + UUID.randomUUID().toString().substring(0, 8);
+        String body = String.format("{\"name\": \"%s\"}", name);
+
+        mockMvc.perform(post("/api/v1/manager/service-categories")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.id", notNullValue()))
+                .andExpect(jsonPath("$.data.name", is(name)));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-02: Tạo danh mục trùng tên trong cùng homestay - 409 CATEGORY_NAME_EXISTS")
+    void createCategory_DuplicateName_Fails() throws Exception {
+        String body = String.format("{\"name\": \"%s\"}", cat1.getName().toUpperCase());
+
+        mockMvc.perform(post("/api/v1/manager/service-categories")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CATEGORY_NAME_EXISTS")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-02: Tạo danh mục với tên để trống - 400 INVALID_CATEGORY_NAME")
+    void createCategory_BlankName_Fails() throws Exception {
+        String body = "{\"name\": \"   \"}";
+
+        mockMvc.perform(post("/api/v1/manager/service-categories")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("INVALID_CATEGORY_NAME")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-02: Tạo danh mục tên quá 100 ký tự - 400 INVALID_CATEGORY_NAME")
+    void createCategory_NameTooLong_Fails() throws Exception {
+        String body = String.format("{\"name\": \"%s\"}", "A".repeat(101));
+
+        mockMvc.perform(post("/api/v1/manager/service-categories")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("INVALID_CATEGORY_NAME")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-03: Đổi tên danh mục thành công - 200 OK")
+    void updateCategory_Success() throws Exception {
+        String newName = "Ẩm thực đổi tên " + UUID.randomUUID().toString().substring(0, 8);
+        String body = String.format("{\"name\": \"%s\"}", newName);
+
+        mockMvc.perform(patch("/api/v1/manager/service-categories/" + cat1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.id", is(cat1.getId().intValue())))
+                .andExpect(jsonPath("$.data.name", is(newName)));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-03: Đổi tên danh mục trùng tên khác trong cùng homestay - 409 CATEGORY_NAME_EXISTS")
+    void updateCategory_DuplicateName_Fails() throws Exception {
+        String body = String.format("{\"name\": \"%s\"}", cat2.getName());
+
+        mockMvc.perform(patch("/api/v1/manager/service-categories/" + cat1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CATEGORY_NAME_EXISTS")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-03: Đổi tên danh mục của homestay khác - 404 CATEGORY_NOT_FOUND")
+    void updateCategory_WrongHomestay_Fails() throws Exception {
+        String body = "{\"name\": \"Tên mới bất kỳ\"}";
+
+        mockMvc.perform(patch("/api/v1/manager/service-categories/" + catHs2.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CATEGORY_NOT_FOUND")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-04: Xóa danh mục đang có dịch vụ - 409 CATEGORY_HAS_SERVICES")
+    void deleteCategory_HasServices_Fails() throws Exception {
+        // cat1 đang có svc1 và svcInactive
+        mockMvc.perform(delete("/api/v1/manager/service-categories/" + cat1.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CATEGORY_HAS_SERVICES")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-04: Xóa danh mục không có dịch vụ - 200 OK")
+    void deleteCategory_Success() throws Exception {
+        // Tạo category trống
+        ServiceCategory emptyCat = new ServiceCategory();
+        emptyCat.setHomestayId(homestay1Id);
+        emptyCat.setName("Danh mục tạm " + UUID.randomUUID().toString().substring(0, 8));
+        emptyCat = serviceCategoryRepository.saveAndFlush(emptyCat);
+
+        mockMvc.perform(delete("/api/v1/manager/service-categories/" + emptyCat.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("API-MGR-CAT-04: Xóa danh mục của homestay khác - 404 CATEGORY_NOT_FOUND")
+    void deleteCategory_WrongHomestay_Fails() throws Exception {
+        mockMvc.perform(delete("/api/v1/manager/service-categories/" + catHs2.getId())
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CATEGORY_NOT_FOUND")));
     }
 }

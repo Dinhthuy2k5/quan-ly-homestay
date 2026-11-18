@@ -386,10 +386,34 @@ export async function getManagerServicesApi({ status, categoryId, page = 0, size
 
 /**
  * Lấy danh mục dịch vụ thuộc homestay để Manager xem và phân loại dịch vụ
+ * API-MGR-CAT-01
  */
 export async function getManagerServiceCategoriesApi() {
   const res = await apiClient.get('/manager/service-categories');
   return res.data?.data || [];
+}
+
+/**
+ * API-MGR-CAT-02: Tạo danh mục dịch vụ mới
+ */
+export async function createManagerServiceCategoryApi(name) {
+  const res = await apiClient.post('/manager/service-categories', { name: name.trim() });
+  return res.data?.data;
+}
+
+/**
+ * API-MGR-CAT-03: Đổi tên danh mục dịch vụ
+ */
+export async function updateManagerServiceCategoryApi(categoryId, name) {
+  const res = await apiClient.patch(`/manager/service-categories/${categoryId}`, { name: name.trim() });
+  return res.data?.data;
+}
+
+/**
+ * API-MGR-CAT-04: Xóa danh mục dịch vụ
+ */
+export async function deleteManagerServiceCategoryApi(categoryId) {
+  await apiClient.delete(`/manager/service-categories/${categoryId}`);
 }
 
 /**

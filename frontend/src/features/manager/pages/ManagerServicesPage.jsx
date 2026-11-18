@@ -205,13 +205,23 @@ export default function ManagerServicesPage() {
           </div>
 
           {/* Primary Action Button */}
-          <Link
-            to="/manager/services/create"
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[var(--color-primary-hover)] active:scale-[0.98] transition-all"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Khai báo dịch vụ</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/manager/services/categories"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] transition-colors"
+              title="Quản lý danh mục dịch vụ"
+            >
+              <Tags className="h-3.5 w-3.5" />
+              <span>Quản lý danh mục</span>
+            </Link>
+            <Link
+              to="/manager/services/create"
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[var(--color-primary-hover)] active:scale-[0.98] transition-all"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Khai báo dịch vụ</span>
+            </Link>
+          </div>
         </div>
       </div>
 
