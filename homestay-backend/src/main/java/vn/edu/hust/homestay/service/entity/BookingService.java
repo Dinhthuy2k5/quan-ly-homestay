@@ -60,6 +60,7 @@ public class BookingService {
     @Column(name = "requested_by", nullable = false)
     private Long requestedBy;
 
+    /** Manager who confirms that a REGISTERED service was actually used; remains null before that confirmation. */
     @Column(name = "recorded_by")
     private Long recordedBy;
 

@@ -114,16 +114,6 @@ public class CustomerBookingServiceService {
             Set<Long> bookedRoomIds,
             List<CustomerBookingServiceSelectionRequest> selections
     ) {
-        createInitialServices(booking, requestedBy, null, bookedRoomIds, selections);
-    }
-
-    public void createInitialServices(
-            Booking booking,
-            Long requestedBy,
-            Long recordedBy,
-            Set<Long> bookedRoomIds,
-            List<CustomerBookingServiceSelectionRequest> selections
-    ) {
         if (selections == null || selections.isEmpty()) {
             return;
         }
@@ -134,7 +124,6 @@ public class CustomerBookingServiceService {
             Service service = findActiveService(selection.serviceId(), booking.getHomestayId());
             BookingService bs = createBookingService(booking, selection.roomId(), service, selection.quantity(),
                     selection.serviceDate(), selection.note(), requestedBy);
-            bs.setRecordedBy(recordedBy);
             return bs;
         }).toList();
         bookingServiceRepository.saveAllAndFlush(bookingServices);

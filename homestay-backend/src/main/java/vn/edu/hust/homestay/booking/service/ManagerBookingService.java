@@ -370,7 +370,7 @@ public class ManagerBookingService {
 
         // 11. Lưu các dịch vụ đăng ký kèm đơn (nếu có)
         Long requestedBy = customerId != null ? customerId : principal.getId();
-        bookingServiceOperations.createInitialServices(savedBooking, requestedBy, principal.getId(),
+        bookingServiceOperations.createInitialServices(savedBooking, requestedBy,
                 Set.copyOf(sortedRoomIds), request.services());
 
         OffsetDateTime holdExpiresAtOffset = holdExpiresAtUtc.atOffset(ZoneOffset.UTC)
@@ -860,20 +860,20 @@ public class ManagerBookingService {
             ManagerBookServiceRequest request
     ) {
         Long homestayId = validateAndGetHomestayId(principal);
-        Booking booking = bookingRepository.findById(bookingId)
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
                 .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
         if (!homestayId.equals(booking.getHomestayId())) {
             throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
         }
 
-        if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.CHECKED_OUT) {
-            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng đã kết thúc hoặc đã hủy, không thể đặt thêm dịch vụ");
-        }
-        if (booking.getStatus() == BookingStatus.PENDING_DEPOSIT) {
-            if (booking.getHoldExpiresAt() != null
-                    && !booking.getHoldExpiresAt().isAfter(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC))) {
-                throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng đang giữ chỗ đã quá hạn thanh toán");
-            }
+        boolean bookingAcceptsServices = switch (booking.getStatus()) {
+            case PENDING_DEPOSIT -> booking.getHoldExpiresAt() != null
+                    && booking.getHoldExpiresAt().isAfter(LocalDateTime.now(ZoneOffset.UTC));
+            case PENDING_APPROVAL, CONFIRMED, CHECKED_IN -> true;
+            case CANCELLED, EXPIRED, CHECKED_OUT -> false;
+        };
+        if (!bookingAcceptsServices) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Đơn đặt phòng không còn nhận đăng ký dịch vụ");
         }
 
         if (!bookingRoomRepository.existsByBookingIdAndRoomId(booking.getId(), request.roomId())) {
@@ -914,7 +914,6 @@ public class ManagerBookingService {
         bookingService.setServiceDate(request.serviceDate());
         bookingService.setNote(request.note() != null && !request.note().isBlank() ? request.note().trim() : null);
         bookingService.setRequestedBy(booking.getCustomerId() != null ? booking.getCustomerId() : principal.getId());
-        bookingService.setRecordedBy(principal.getId());
 
         BookingService saved = bookingServiceRepository.saveAndFlush(bookingService);
         return ManagerBookingServiceResponse.from(saved, service.getName(), totalPrice);
@@ -932,13 +931,19 @@ public class ManagerBookingService {
             Long bookingServiceId
     ) {
         Long homestayId = validateAndGetHomestayId(principal);
-        Booking booking = bookingRepository.findById(bookingId)
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
                 .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
         if (!homestayId.equals(booking.getHomestayId())) {
             throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
         }
 
-        BookingService bookingService = bookingServiceRepository.findByIdAndBookingId(bookingServiceId, booking.getId())
+        if (booking.getStatus() == BookingStatus.CANCELLED
+                || booking.getStatus() == BookingStatus.EXPIRED
+                || booking.getStatus() == BookingStatus.CHECKED_OUT) {
+            throw BusinessException.conflict("SERVICE_CANCELLATION_NOT_ALLOWED", "Không thể hủy dịch vụ sau khi booking kết thúc");
+        }
+
+        BookingService bookingService = bookingServiceRepository.findByIdAndBookingIdForUpdate(bookingServiceId, booking.getId())
                 .orElseThrow(() -> BusinessException.notFound("SERVICE_LINE_NOT_FOUND", "Không tìm thấy dòng dịch vụ cần hủy"));
 
         if (bookingService.getStatus() == BookingService.BookingServiceStatus.USED) {
