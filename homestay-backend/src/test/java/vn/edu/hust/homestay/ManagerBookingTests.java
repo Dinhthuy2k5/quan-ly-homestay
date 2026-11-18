@@ -317,7 +317,7 @@ class ManagerBookingTests {
         booking.setHoldExpiresAt(LocalDateTime.ofInstant(Instant.now().plusSeconds(86400), ZoneOffset.UTC));
         booking.setPolicySnapshot("{}");
         booking.setCreatedBy(manager1.getId());
-        if (status == BookingStatus.CONFIRMED) {
+        if (status == BookingStatus.CONFIRMED || status == BookingStatus.CHECKED_IN || status == BookingStatus.CHECKED_OUT) {
             booking.setApprovedBy(manager1.getId());
             booking.setApprovedAt(Instant.now());
         }
@@ -2219,5 +2219,187 @@ class ManagerBookingTests {
                         .header("Authorization", "Bearer " + tokenMgr2))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code", is("HOMESTAY_SCOPE_VIOLATION")));
+    }
+
+    // =========================================================================
+    // API-MGR-STAY-01: Check-in (Nhận phòng)
+    // =========================================================================
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thành công cho booking CONFIRMED không có body")
+    void checkIn_ConfirmedBooking_Success() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(210);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-01-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800001", "Khách CheckIn 1", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.status", is("CHECKED_IN")));
+
+        Booking updated = bookingRepository.findById(booking.getId()).orElseThrow();
+        assertEquals(BookingStatus.CHECKED_IN, updated.getStatus());
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thành công với actualGuestCount và note")
+    void checkIn_WithActualGuestCountAndNote_Success() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(215);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-02-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800002", "Khách CheckIn 2", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        String body = """
+                {
+                    "actualGuestCount": 1,
+                    "note": "Đã kiểm tra CCCD, nhận phòng sớm"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.status", is("CHECKED_IN")));
+
+        Booking updated = bookingRepository.findById(booking.getId()).orElseThrow();
+        assertEquals(BookingStatus.CHECKED_IN, updated.getStatus());
+        assertEquals(1, (int) updated.getGuestCount());
+        assertTrue(updated.getNote() != null && updated.getNote().contains("Đã kiểm tra CCCD, nhận phòng sớm"));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại khi actualGuestCount vượt quá sức chứa phòng - 400 ROOM_CAPACITY_EXCEEDED")
+    void checkIn_ExceedCapacity_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(220);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-03-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800003", "Khách CheckIn 3", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        // Gửi số khách vượt quá sức chứa tối đa của phòng
+        String body = String.format("""
+                {
+                    "actualGuestCount": %d,
+                    "note": "Đi đông người"
+                }
+                """, (int) room1.getMaxGuests() + 5);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("ROOM_CAPACITY_EXCEEDED")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại khi booking không ở trạng thái CONFIRMED - 409 BOOKING_STATE_CONFLICT")
+    void checkIn_WrongStatus_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(225);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-04-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800004", "Khách CheckIn 4", checkIn, checkOut, BookingStatus.PENDING_DEPOSIT);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("BOOKING_STATE_CONFLICT")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại khi booking đã CHECKED_IN - 409 BOOKING_STATE_CONFLICT")
+    void checkIn_AlreadyCheckedIn_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(230);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-05-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800005", "Khách CheckIn 5", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("BOOKING_STATE_CONFLICT")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại khi booking thuộc cơ sở homestay khác - 403 HOMESTAY_SCOPE_VIOLATION")
+    void checkIn_WrongHomestay_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(235);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-06-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800006", "Khách CheckIn 6", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        // tokenMgr2 thuộc homestay 2
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr2))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_SCOPE_VIOLATION")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại khi manager chưa được phân công cơ sở - 400 HOMESTAY_NOT_ASSIGNED")
+    void checkIn_UnassignedManager_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(240);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-07-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800007", "Khách CheckIn 7", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        User unassigned = userRepository.saveAndFlush(User.builder()
+                .email("unassigned.mgr.checkin." + UUID.randomUUID() + "@homestay.vn")
+                .passwordHash("hashed")
+                .fullName("Quản lý chưa gán")
+                .phone("0988000778")
+                .role(Role.MANAGER)
+                .status(UserStatus.ACTIVE)
+                .build());
+        String unassignedToken = jwtService.generateAccessToken(unassigned);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + unassignedToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_NOT_ASSIGNED")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Khách hàng hoặc người chưa đăng nhập không thể gọi API check-in - 401/403")
+    void checkIn_CustomerOrAnonymous_Fails() throws Exception {
+        // 1. Chưa đăng nhập -> 401
+        mockMvc.perform(post("/api/v1/manager/bookings/1/check-in"))
+                .andExpect(status().isUnauthorized());
+
+        // 2. Customer -> 403
+        User customer = userRepository.saveAndFlush(User.builder()
+                .email("cust.access.mgr.checkin." + UUID.randomUUID() + "@example.com")
+                .passwordHash("hashed")
+                .fullName("Khách hàng thường")
+                .phone("0988000889")
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .build());
+        String custToken = jwtService.generateAccessToken(customer);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/1/check-in")
+                        .header("Authorization", "Bearer " + custToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in đơn không tồn tại - 404 BOOKING_NOT_FOUND")
+    void checkIn_NotFound_Fails() throws Exception {
+        mockMvc.perform(post("/api/v1/manager/bookings/999999/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("BOOKING_NOT_FOUND")));
     }
 }

@@ -11,6 +11,7 @@ import {
   DoorOpen,
   Edit3,
   FileText,
+  LogIn,
   Mail,
   Phone,
   Plus,
@@ -23,7 +24,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { bookManagerServiceApi, cancelManagerBookingApi, cancelManagerServiceApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, getManagerServicesApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
+import { bookManagerServiceApi, cancelManagerBookingApi, cancelManagerServiceApi, checkInManagerBookingApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, getManagerServicesApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
 import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import BankSelect from '../../../components/ui/BankSelect';
@@ -103,6 +104,22 @@ export default function ManagerBookingDetailPage() {
   const [cancelServiceId, setCancelServiceId] = useState(null); // bookingServiceId đang chờ xác nhận hủy
   const [cancelServiceSubmitting, setCancelServiceSubmitting] = useState(false);
   const [cancelServiceError, setCancelServiceError] = useState('');
+
+  const [checkInModalOpen, setCheckInModalOpen] = useState(false);
+  const [actualGuestCount, setActualGuestCount] = useState(1);
+  const [checkInNote, setCheckInNote] = useState('');
+  const [checkInSubmitting, setCheckInSubmitting] = useState(false);
+  const [checkInError, setCheckInError] = useState('');
+
+  useEffect(() => {
+    if (booking && booking.status === 'CONFIRMED' && location.state?.openCheckIn) {
+      setCheckInError('');
+      setCheckInNote('');
+      setActualGuestCount(booking.guestCount || 1);
+      setCheckInModalOpen(true);
+      window.history.replaceState({}, document.title);
+    }
+  }, [booking, location.state]);
 
   useEffect(() => {
     let active = true;
@@ -242,6 +259,7 @@ export default function ManagerBookingDetailPage() {
   const totalServicesPrice = (booking?.services || [])
     .filter((s) => s.status !== 'CANCELLED')
     .reduce((sum, s) => sum + Number(s.totalPrice || 0), 0);
+  const totalRoomsCapacity = (booking?.rooms || []).reduce((sum, r) => sum + Number(r.maxGuests || 0), 0);
 
   const handleOpenBookServiceModal = async () => {
     setBookServiceError('');
@@ -409,6 +427,44 @@ export default function ManagerBookingDetailPage() {
     }
   };
 
+  const handleOpenCheckInModal = () => {
+    setCheckInError('');
+    setCheckInNote('');
+    setActualGuestCount(booking?.guestCount || 1);
+    setCheckInModalOpen(true);
+  };
+
+  const handleCheckIn = async (e) => {
+    e.preventDefault();
+    setCheckInError('');
+
+    const count = Number(actualGuestCount);
+    if (!count || count < 1) {
+      setCheckInError('Số lượng khách thực tế phải lớn hơn hoặc bằng 1.');
+      return;
+    }
+    if (totalRoomsCapacity > 0 && count > totalRoomsCapacity) {
+      setCheckInError(`Số lượng khách (${count}) vượt quá tổng sức chứa tối đa của các phòng đã đặt (${totalRoomsCapacity} khách).`);
+      return;
+    }
+
+    setCheckInSubmitting(true);
+    try {
+      await checkInManagerBookingApi(booking.id, {
+        actualGuestCount: count,
+        note: checkInNote?.trim() || undefined,
+      });
+      setCheckInModalOpen(false);
+      setCheckInNote('');
+      setAdjustSuccessToast('Ghi nhận nhận phòng (Check-in) thành công! Khách đang lưu trú tại cơ sở.');
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setCheckInError(getErrorMessage(err) || 'Không thể thực hiện nhận phòng. Vui lòng thử lại.');
+    } finally {
+      setCheckInSubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="w-full space-y-6 animate-pulse pb-12">
@@ -462,6 +518,16 @@ export default function ManagerBookingDetailPage() {
         </Link>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {booking.status === 'CONFIRMED' && (
+            <button
+              type="button"
+              onClick={handleOpenCheckInModal}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs cursor-pointer"
+            >
+              <LogIn className="h-4 w-4" />
+              <span>Check-in nhận phòng</span>
+            </button>
+          )}
           {(booking.status === 'PENDING_DEPOSIT' || booking.status === 'CONFIRMED') && (
             <button
               type="button"
@@ -996,6 +1062,40 @@ export default function ManagerBookingDetailPage() {
             )}
           </div>
 
+          {/* Ready for Check-in Card (When CONFIRMED) */}
+          {booking.status === 'CONFIRMED' && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-xs space-y-3">
+              <div className="flex items-center gap-2.5 text-emerald-900 font-bold text-sm sm:text-base">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                <span>Sẵn sàng nhận phòng (Check-in)</span>
+              </div>
+              <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed">
+                Đơn đã được xác nhận. Khi khách đến cơ sở homestay, hãy đối chiếu thông tin và nhấn nút bên dưới để ghi nhận nhận phòng (chuyển sang <strong>Đang lưu trú</strong>).
+              </p>
+              <button
+                type="button"
+                onClick={handleOpenCheckInModal}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs cursor-pointer"
+              >
+                <LogIn className="h-4 w-4" />
+                <span>Tiến hành Check-in nhận phòng</span>
+              </button>
+            </div>
+          )}
+
+          {/* In-Stay Info Card (When CHECKED_IN) */}
+          {booking.status === 'CHECKED_IN' && (
+            <div className="rounded-2xl border border-teal-200 bg-teal-50/70 p-5 shadow-xs space-y-2">
+              <div className="flex items-center gap-2.5 text-teal-900 font-bold text-sm sm:text-base">
+                <DoorOpen className="h-5 w-5 text-teal-600 shrink-0" />
+                <span>Khách đang lưu trú tại cơ sở</span>
+              </div>
+              <p className="text-xs sm:text-sm text-teal-800 leading-relaxed">
+                Đơn đặt phòng đang trong giai đoạn phục vụ lưu trú. Quản lý có thể đặt thêm dịch vụ hỗ trợ khách và tiến hành thanh toán phần còn lại / trả phòng (Check-out) khi kỳ lưu trú kết thúc.
+              </p>
+            </div>
+          )}
+
           {/* Card: Hướng dẫn chuyển khoản nộp cọc (Chỉ hiển thị khi PENDING_DEPOSIT) */}
           {booking.paymentInstruction && (
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-5 sm:p-6 shadow-xs space-y-4">
@@ -1479,6 +1579,147 @@ export default function ManagerBookingDetailPage() {
               </button>
               <button type="submit" disabled={cancelSubmitting || !selectedCancelReason || (selectedCancelReason === 'OTHER' && !otherCancelReason.trim())} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-rose-700 px-4 text-sm font-bold text-white hover:bg-rose-800 disabled:opacity-50">
                 <XCircle className="h-4 w-4" /> {cancelSubmitting ? 'Đang hủy…' : 'Xác nhận hủy booking'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Xác nhận nhận phòng (Check-in) */}
+      {checkInModalOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !checkInSubmitting) {
+              setCheckInModalOpen(false);
+            }
+          }}
+        >
+          <form
+            onSubmit={handleCheckIn}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="check-in-modal-title"
+            className="w-full max-w-lg space-y-5 rounded-t-2xl bg-white p-5 shadow-[var(--shadow-2)] sm:rounded-2xl sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-100 text-emerald-700 shrink-0">
+                  <LogIn className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 id="check-in-modal-title" className="text-lg font-bold text-[var(--color-ink)]">
+                    Xác nhận nhận phòng (Check-in)
+                  </h3>
+                  <p className="text-xs text-[var(--color-muted)]">
+                    Ghi nhận khách đã đến và nhận phòng lưu trú tại homestay
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={checkInSubmitting}
+                onClick={() => setCheckInModalOpen(false)}
+                className="rounded-lg p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-soft)] transition-colors cursor-pointer"
+                aria-label="Đóng"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Room and stay information card */}
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 space-y-2 text-xs sm:text-sm">
+              <div className="flex justify-between items-center text-[var(--color-body)]">
+                <span className="text-[var(--color-muted)]">Mã đặt phòng:</span>
+                <span className="font-mono font-bold text-[var(--color-ink)]">#{booking.code}</span>
+              </div>
+              <div className="flex justify-between items-center text-[var(--color-body)]">
+                <span className="text-[var(--color-muted)]">Khách liên hệ:</span>
+                <span className="font-semibold text-[var(--color-ink)]">{booking.contactName} ({booking.contactPhone})</span>
+              </div>
+              <div className="flex justify-between items-center text-[var(--color-body)]">
+                <span className="text-[var(--color-muted)]">Kỳ lưu trú:</span>
+                <span className="font-semibold text-[var(--color-ink)]">
+                  {nights} đêm ({formatDate(booking.checkInDate)} – {formatDate(booking.checkOutDate)})
+                </span>
+              </div>
+              <div className="flex justify-between items-start text-[var(--color-body)]">
+                <span className="text-[var(--color-muted)] shrink-0">Phòng nhận:</span>
+                <span className="font-semibold text-[var(--color-ink)] text-right">
+                  {booking.rooms?.map((r) => r.roomName || `Phòng #${r.roomId}`).join(', ') || '—'}
+                </span>
+              </div>
+              {totalRoomsCapacity > 0 && (
+                <div className="flex justify-between items-center pt-1 border-t border-[var(--color-border)] text-xs">
+                  <span className="text-[var(--color-muted)]">Tổng sức chứa các phòng:</span>
+                  <span className="font-bold text-emerald-700">{totalRoomsCapacity} khách</span>
+                </div>
+              )}
+            </div>
+
+            {/* Inputs */}
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="actualGuestCountInput" className="block text-xs font-bold uppercase tracking-wider text-[var(--color-ink)] mb-1.5">
+                  Số khách thực tế nhận phòng <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  id="actualGuestCountInput"
+                  type="number"
+                  min={1}
+                  max={totalRoomsCapacity > 0 ? totalRoomsCapacity : 99}
+                  required
+                  value={actualGuestCount}
+                  onChange={(e) => setActualGuestCount(e.target.value)}
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm font-semibold text-[var(--color-ink)] focus:border-[var(--color-primary)] outline-none"
+                />
+                <p className="mt-1 text-xs text-[var(--color-muted)]">
+                  Số khách đã đặt ban đầu: <strong>{booking.guestCount}</strong> khách.
+                  {totalRoomsCapacity > 0 && ` Tối đa cho phép: ${totalRoomsCapacity} khách.`}
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="checkInNoteInput" className="block text-xs font-bold uppercase tracking-wider text-[var(--color-ink)] mb-1.5">
+                  Ghi chú khi nhận phòng (tùy chọn)
+                </label>
+                <input
+                  id="checkInNoteInput"
+                  type="text"
+                  maxLength={255}
+                  value={checkInNote}
+                  onChange={(e) => setCheckInNote(e.target.value)}
+                  placeholder="VD: Đã kiểm tra CCCD, nhận phòng đúng giờ, giao 2 chìa khóa..."
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-ink)] focus:border-[var(--color-primary)] outline-none"
+                />
+                <p className="mt-1 text-2xs text-[var(--color-muted)] text-right">
+                  {checkInNote.length}/255 ký tự
+                </p>
+              </div>
+            </div>
+
+            {checkInError && (
+              <div role="alert" className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                {checkInError}
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2">
+              <button
+                type="button"
+                disabled={checkInSubmitting}
+                onClick={() => setCheckInModalOpen(false)}
+                className="min-h-11 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] cursor-pointer transition-colors"
+              >
+                Quay lại
+              </button>
+              <button
+                type="submit"
+                disabled={checkInSubmitting}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 cursor-pointer transition-all shadow-xs"
+              >
+                <LogIn className="h-4 w-4" />
+                <span>{checkInSubmitting ? 'Đang xử lý…' : 'Xác nhận Check-in'}</span>
               </button>
             </div>
           </form>

@@ -11,6 +11,7 @@ import {
   Clock,
   Copy,
   Edit3,
+  LogIn,
   Mail,
   Phone,
   RefreshCw,
@@ -501,6 +502,17 @@ export default function ManagerBookingsPage() {
 
                   <div className="flex items-center gap-2">
                     <StatusBadge type="booking" status={booking.status} />
+                    {booking.status === 'CONFIRMED' && (
+                      <Link
+                        to={`/manager/bookings/${booking.id}`}
+                        state={{ openCheckIn: true }}
+                        className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors shadow-2xs"
+                        title="Tiến hành nhận phòng cho khách"
+                      >
+                        <LogIn className="h-3.5 w-3.5" />
+                        <span>Nhận phòng</span>
+                      </Link>
+                    )}
                     {booking.source === 'MANAGER' && (booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
                       <Link
                         to={`/manager/bookings/${booking.id}/adjust`}

@@ -34,6 +34,8 @@ import vn.edu.hust.homestay.booking.dto.DepositReviewRequest;
 import vn.edu.hust.homestay.booking.dto.DepositReviewResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CheckInBookingRequest;
+import vn.edu.hust.homestay.booking.dto.CheckInBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
 import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositResponse;
@@ -183,6 +185,17 @@ public class ManagerBookingController {
             @Valid @RequestBody ManagerCancelBookingRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.ok(managerBookingService.cancelBooking(principal, bookingId, request)));
+    }
+
+    @Operation(summary = "API-MGR-STAY-01: Ghi nhận khách check-in (nhận phòng)")
+    @PostMapping("/{bookingId}/check-in")
+    public ResponseEntity<ApiResponse<CheckInBookingResponse>> checkIn(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @Valid @RequestBody(required = false) CheckInBookingRequest request
+    ) {
+        CheckInBookingResponse response = managerBookingService.checkIn(principal, bookingId, request);
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     @Operation(summary = "API-MGR-SVC-05: Đặt dịch vụ hộ khách")

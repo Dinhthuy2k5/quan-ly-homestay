@@ -335,6 +335,22 @@ export async function cancelManagerBookingApi(bookingId, { reason, requestedByCu
   return res.data?.data || null;
 }
 
+/**
+ * API-MGR-STAY-01: Ghi nhận khách check-in (nhận phòng).
+ * Chỉ áp dụng cho đơn ở trạng thái CONFIRMED thuộc homestay do Manager phụ trách.
+ */
+export async function checkInManagerBookingApi(bookingId, { actualGuestCount, note } = {}) {
+  const payload = {};
+  if (actualGuestCount !== undefined && actualGuestCount !== null && actualGuestCount !== '') {
+    payload.actualGuestCount = Number(actualGuestCount);
+  }
+  if (note && note.trim()) {
+    payload.note = note.trim();
+  }
+  const res = await apiClient.post(`/manager/bookings/${bookingId}/check-in`, payload);
+  return res.data?.data || null;
+}
+
 /** Tải riêng tư chứng từ đặt cọc để Manager đối chiếu giao dịch. */
 export async function fetchManagerDepositProofApi(bookingId, paymentId) {
   const res = await apiClient.get(`/manager/bookings/${bookingId}/payments/${paymentId}/proof`, {

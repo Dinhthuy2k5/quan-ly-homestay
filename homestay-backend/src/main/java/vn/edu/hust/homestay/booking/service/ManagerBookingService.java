@@ -29,6 +29,8 @@ import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositResponse;
 import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CheckInBookingRequest;
+import vn.edu.hust.homestay.booking.dto.CheckInBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
 import vn.edu.hust.homestay.booking.entity.Booking;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
@@ -1281,6 +1283,59 @@ public class ManagerBookingService {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize booking policy snapshot", exception);
         }
+    }
+
+    /**
+     * API-MGR-STAY-01: Ghi nhận khách check-in (nhận phòng).
+     * Chỉ cho phép đơn đặt phòng ở trạng thái CONFIRMED và thuộc cơ sở homestay quản lý.
+     */
+    @Transactional
+    public CheckInBookingResponse checkIn(UserPrincipal principal, Long bookingId, CheckInBookingRequest request) {
+        Long homestayId = validateAndGetHomestayId(principal);
+
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+
+        if (!homestayId.equals(booking.getHomestayId())) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Chỉ cho phép check-in với đơn đặt phòng ở trạng thái đã xác nhận (CONFIRMED)");
+        }
+
+        if (request != null) {
+            if (request.actualGuestCount() != null) {
+                if (request.actualGuestCount() <= 0) {
+                    throw BusinessException.badRequest("INVALID_GUEST_COUNT", "Số lượng khách thực tế phải lớn hơn 0");
+                }
+                List<BookingRoom> bookingRooms = bookingRoomRepository.findByBookingId(booking.getId());
+                List<Long> roomIds = bookingRooms.stream().map(BookingRoom::getRoomId).toList();
+                List<Room> rooms = roomRepository.findAllById(roomIds);
+                int totalCapacity = rooms.stream().mapToInt(r -> Byte.toUnsignedInt(r.getMaxGuests())).sum();
+                if (request.actualGuestCount() > totalCapacity) {
+                    throw BusinessException.badRequest(
+                            "ROOM_CAPACITY_EXCEEDED",
+                            "Số khách thực tế (" + request.actualGuestCount() + ") vượt quá tổng sức chứa của các phòng trong đơn (" + totalCapacity + " khách)"
+                    );
+                }
+                booking.setGuestCount(request.actualGuestCount().shortValue());
+            }
+
+            if (request.note() != null && !request.note().isBlank()) {
+                String notePrefix = (booking.getNote() != null && !booking.getNote().isBlank()) ? booking.getNote() + " | " : "";
+                String updatedNote = notePrefix + "Check-in: " + request.note().trim();
+                if (updatedNote.length() > 500) {
+                    updatedNote = updatedNote.substring(0, 497) + "...";
+                }
+                booking.setNote(updatedNote);
+            }
+        }
+
+        booking.setStatus(BookingStatus.CHECKED_IN);
+        Booking saved = bookingRepository.saveAndFlush(booking);
+
+        return new CheckInBookingResponse(saved.getId(), saved.getStatus());
     }
 
     private String generateBookingCode(LocalDate checkInDate) {
