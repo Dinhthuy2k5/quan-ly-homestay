@@ -12,6 +12,7 @@ import {
   Edit3,
   FileText,
   LogIn,
+  LogOut,
   Mail,
   Phone,
   Plus,
@@ -24,7 +25,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { bookManagerServiceApi, cancelManagerBookingApi, cancelManagerServiceApi, checkInManagerBookingApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, getManagerServicesApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
+import { bookManagerServiceApi, cancelManagerBookingApi, cancelManagerServiceApi, checkInManagerBookingApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, getManagerBookingBalanceApi, getManagerServicesApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
 import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import BankSelect from '../../../components/ui/BankSelect';
@@ -32,6 +33,7 @@ import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
 import { validateBankAccountNumber, validateBankAccountHolder, normalizeBankAccountHolder } from '../../../lib/validation';
+import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 
 const CUSTOMER_CANCELLATION_REASONS = [
   'Khách thay đổi kế hoạch chuyến đi',
@@ -50,6 +52,7 @@ export default function ManagerBookingDetailPage() {
   const location = useLocation();
 
   const [booking, setBooking] = useState(null);
+  const [balance, setBalance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
@@ -113,12 +116,13 @@ export default function ManagerBookingDetailPage() {
 
   useEffect(() => {
     if (booking && booking.status === 'CONFIRMED' && location.state?.openCheckIn) {
-      const today = (() => {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      })();
-      const tooEarly = booking.checkInDate && today < booking.checkInDate;
-      const expired = booking.checkOutDate && today >= booking.checkOutDate;
+      const now = new Date();
+      const currentDateTimeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const checkInStartStr = booking.checkInDate ? `${booking.checkInDate}T${CHECK_IN_TIME}` : null;
+
+      const tooEarly = Boolean(checkInStartStr && currentDateTimeStr < checkInStartStr);
+      const expired = Boolean(booking.checkOutDate && today >= booking.checkOutDate);
       if (!tooEarly && !expired) {
         setCheckInError('');
         setCheckInNote('');
@@ -130,12 +134,23 @@ export default function ManagerBookingDetailPage() {
   }, [booking, location.state]);
 
   useEffect(() => {
+    if (booking && booking.status === 'CHECKED_IN' && location.state?.openCheckOut) {
+      window.history.replaceState({}, document.title);
+      navigate(`/manager/bookings/${booking.id}/check-out`, { replace: true, state: { booking } });
+    }
+  }, [booking, location.state, navigate]);
+
+  useEffect(() => {
     let active = true;
 
-    fetchManagerBookingDetailApi(bookingId)
-      .then((data) => {
+    Promise.all([
+      fetchManagerBookingDetailApi(bookingId),
+      getManagerBookingBalanceApi(bookingId).catch(() => null),
+    ])
+      .then(([bookingData, balanceData]) => {
         if (!active) return;
-        setBooking(data);
+        setBooking(bookingData);
+        setBalance(balanceData);
         setError('');
       })
       .catch((err) => {
@@ -277,10 +292,27 @@ export default function ManagerBookingDetailPage() {
     return `${year}-${month}-${day}`;
   };
   const todayStr = getTodayStr();
-  const isCheckInTooEarly = Boolean(booking?.checkInDate && todayStr < booking.checkInDate);
+
+  const now = new Date();
+  const currentDateTimeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  const checkInStartStr = booking?.checkInDate ? `${booking.checkInDate}T${CHECK_IN_TIME}` : null;
+  const stayEndStr = booking?.checkOutDate ? `${booking.checkOutDate}T${CHECK_OUT_DEADLINE}` : null;
+
+  const isCheckInTooEarly = Boolean(checkInStartStr && currentDateTimeStr < checkInStartStr);
   const isCheckInExpired = Boolean(booking?.checkOutDate && todayStr >= booking.checkOutDate);
-  const isLateCheckIn = Boolean(booking?.checkInDate && booking?.checkOutDate && todayStr > booking.checkInDate && todayStr < booking.checkOutDate);
+  const isLateCheckIn = Boolean(
+    booking?.checkInDate &&
+    booking?.checkOutDate &&
+    checkInStartStr &&
+    currentDateTimeStr > `${booking.checkInDate}T23:59` &&
+    todayStr < booking.checkOutDate
+  );
   const canCheckIn = Boolean(booking?.status === 'CONFIRMED' && !isCheckInTooEarly && !isCheckInExpired);
+
+  const isCheckOutExpired = Boolean(stayEndStr && currentDateTimeStr > stayEndStr);
+  const isCheckOutTooEarly = Boolean(checkInStartStr && currentDateTimeStr < checkInStartStr);
+  const canCheckOut = Boolean(booking?.status === 'CHECKED_IN' && !isCheckOutExpired && !isCheckOutTooEarly);
 
   const handleOpenBookServiceModal = async () => {
     setBookServiceError('');
@@ -450,11 +482,11 @@ export default function ManagerBookingDetailPage() {
 
   const handleOpenCheckInModal = () => {
     if (isCheckInTooEarly) {
-      setCheckInError(`Chưa đến ngày nhận phòng (${formatDate(booking.checkInDate)}). Không thể check-in sớm.`);
+      setCheckInError(`Chưa đến giờ nhận phòng (từ ${CHECK_IN_TIME} ngày ${formatDate(booking.checkInDate)}). Không thể check-in sớm.`);
       return;
     }
     if (isCheckInExpired) {
-      setCheckInError(`Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: ${formatDate(booking.checkOutDate)}). Không thể check-in.`);
+      setCheckInError(`Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: ${formatDate(booking.checkOutDate)}). Không thể nhận phòng từ ngày trả phòng trở đi.`);
       return;
     }
     setCheckInError('');
@@ -468,11 +500,11 @@ export default function ManagerBookingDetailPage() {
     setCheckInError('');
 
     if (isCheckInTooEarly) {
-      setCheckInError(`Chưa đến ngày nhận phòng (${formatDate(booking.checkInDate)}). Không thể check-in sớm.`);
+      setCheckInError(`Chưa đến giờ nhận phòng (từ ${CHECK_IN_TIME} ngày ${formatDate(booking.checkInDate)}). Không thể check-in sớm.`);
       return;
     }
     if (isCheckInExpired) {
-      setCheckInError(`Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: ${formatDate(booking.checkOutDate)}). Không thể check-in.`);
+      setCheckInError(`Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: ${formatDate(booking.checkOutDate)}). Không thể nhận phòng từ ngày trả phòng trở đi.`);
       return;
     }
 
@@ -573,18 +605,38 @@ export default function ManagerBookingDetailPage() {
             ) : isCheckInTooEarly ? (
               <div
                 className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800"
-                title={`Chưa đến ngày nhận phòng (${formatDate(booking.checkInDate)})`}
+                title={`Chưa đến giờ nhận phòng (từ ${CHECK_IN_TIME} ngày ${formatDate(booking.checkInDate)})`}
               >
                 <Clock className="h-4 w-4 text-sky-600" />
-                <span>Chờ ngày nhận phòng ({formatDate(booking.checkInDate)})</span>
+                <span>Chờ giờ nhận phòng (từ {CHECK_IN_TIME})</span>
               </div>
             ) : isCheckInExpired ? (
               <div
                 className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
-                title={`Đã quá ngày trả phòng (${formatDate(booking.checkOutDate)})`}
+                title={`Đã kết thúc kỳ lưu trú (ngày trả phòng: ${formatDate(booking.checkOutDate)})`}
               >
                 <AlertCircle className="h-4 w-4 text-rose-600" />
-                <span>Đã quá hạn lưu trú</span>
+                <span>Đã kết thúc kỳ lưu trú</span>
+              </div>
+            ) : null
+          )}
+          {booking.status === 'CHECKED_IN' && (
+            canCheckOut ? (
+              <Link
+                to={`/manager/bookings/${booking.id}/check-out`}
+                state={{ booking }}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 active:scale-[0.98] transition-all shadow-xs"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Check-out trả phòng</span>
+              </Link>
+            ) : isCheckOutExpired ? (
+              <div
+                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+                title={`Đã quá hạn trả phòng (${CHECK_OUT_DEADLINE} ngày ${formatDate(booking.checkOutDate)})`}
+              >
+                <AlertCircle className="h-4 w-4 text-rose-600" />
+                <span>Quá hạn trả phòng ({CHECK_OUT_DEADLINE})</span>
               </div>
             ) : null
           )}
@@ -1072,37 +1124,69 @@ export default function ManagerBookingDetailPage() {
             <div className="space-y-3.5 text-sm sm:text-base">
               <div className="flex justify-between items-center text-[var(--color-body)]">
                 <span className="font-medium">Tổng tiền phòng:</span>
-                <span className="font-bold text-base sm:text-lg text-[var(--color-ink)]">{formatVnd(booking.roomTotalPrice)}</span>
+                <span className="font-bold text-base sm:text-lg text-[var(--color-ink)]">
+                  {formatVnd(balance?.roomTotalPrice ?? booking.roomTotalPrice)}
+                </span>
               </div>
 
-              {totalServicesPrice > 0 && (
+              {((balance?.serviceTotalPrice ?? totalServicesPrice) > 0) && (
                 <div className="flex justify-between items-center text-[var(--color-body)]">
-                  <span className="font-medium">Tiền dịch vụ (tạm tính):</span>
-                  <span className="font-bold text-base sm:text-lg text-[var(--color-ink)]">{formatVnd(totalServicesPrice)}</span>
+                  <span className="font-medium">Tiền dịch vụ (đã dùng):</span>
+                  <span className="font-bold text-base sm:text-lg text-[var(--color-ink)]">
+                    {formatVnd(balance?.serviceTotalPrice ?? totalServicesPrice)}
+                  </span>
+                </div>
+              )}
+
+              {booking.status === 'PENDING_DEPOSIT' && (
+                <div className="flex justify-between items-center text-[var(--color-body)]">
+                  <span className="font-medium">Tiền cọc yêu cầu:</span>
+                  <span className="font-bold text-base sm:text-lg text-[var(--color-primary)]">{formatVnd(booking.depositAmount)}</span>
                 </div>
               )}
 
               <div className="flex justify-between items-center text-[var(--color-body)]">
-                <span className="font-medium">Tiền cọc yêu cầu:</span>
-                <span className="font-bold text-base sm:text-lg text-[var(--color-primary)]">{formatVnd(booking.depositAmount)}</span>
+                <span className="font-medium">Đã thanh toán:</span>
+                <span className="font-bold text-base sm:text-lg text-emerald-600">
+                  {formatVnd(balance?.paidAmount ?? booking.paidAmount)}
+                </span>
               </div>
 
-              <div className="flex justify-between items-center text-[var(--color-body)]">
-                <span className="font-medium">Đã thanh toán:</span>
-                <span className="font-bold text-base sm:text-lg text-emerald-600">{formatVnd(booking.paidAmount)}</span>
-              </div>
+              {Boolean((balance?.refundedAmount || 0) > 0) && (
+                <div className="flex justify-between items-center text-rose-700">
+                  <span className="font-medium">Đã hoàn cọc:</span>
+                  <span className="font-bold text-base sm:text-lg">
+                    {formatVnd(balance.refundedAmount)}
+                  </span>
+                </div>
+              )}
 
               <div className="border-t border-[var(--color-border)] pt-3 flex justify-between items-center">
                 <span className="font-bold text-base sm:text-lg text-[var(--color-ink)]">Còn phải thanh toán:</span>
-                <span className="font-extrabold text-lg sm:text-xl text-amber-600">{formatVnd(booking.outstandingAmount)}</span>
+                {booking.status === 'CANCELLED' || booking.status === 'EXPIRED' ? (
+                  <span className="font-semibold text-sm sm:text-base text-[var(--color-muted)]">
+                    0 ₫ (Đơn đã {booking.status === 'CANCELLED' ? 'hủy' : 'hết hạn'})
+                  </span>
+                ) : (
+                  <span className={`font-extrabold text-lg sm:text-xl ${(balance?.outstandingAmount ?? booking.outstandingAmount) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {(balance?.outstandingAmount ?? booking.outstandingAmount) > 0
+                      ? formatVnd(balance?.outstandingAmount ?? booking.outstandingAmount)
+                      : '0 ₫ (Đã thanh toán đủ)'}
+                  </span>
+                )}
               </div>
 
-              {booking.refundAmount != null && booking.refundAmount > 0 && (
+              {balance?.refundPendingAmount != null && balance.refundPendingAmount > 0 ? (
+                <div className="border-t border-[var(--color-border)] pt-3 flex justify-between items-center text-rose-700">
+                  <span className="font-bold text-sm sm:text-base">Số tiền hoàn còn chờ chi trả:</span>
+                  <span className="font-extrabold text-base sm:text-lg">{formatVnd(balance.refundPendingAmount)}</span>
+                </div>
+              ) : booking.refundAmount != null && booking.refundAmount > 0 ? (
                 <div className="border-t border-[var(--color-border)] pt-3 flex justify-between items-center text-rose-700">
                   <span className="font-bold text-sm sm:text-base">Số tiền hoàn (Hủy đơn):</span>
                   <span className="font-extrabold text-base sm:text-lg">{formatVnd(booking.refundAmount)}</span>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Hold Expiry Alert for PENDING_DEPOSIT */}
@@ -1162,10 +1246,10 @@ export default function ManagerBookingDetailPage() {
               <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-5 shadow-xs space-y-2">
                 <div className="flex items-center gap-2.5 text-rose-900 font-bold text-sm sm:text-base">
                   <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />
-                  <span>Đơn đặt phòng đã quá hạn lưu trú</span>
+                  <span>Đơn đặt phòng đã kết thúc kỳ lưu trú</span>
                 </div>
                 <p className="text-xs sm:text-sm text-rose-800 leading-relaxed">
-                  Kỳ lưu trú đã kết thúc vào ngày <strong>{formatDate(booking.checkOutDate)}</strong>. Khách không đến nhận phòng trong toàn bộ thời gian đã đặt.
+                  Kỳ lưu trú đã kết thúc vào ngày <strong>{formatDate(booking.checkOutDate)}</strong>. Không thể thực hiện nhận phòng từ ngày trả phòng trở đi.
                 </p>
               </div>
             ) : null
@@ -1173,14 +1257,38 @@ export default function ManagerBookingDetailPage() {
 
           {/* In-Stay Info Card (When CHECKED_IN) */}
           {booking.status === 'CHECKED_IN' && (
-            <div className="rounded-2xl border border-teal-200 bg-teal-50/70 p-5 shadow-xs space-y-2">
-              <div className="flex items-center gap-2.5 text-teal-900 font-bold text-sm sm:text-base">
-                <DoorOpen className="h-5 w-5 text-teal-600 shrink-0" />
-                <span>Khách đang lưu trú tại cơ sở</span>
+            <div className={`rounded-2xl border p-5 shadow-xs space-y-3 ${
+              isCheckOutExpired ? 'border-amber-300 bg-amber-50/70' : 'border-indigo-200 bg-indigo-50/70'
+            }`}>
+              <div className="flex items-center gap-2.5 font-bold text-sm sm:text-base">
+                <DoorOpen className={`h-5 w-5 shrink-0 ${isCheckOutExpired ? 'text-amber-700' : 'text-indigo-600'}`} />
+                <span className={isCheckOutExpired ? 'text-amber-950' : 'text-indigo-900'}>
+                  Khách đang lưu trú tại cơ sở
+                </span>
               </div>
-              <p className="text-xs sm:text-sm text-teal-800 leading-relaxed">
-                Đơn đặt phòng đang trong giai đoạn phục vụ lưu trú. Quản lý có thể đặt thêm dịch vụ hỗ trợ khách và tiến hành thanh toán phần còn lại / trả phòng (Check-out) khi kỳ lưu trú kết thúc.
+              <p className={`text-xs sm:text-sm leading-relaxed ${isCheckOutExpired ? 'text-amber-900' : 'text-indigo-800'}`}>
+                Đơn đặt phòng đang trong giai đoạn phục vụ lưu trú. Quản lý có thể kiểm tra danh sách dịch vụ đã dùng, quyết toán tiền phòng và dịch vụ khi khách hoàn tất lưu trú.
               </p>
+              {isCheckOutExpired ? (
+                <div className="rounded-xl border border-amber-300 bg-white p-3.5 text-xs text-amber-950 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center gap-1.5 font-bold text-rose-700">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>Đã quá hạn trả phòng ({CHECK_OUT_DEADLINE} ngày {formatDate(booking.checkOutDate)})</span>
+                  </div>
+                  <p className="text-2xs text-[var(--color-muted)] leading-relaxed">
+                    Theo quy định, thời hạn trả phòng không được muộn hơn {CHECK_OUT_DEADLINE} ngày kết thúc lưu trú. Hiện đã quá khung giờ cho phép check-out tiêu chuẩn. Vui lòng liên hệ quản trị viên hoặc đối soát lại thông tin đơn.
+                  </p>
+                </div>
+              ) : (
+                <Link
+                  to={`/manager/bookings/${booking.id}/check-out`}
+                  state={{ booking }}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 active:scale-[0.98] transition-all shadow-xs text-center"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Tiến hành Check-out (Trả phòng & Quyết toán)</span>
+                </Link>
+              )}
             </div>
           )}
 

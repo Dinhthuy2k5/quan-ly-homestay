@@ -29,6 +29,7 @@ import ManagerBookingsPage from './features/manager/pages/ManagerBookingsPage';
 import ManagerCreateBookingPage from './features/manager/pages/ManagerCreateBookingPage';
 import ManagerBookingDetailPage from './features/manager/pages/ManagerBookingDetailPage';
 import ManagerAdjustBookingPage from './features/manager/pages/ManagerAdjustBookingPage';
+import ManagerCheckOutBookingPage from './features/manager/pages/ManagerCheckOutBookingPage';
 import ManagerServicesPage from './features/manager/pages/ManagerServicesPage';
 import ManagerCreateServicePage from './features/manager/pages/ManagerCreateServicePage';
 import ManagerEditServicePage from './features/manager/pages/ManagerEditServicePage';
@@ -128,6 +129,7 @@ export function App() {
               <Route path="bookings/create" element={<ManagerCreateBookingPage />} />
               <Route path="bookings/:bookingId" element={<ManagerBookingDetailPage />} />
               <Route path="bookings/:bookingId/adjust" element={<ManagerAdjustBookingPage />} />
+              <Route path="bookings/:bookingId/check-out" element={<ManagerCheckOutBookingPage />} />
               <Route path="rooms" element={<ManagerRoomsPage />} />
               <Route path="rooms/:roomId" element={<ManagerRoomDetailPage />} />
               <Route path="room-types" element={<ManagerRoomTypesPage />} />

@@ -31,6 +31,9 @@ import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CheckInBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CheckInBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CheckOutBookingRequest;
+import vn.edu.hust.homestay.booking.dto.CheckOutBookingResponse;
+import vn.edu.hust.homestay.booking.dto.BookingBalanceResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
 import vn.edu.hust.homestay.booking.entity.Booking;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
@@ -69,9 +72,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.Normalizer;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -157,6 +162,38 @@ public class ManagerBookingService {
         this.bookingServiceRepository = bookingServiceRepository;
         this.serviceRepository = serviceRepository;
         this.privateUploadRoot = Paths.get(privateUploadDir).toAbsolutePath().normalize();
+    }
+
+    private Clock clock = Clock.system(BUSINESS_TIME_ZONE);
+
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    private LocalTime getStayCheckInTime() {
+        return policySettingRepository.findByPolicyGroupAndPolicyKey("STAY", "check_in_time")
+                .map(PolicySetting::getPolicyValue)
+                .map(val -> {
+                    try {
+                        return LocalTime.parse(val.trim());
+                    } catch (Exception e) {
+                        return LocalTime.of(11, 0);
+                    }
+                })
+                .orElse(LocalTime.of(11, 0));
+    }
+
+    private LocalTime getStayCheckOutDeadline() {
+        return policySettingRepository.findByPolicyGroupAndPolicyKey("STAY", "check_out_deadline")
+                .map(PolicySetting::getPolicyValue)
+                .map(val -> {
+                    try {
+                        return LocalTime.parse(val.trim());
+                    } catch (Exception e) {
+                        return LocalTime.of(8, 0);
+                    }
+                })
+                .orElse(LocalTime.of(8, 0));
     }
 
     /**
@@ -1309,14 +1346,18 @@ public class ManagerBookingService {
             throw BusinessException.conflict("BOOKING_STATE_CONFLICT", "Chỉ cho phép check-in với đơn đặt phòng ở trạng thái đã xác nhận (CONFIRMED)");
         }
 
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
-        if (today.isBefore(booking.getCheckInDate())) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        LocalTime checkInTime = getStayCheckInTime();
+
+        LocalDateTime checkInStart = LocalDateTime.of(booking.getCheckInDate(), checkInTime);
+
+        if (now.isBefore(checkInStart)) {
             throw BusinessException.badRequest("CHECK_IN_TOO_EARLY",
-                    "Chưa đến ngày nhận phòng (" + booking.getCheckInDate() + "). Không thể thực hiện check-in sớm");
+                    "Chưa đến giờ nhận phòng (từ " + checkInTime + " ngày " + booking.getCheckInDate() + "). Không thể thực hiện check-in sớm");
         }
-        if (!today.isBefore(booking.getCheckOutDate())) {
+        if (!now.toLocalDate().isBefore(booking.getCheckOutDate())) {
             throw BusinessException.badRequest("CHECK_IN_EXPIRED",
-                    "Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: " + booking.getCheckOutDate() + "). Không thể check-in");
+                    "Đơn đặt phòng đã kết thúc kỳ lưu trú (ngày trả phòng: " + booking.getCheckOutDate() + "). Không thể nhận phòng từ ngày trả phòng trở đi");
         }
 
         if (request != null) {
@@ -1351,6 +1392,249 @@ public class ManagerBookingService {
         Booking saved = bookingRepository.saveAndFlush(booking);
 
         return new CheckInBookingResponse(saved.getId(), saved.getStatus());
+    }
+
+    /**
+     * API-MGR-STAY-02: Check-out trả phòng, phân loại dịch vụ và quyết toán công nợ cuối kỳ.
+     */
+    @Transactional
+    public CheckOutBookingResponse checkOut(UserPrincipal principal, Long bookingId, CheckOutBookingRequest request) {
+        Long homestayId = validateAndGetHomestayId(principal);
+
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+
+        if (!homestayId.equals(booking.getHomestayId())) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+
+        if (booking.getStatus() != BookingStatus.CHECKED_IN) {
+            throw BusinessException.conflict("CHECKOUT_NOT_ALLOWED", "Chỉ cho phép check-out với đơn đặt phòng đang ở trạng thái đang lưu trú (CHECKED_IN)");
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        LocalTime checkInTime = getStayCheckInTime();
+        LocalTime checkOutDeadline = getStayCheckOutDeadline();
+
+        LocalDateTime checkInStart = LocalDateTime.of(booking.getCheckInDate(), checkInTime);
+        LocalDateTime checkOutDeadlineDateTime = LocalDateTime.of(booking.getCheckOutDate(), checkOutDeadline);
+
+        if (now.isBefore(checkInStart)) {
+            throw BusinessException.conflict("CHECKOUT_NOT_ALLOWED",
+                    "Chưa đến thời điểm nhận phòng (từ " + checkInTime + " ngày " + booking.getCheckInDate() + "). Không thể thực hiện check-out");
+        }
+        if (now.isAfter(checkOutDeadlineDateTime)) {
+            throw BusinessException.conflict("CHECKOUT_NOT_ALLOWED",
+                    "Đã quá thời hạn trả phòng (hạn trả phòng không muộn hơn " + checkOutDeadline + " ngày " + booking.getCheckOutDate() + "). Không thể thực hiện check-out");
+        }
+
+        // 1. Phân loại các dòng booking_services REGISTERED
+        List<BookingService> bookingServices = bookingServiceRepository.findByBookingIdOrderByIdAsc(booking.getId());
+        List<BookingService> registeredServices = bookingServices.stream()
+                .filter(s -> s.getStatus() == BookingService.BookingServiceStatus.REGISTERED)
+                .toList();
+
+        List<Long> usedList = request != null && request.usedBookingServiceIds() != null
+                ? request.usedBookingServiceIds() : Collections.emptyList();
+        List<Long> unusedList = request != null && request.unusedBookingServiceIds() != null
+                ? request.unusedBookingServiceIds() : Collections.emptyList();
+
+        Set<Long> usedIds = new HashSet<>(usedList);
+        Set<Long> unusedIds = new HashSet<>(unusedList);
+
+        if (usedIds.size() != usedList.size() || unusedIds.size() != unusedList.size()) {
+            throw BusinessException.badRequest("SERVICE_USAGE_SELECTION_INCOMPLETE",
+                    "Danh sách ID dịch vụ không được chứa giá trị trùng lặp");
+        }
+
+        Set<Long> registeredIds = registeredServices.stream()
+                .map(BookingService::getId)
+                .collect(Collectors.toSet());
+
+        Set<Long> overlap = new HashSet<>(usedIds);
+        overlap.retainAll(unusedIds);
+        if (!overlap.isEmpty()) {
+            throw BusinessException.badRequest("SERVICE_USAGE_SELECTION_INCOMPLETE",
+                    "Dịch vụ không thể vừa đánh dấu đã sử dụng vừa hủy: " + overlap);
+        }
+
+        Set<Long> combined = new HashSet<>(usedIds);
+        combined.addAll(unusedIds);
+        if (!combined.equals(registeredIds)) {
+            throw BusinessException.badRequest("SERVICE_USAGE_SELECTION_INCOMPLETE",
+                    "Mọi dịch vụ đang ở trạng thái REGISTERED phải được phân loại đầy đủ (đã dùng hoặc hủy), không được bỏ sót hoặc khai báo dịch vụ không hợp lệ");
+        }
+
+        // Cập nhật trạng thái các dịch vụ
+        for (BookingService bs : registeredServices) {
+            if (usedIds.contains(bs.getId())) {
+                bs.setStatus(BookingService.BookingServiceStatus.USED);
+                bs.setRecordedBy(principal.getId());
+                bookingServiceRepository.save(bs);
+            } else if (unusedIds.contains(bs.getId())) {
+                bs.setStatus(BookingService.BookingServiceStatus.CANCELLED);
+                bookingServiceRepository.save(bs);
+            }
+        }
+        bookingServiceRepository.flush();
+
+        // 2. Tính toán tài chính (Không tính REFUND vì booking đã CHECKED_IN không thuộc luồng hủy/hoàn cọc)
+        long roomTotalPrice = booking.getRoomTotalPrice();
+        List<BookingService> allServicesAfterUpdate = bookingServiceRepository.findByBookingIdOrderByIdAsc(booking.getId());
+        long serviceTotalPrice = allServicesAfterUpdate.stream()
+                .filter(s -> s.getStatus() == BookingService.BookingServiceStatus.USED)
+                .mapToLong(s -> (long) s.getUnitPrice() * s.getQuantity())
+                .sum();
+        long grandTotalPrice = roomTotalPrice + serviceTotalPrice;
+
+        long paidBeforeCheckout = paymentRepository.sumConfirmedAmounts(
+                booking.getId(),
+                List.of(Payment.PaymentType.DEPOSIT, Payment.PaymentType.PAYMENT),
+                Payment.PaymentStatus.CONFIRMED
+        );
+        long outstandingAmount = Math.max(0L, grandTotalPrice - paidBeforeCheckout);
+        long collectedAtCheckout = 0L;
+
+        // 3. Xử lý thanh toán
+        if (outstandingAmount > 0) {
+            if (request == null || request.payment() == null) {
+                throw BusinessException.conflict("OUTSTANDING_BALANCE",
+                        "Đơn đặt phòng còn số tiền chưa thanh toán (" + outstandingAmount + " VND). Vui lòng xử lý thanh toán để hoàn tất check-out.");
+            }
+            CheckOutBookingRequest.PaymentRequest paymentReq = request.payment();
+            if (paymentReq.amount() == null || !paymentReq.amount().equals(outstandingAmount)) {
+                throw BusinessException.badRequest("PAYMENT_AMOUNT_MISMATCH",
+                        "Số tiền thanh toán (" + (paymentReq.amount() == null ? 0 : paymentReq.amount()) + " VND) không khớp với số tiền còn thiếu (" + outstandingAmount + " VND)");
+            }
+            if (paymentReq.method() == null) {
+                throw BusinessException.badRequest("VALIDATION_ERROR", "Phương thức thanh toán không được để trống");
+            }
+
+            Instant paymentInstant = Instant.now();
+            LocalDateTime nowUtc = LocalDateTime.ofInstant(paymentInstant, ZoneOffset.UTC);
+            Payment payment = new Payment();
+            payment.setBookingId(booking.getId());
+            payment.setHomestayId(booking.getHomestayId());
+            payment.setType(Payment.PaymentType.PAYMENT);
+            payment.setAmount(outstandingAmount);
+            payment.setMethod(paymentReq.method());
+            payment.setStatus(Payment.PaymentStatus.CONFIRMED);
+            payment.setConfirmedBy(principal.getId());
+            payment.setConfirmedAt(nowUtc);
+            payment.setCreatedBy(principal.getId());
+            if (paymentReq.referenceCode() != null && !paymentReq.referenceCode().isBlank()) {
+                payment.setReferenceCode(paymentReq.referenceCode().trim());
+            } else if (paymentReq.method() == Payment.PaymentMethod.BANK_TRANSFER) {
+                payment.setReferenceCode(booking.getCode() + " CHECKOUT");
+            }
+            payment.setNote(paymentReq.note() != null && !paymentReq.note().isBlank() ? paymentReq.note().trim() : "Thu phần còn lại khi checkout");
+            paymentRepository.saveAndFlush(payment);
+
+            collectedAtCheckout = outstandingAmount;
+            outstandingAmount = 0L;
+        } else {
+            // outstandingAmount == 0: Không phát sinh thanh toán, trường payment phải là null
+            if (request != null && request.payment() != null) {
+                if (request.payment().amount() != null && request.payment().amount() > 0) {
+                    throw BusinessException.badRequest("PAYMENT_AMOUNT_MISMATCH",
+                            "Đơn đặt phòng đã thanh toán đủ, số tiền cần thanh toán là 0 VND");
+                }
+                throw BusinessException.badRequest("PAYMENT_AMOUNT_MISMATCH",
+                        "Đơn đặt phòng đã thanh toán đủ công nợ, không được gửi thông tin thanh toán (payment phải là null)");
+            }
+        }
+
+        long totalCollected = paidBeforeCheckout + collectedAtCheckout;
+
+        // 4. Cập nhật booking sang CHECKED_OUT
+        booking.setStatus(BookingStatus.CHECKED_OUT);
+        if (request != null && request.note() != null && !request.note().isBlank()) {
+            String notePrefix = (booking.getNote() != null && !booking.getNote().isBlank()) ? booking.getNote() + " | " : "";
+            String updatedNote = notePrefix + "Check-out: " + request.note().trim();
+            if (updatedNote.length() > 500) {
+                updatedNote = updatedNote.substring(0, 497) + "...";
+            }
+            booking.setNote(updatedNote);
+        }
+        Booking saved = bookingRepository.saveAndFlush(booking);
+
+        return new CheckOutBookingResponse(
+                saved.getId(),
+                saved.getStatus(),
+                roomTotalPrice,
+                serviceTotalPrice,
+                grandTotalPrice,
+                paidBeforeCheckout,
+                collectedAtCheckout,
+                totalCollected,
+                outstandingAmount
+        );
+    }
+
+    /**
+     * API-MGR-BOOK-07: Xem cân đối tài chính và công nợ booking phục vụ check-out và quản lý lưu trú.
+     */
+    @Transactional(readOnly = true)
+    public BookingBalanceResponse getBookingBalance(UserPrincipal principal, Long bookingId) {
+        Long homestayId = validateAndGetHomestayId(principal);
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> BusinessException.notFound("BOOKING_NOT_FOUND", "Không tìm thấy đơn đặt phòng"));
+
+        if (!homestayId.equals(booking.getHomestayId())) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Đơn đặt phòng không thuộc cơ sở homestay được giao quản lý");
+        }
+
+        long roomTotalPrice = booking.getRoomTotalPrice();
+        List<BookingService> services = bookingServiceRepository.findByBookingIdOrderByIdAsc(booking.getId());
+        long serviceTotalPrice = services.stream()
+                .filter(s -> s.getStatus() == BookingService.BookingServiceStatus.USED)
+                .mapToLong(s -> (long) s.getUnitPrice() * s.getQuantity())
+                .sum();
+
+        // số tiền khách đã cọc
+        long paidAmount = paymentRepository.sumConfirmedAmounts(
+                booking.getId(),
+                List.of(Payment.PaymentType.DEPOSIT, Payment.PaymentType.PAYMENT),
+                Payment.PaymentStatus.CONFIRMED
+        );
+
+        // số tiền đã hoàn cho khách
+        long refundedAmount = paymentRepository.sumConfirmedDeposits(
+                booking.getId(),
+                Payment.PaymentType.REFUND,
+                Payment.PaymentStatus.CONFIRMED
+        );
+
+        Long grandTotalPrice;
+        Long outstandingAmount;
+        Long refundPendingAmount;
+
+        if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.EXPIRED) {
+            grandTotalPrice = null;
+            outstandingAmount = null;
+            if (booking.getStatus() == BookingStatus.CANCELLED) {
+                long committedRefund = booking.getRefundAmount() != null ? booking.getRefundAmount() : 0L;
+                // số tiền refund cho khách còn thiếu
+                refundPendingAmount = Math.max(0L, committedRefund - refundedAmount);
+            } else {
+                refundPendingAmount = null;
+            }
+        } else {
+            grandTotalPrice = roomTotalPrice + serviceTotalPrice;
+            long netPaid = paidAmount - refundedAmount;
+            outstandingAmount = Math.max(0L, grandTotalPrice - netPaid);
+            refundPendingAmount = 0L;
+        }
+
+        return new BookingBalanceResponse(
+                roomTotalPrice,
+                serviceTotalPrice,
+                grandTotalPrice,
+                paidAmount,
+                refundedAmount,
+                outstandingAmount,
+                refundPendingAmount
+        );
     }
 
     private String generateBookingCode(LocalDate checkInDate) {

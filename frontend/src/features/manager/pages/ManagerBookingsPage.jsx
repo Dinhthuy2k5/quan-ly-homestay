@@ -12,6 +12,7 @@ import {
   Copy,
   Edit3,
   LogIn,
+  LogOut,
   Mail,
   Phone,
   RefreshCw,
@@ -24,6 +25,7 @@ import {
 import { getManagerBookingsApi } from '../api';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { formatDate, formatDateTime, formatVnd, nightsBetween } from '../../../lib/format';
+import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 
 const STATUS_TABS = [
   { key: '', label: 'Tất cả' },
@@ -465,16 +467,23 @@ export default function ManagerBookingsPage() {
           {items.map((booking) => {
             const nights = nightsBetween(booking.checkInDate, booking.checkOutDate);
             const isCopied = copiedCode === booking.code;
-            const todayStr = (() => {
-              const d = new Date();
-              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            })();
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const currentDateTimeStr = `${todayStr}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const checkInStartStr = booking.checkInDate ? `${booking.checkInDate}T${CHECK_IN_TIME}` : null;
+            const stayEndStr = booking.checkOutDate ? `${booking.checkOutDate}T${CHECK_OUT_DEADLINE}` : null;
+
             const canCheckIn = Boolean(
               booking.status === 'CONFIRMED' &&
-              booking.checkInDate &&
+              checkInStartStr &&
               booking.checkOutDate &&
-              todayStr >= booking.checkInDate &&
+              currentDateTimeStr >= checkInStartStr &&
               todayStr < booking.checkOutDate
+            );
+            const canCheckOut = Boolean(
+              booking.status === 'CHECKED_IN' &&
+              stayEndStr &&
+              currentDateTimeStr <= stayEndStr
             );
 
             return (
@@ -522,6 +531,17 @@ export default function ManagerBookingsPage() {
                       >
                         <LogIn className="h-3.5 w-3.5" />
                         <span>Nhận phòng</span>
+                      </Link>
+                    )}
+                    {canCheckOut && (
+                      <Link
+                        to={`/manager/bookings/${booking.id}/check-out`}
+                        state={{ booking: { ...booking, homestayId: booking.homestayId || homestay?.id, homestayName: booking.homestayName || homestay?.name } }}
+                        className="inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors shadow-2xs"
+                        title="Tiến hành trả phòng và quyết toán"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        <span>Trả phòng</span>
                       </Link>
                     )}
                     {booking.source === 'MANAGER' && (booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (

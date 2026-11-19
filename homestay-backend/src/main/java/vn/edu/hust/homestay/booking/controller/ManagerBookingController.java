@@ -36,6 +36,9 @@ import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCancelBookingResponse;
 import vn.edu.hust.homestay.booking.dto.CheckInBookingRequest;
 import vn.edu.hust.homestay.booking.dto.CheckInBookingResponse;
+import vn.edu.hust.homestay.booking.dto.CheckOutBookingRequest;
+import vn.edu.hust.homestay.booking.dto.CheckOutBookingResponse;
+import vn.edu.hust.homestay.booking.dto.BookingBalanceResponse;
 import vn.edu.hust.homestay.booking.dto.CustomerDepositProof;
 import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerRecordDepositResponse;
@@ -195,6 +198,27 @@ public class ManagerBookingController {
             @Valid @RequestBody(required = false) CheckInBookingRequest request
     ) {
         CheckInBookingResponse response = managerBookingService.checkIn(principal, bookingId, request);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    @Operation(summary = "API-MGR-STAY-02: Xác nhận khách trả phòng (Check-out) và quyết toán")
+    @PostMapping("/{bookingId}/check-out")
+    public ResponseEntity<ApiResponse<CheckOutBookingResponse>> checkOut(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId,
+            @Valid @RequestBody(required = false) CheckOutBookingRequest request
+    ) {
+        CheckOutBookingResponse response = managerBookingService.checkOut(principal, bookingId, request);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    @Operation(summary = "API-MGR-BOOK-07: Xem cân đối tài chính booking phục vụ check-out và quản lý lưu trú")
+    @GetMapping("/{bookingId}/balance")
+    public ResponseEntity<ApiResponse<BookingBalanceResponse>> getBookingBalance(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long bookingId
+    ) {
+        BookingBalanceResponse response = managerBookingService.getBookingBalance(principal, bookingId);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 

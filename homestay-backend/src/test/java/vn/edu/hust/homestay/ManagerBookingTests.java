@@ -2,6 +2,7 @@ package vn.edu.hust.homestay;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import vn.edu.hust.homestay.auth.repository.UserRepository;
 import vn.edu.hust.homestay.auth.security.JwtService;
 import vn.edu.hust.homestay.booking.dto.ManagerAdjustBookingRequest;
 import vn.edu.hust.homestay.booking.dto.ManagerCreateBookingRequest;
+import vn.edu.hust.homestay.booking.service.ManagerBookingService;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSelectionRequest;
 import vn.edu.hust.homestay.service.dto.ManagerBookServiceRequest;
 import vn.edu.hust.homestay.booking.entity.Booking;
@@ -39,9 +41,12 @@ import vn.edu.hust.homestay.service.entity.BookingService.BookingServiceStatus;
 import vn.edu.hust.homestay.service.repository.BookingServiceRepository;
 import vn.edu.hust.homestay.service.repository.ServiceRepository;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +82,7 @@ class ManagerBookingTests {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private BookingRoomNightRepository bookingRoomNightRepository;
     @Autowired private JwtService jwtService;
+    @Autowired private ManagerBookingService managerBookingService;
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -107,6 +113,11 @@ class ManagerBookingTests {
 
         room1 = roomRepository.findByHomestayIdAndStatus(homestay1Id, RoomStatus.ACTIVE).stream().findFirst().orElseThrow();
         room2 = roomRepository.findByHomestayIdAndStatus(homestay2Id, RoomStatus.ACTIVE).stream().findFirst().orElseThrow();
+    }
+
+    @AfterEach
+    void tearDown() {
+        managerBookingService.setClock(Clock.system(ZoneId.of("Asia/Ho_Chi_Minh")));
     }
 
     @Test
@@ -2233,6 +2244,11 @@ class ManagerBookingTests {
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-01-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800001", "Khách CheckIn 1", checkIn, checkOut, BookingStatus.CONFIRMED);
 
+        managerBookingService.setClock(Clock.fixed(
+                LocalDateTime.of(checkIn, LocalTime.of(14, 0)).atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),
+                ZoneId.of("Asia/Ho_Chi_Minh")
+        ));
+
         mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
                         .header("Authorization", "Bearer " + tokenMgr1))
                 .andExpect(status().isOk())
@@ -2242,6 +2258,27 @@ class ManagerBookingTests {
 
         Booking updated = bookingRepository.findById(booking.getId()).orElseThrow();
         assertEquals(BookingStatus.CHECKED_IN, updated.getStatus());
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại vào sáng ngày trả phòng (kể cả trước 08:00) - 400 CHECK_IN_EXPIRED")
+    void checkIn_OnCheckoutMorning_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(2);
+        LocalDate checkOut = LocalDate.now();
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-COM-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800013", "Khách Sáng Checkout", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        // 07:00 sáng ngày trả phòng (dù trước deadline 08:00 của checkout) -> vẫn bị từ chối check-in vì đã đến ngày checkout
+        managerBookingService.setClock(Clock.fixed(
+                LocalDateTime.of(checkOut, LocalTime.of(7, 0)).atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),
+                ZoneId.of("Asia/Ho_Chi_Minh")
+        ));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CHECK_IN_EXPIRED")));
     }
 
     @Test
@@ -2281,10 +2318,30 @@ class ManagerBookingTests {
     }
 
     @Test
+    @DisplayName("API-MGR-STAY-01: Check-in thất bại khi chưa đến 11:00 ngày nhận phòng - 400 CHECK_IN_TOO_EARLY")
+    void checkIn_Before11AM_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now();
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-E11-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988800099", "Khách Đến 10h", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        managerBookingService.setClock(Clock.fixed(
+                LocalDateTime.of(checkIn, LocalTime.of(10, 0)).atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),
+                ZoneId.of("Asia/Ho_Chi_Minh")
+        ));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-in")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CHECK_IN_TOO_EARLY")));
+    }
+
+    @Test
     @DisplayName("API-MGR-STAY-01: Check-in thất bại khi đã đến hoặc quá ngày trả phòng - 400 CHECK_IN_EXPIRED")
     void checkIn_Expired_Fails() throws Exception {
         LocalDate checkIn = LocalDate.now().minusDays(3);
-        LocalDate checkOut = LocalDate.now();
+        LocalDate checkOut = LocalDate.now().minusDays(1);
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-EXP-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800012", "Khách Quá Hạn", checkIn, checkOut, BookingStatus.CONFIRMED);
 
@@ -2298,8 +2355,8 @@ class ManagerBookingTests {
     @Test
     @DisplayName("API-MGR-STAY-01: Check-in thành công với actualGuestCount và note")
     void checkIn_WithActualGuestCountAndNote_Success() throws Exception {
-        LocalDate checkIn = LocalDate.now();
-        LocalDate checkOut = checkIn.plusDays(2);
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = checkIn.plusDays(3);
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-02-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800002", "Khách CheckIn 2", checkIn, checkOut, BookingStatus.CONFIRMED);
 
@@ -2452,5 +2509,474 @@ class ManagerBookingTests {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success", is(false)))
                 .andExpect(jsonPath("$.error.code", is("BOOKING_NOT_FOUND")));
+    }
+
+    // =========================================================================
+    // API-MGR-STAY-02: Check-out & API-MGR-BOOK-07: Balance
+    // =========================================================================
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thành công cho booking đã thanh toán đủ và không có dịch vụ")
+    void checkOut_FullyPaidNoServices_Success() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-OUT-01-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900001", "Khách CheckOut 1", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        // Khách đã thanh toán đủ 1.000.000 VND
+        Payment payment = new Payment();
+        payment.setBookingId(booking.getId());
+        payment.setHomestayId(booking.getHomestayId());
+        payment.setType(Payment.PaymentType.DEPOSIT);
+        payment.setAmount(1_000_000L);
+        payment.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        payment.setStatus(Payment.PaymentStatus.CONFIRMED);
+        payment.setConfirmedBy(manager1.getId());
+        payment.setConfirmedAt(LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC));
+        payment.setCreatedBy(manager1.getId());
+        paymentRepository.saveAndFlush(payment);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.bookingId", is(booking.getId().intValue())))
+                .andExpect(jsonPath("$.data.status", is("CHECKED_OUT")))
+                .andExpect(jsonPath("$.data.roomTotalPrice", is(1_000_000)))
+                .andExpect(jsonPath("$.data.serviceTotalPrice", is(0)))
+                .andExpect(jsonPath("$.data.grandTotalPrice", is(1_000_000)))
+                .andExpect(jsonPath("$.data.paidBeforeCheckout", is(1_000_000)))
+                .andExpect(jsonPath("$.data.collectedAtCheckout", is(0)))
+                .andExpect(jsonPath("$.data.totalCollected", is(1_000_000)))
+                .andExpect(jsonPath("$.data.outstandingAmount", is(0)));
+
+        Booking updated = bookingRepository.findById(booking.getId()).orElseThrow();
+        assertEquals(BookingStatus.CHECKED_OUT, updated.getStatus());
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi đã thanh toán đủ mà vẫn gửi payment object - 400 PAYMENT_AMOUNT_MISMATCH")
+    void checkOut_FullyPaid_WithPaymentObject_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-FP-PAY-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900010", "Khách Đã Thanh Toán Đủ", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        Payment payment = new Payment();
+        payment.setBookingId(booking.getId());
+        payment.setHomestayId(booking.getHomestayId());
+        payment.setType(Payment.PaymentType.DEPOSIT);
+        payment.setAmount(1_000_000L);
+        payment.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        payment.setStatus(Payment.PaymentStatus.CONFIRMED);
+        payment.setConfirmedBy(manager1.getId());
+        payment.setConfirmedAt(LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC));
+        payment.setCreatedBy(manager1.getId());
+        paymentRepository.saveAndFlush(payment);
+
+        // Gửi payment object với amount = null khi nợ = 0 -> Phải bị từ chối
+        String body = """
+                {
+                    "payment": {
+                        "amount": null,
+                        "method": null
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("PAYMENT_AMOUNT_MISMATCH")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thành công kèm phân loại dịch vụ và thanh toán phần còn lại")
+    void checkOut_WithServicesAndPayment_Success() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-OUT-02-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900002", "Khách CheckOut 2", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        // Đã cọc 300.000 VND
+        Payment deposit = new Payment();
+        deposit.setBookingId(booking.getId());
+        deposit.setHomestayId(booking.getHomestayId());
+        deposit.setType(Payment.PaymentType.DEPOSIT);
+        deposit.setAmount(300_000L);
+        deposit.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        deposit.setStatus(Payment.PaymentStatus.CONFIRMED);
+        deposit.setConfirmedBy(manager1.getId());
+        deposit.setConfirmedAt(LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC));
+        deposit.setCreatedBy(manager1.getId());
+        paymentRepository.saveAndFlush(deposit);
+
+        // Tạo 2 dịch vụ REGISTERED
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        BookingService bsUsed = new BookingService();
+        bsUsed.setBookingId(booking.getId());
+        bsUsed.setHomestayId(homestay1Id);
+        bsUsed.setRoomId(room1.getId());
+        bsUsed.setServiceId(testSvc.getId());
+        bsUsed.setQuantity(2);
+        bsUsed.setUnitPrice(50_000L); // 100.000 VND
+        bsUsed.setStatus(BookingServiceStatus.REGISTERED);
+        bsUsed.setServiceDate(checkIn);
+        bsUsed.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bsUsed);
+
+        BookingService bsUnused = new BookingService();
+        bsUnused.setBookingId(booking.getId());
+        bsUnused.setHomestayId(homestay1Id);
+        bsUnused.setRoomId(room1.getId());
+        bsUnused.setServiceId(testSvc.getId());
+        bsUnused.setQuantity(1);
+        bsUnused.setUnitPrice(50_000L);
+        bsUnused.setStatus(BookingServiceStatus.REGISTERED);
+        bsUnused.setServiceDate(checkIn);
+        bsUnused.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bsUnused);
+
+        // Tổng tiền: Phòng 1.000.000 + Dịch vụ USED 100.000 = 1.100.000 VND. Đã cọc 300.000. Cần thu thêm = 800.000 VND.
+        String body = String.format("""
+                {
+                    "usedBookingServiceIds": [%d],
+                    "unusedBookingServiceIds": [%d],
+                    "payment": {
+                        "amount": 800000,
+                        "method": "CASH",
+                        "referenceCode": null,
+                        "note": "Thu tiền mặt khi trả phòng"
+                    },
+                    "note": "Khách sử dụng đồ uống minibar"
+                }
+                """, bsUsed.getId(), bsUnused.getId());
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.status", is("CHECKED_OUT")))
+                .andExpect(jsonPath("$.data.roomTotalPrice", is(1_000_000)))
+                .andExpect(jsonPath("$.data.serviceTotalPrice", is(100_000)))
+                .andExpect(jsonPath("$.data.grandTotalPrice", is(1_100_000)))
+                .andExpect(jsonPath("$.data.paidBeforeCheckout", is(300_000)))
+                .andExpect(jsonPath("$.data.collectedAtCheckout", is(800_000)))
+                .andExpect(jsonPath("$.data.totalCollected", is(1_100_000)))
+                .andExpect(jsonPath("$.data.outstandingAmount", is(0)));
+
+        Booking updated = bookingRepository.findById(booking.getId()).orElseThrow();
+        assertEquals(BookingStatus.CHECKED_OUT, updated.getStatus());
+
+        BookingService updatedUsed = bookingServiceRepository.findById(bsUsed.getId()).orElseThrow();
+        assertEquals(BookingServiceStatus.USED, updatedUsed.getStatus());
+        assertEquals(manager1.getId(), updatedUsed.getRecordedBy());
+
+        BookingService updatedUnused = bookingServiceRepository.findById(bsUnused.getId()).orElseThrow();
+        assertEquals(BookingServiceStatus.CANCELLED, updatedUnused.getStatus());
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi còn công nợ mà không gửi thanh toán - 409 OUTSTANDING_BALANCE")
+    void checkOut_OutstandingBalanceWithoutPayment_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-OUT-03-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900003", "Khách CheckOut 3", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        // Chưa cọc hoặc chỉ cọc 300k, còn thiếu 700k. Gọi check-out không kèm payment
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("OUTSTANDING_BALANCE")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi số tiền thanh toán không khớp - 400 PAYMENT_AMOUNT_MISMATCH")
+    void checkOut_PaymentAmountMismatch_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-OUT-04-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900004", "Khách CheckOut 4", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        // Tiền phòng 1.000.000, chưa thanh toán đồng nào. Nhưng gửi payment 500.000
+        String body = """
+                {
+                    "payment": {
+                        "amount": 500000,
+                        "method": "CASH"
+                    }
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("PAYMENT_AMOUNT_MISMATCH")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi phân loại dịch vụ chưa đầy đủ - 400 SERVICE_USAGE_SELECTION_INCOMPLETE")
+    void checkOut_IncompleteServicesClassification_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-OUT-05-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900005", "Khách CheckOut 5", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        BookingService bs = new BookingService();
+        bs.setBookingId(booking.getId());
+        bs.setHomestayId(homestay1Id);
+        bs.setRoomId(room1.getId());
+        bs.setServiceId(testSvc.getId());
+        bs.setQuantity(1);
+        bs.setUnitPrice(50_000L);
+        bs.setStatus(BookingServiceStatus.REGISTERED);
+        bs.setServiceDate(checkIn);
+        bs.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs);
+
+        // Đã thanh toán 1tr tiền phòng, nhưng không phân loại dịch vụ bs đang REGISTERED
+        Payment payment = new Payment();
+        payment.setBookingId(booking.getId());
+        payment.setHomestayId(booking.getHomestayId());
+        payment.setType(Payment.PaymentType.DEPOSIT);
+        payment.setAmount(1_000_000L);
+        payment.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        payment.setStatus(Payment.PaymentStatus.CONFIRMED);
+        payment.setConfirmedBy(manager1.getId());
+        payment.setConfirmedAt(LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC));
+        payment.setCreatedBy(manager1.getId());
+        paymentRepository.saveAndFlush(payment);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_USAGE_SELECTION_INCOMPLETE")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi danh sách dịch vụ chứa ID trùng lặp - 400 SERVICE_USAGE_SELECTION_INCOMPLETE")
+    void checkOut_DuplicateIdsInList_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-DUP-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900088", "Khách CheckOut Dup", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        BookingService bs = new BookingService();
+        bs.setBookingId(booking.getId());
+        bs.setHomestayId(homestay1Id);
+        bs.setRoomId(room1.getId());
+        bs.setServiceId(testSvc.getId());
+        bs.setQuantity(1);
+        bs.setUnitPrice(50_000L);
+        bs.setStatus(BookingServiceStatus.REGISTERED);
+        bs.setServiceDate(checkIn);
+        bs.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs);
+
+        String body = String.format("""
+                {
+                    "usedBookingServiceIds": [%d, %d],
+                    "unusedBookingServiceIds": []
+                }
+                """, bs.getId(), bs.getId());
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_USAGE_SELECTION_INCOMPLETE")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi một ID vừa nằm ở used vừa ở unused - 400 SERVICE_USAGE_SELECTION_INCOMPLETE")
+    void checkOut_OverlapIds_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-OVL-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900089", "Khách CheckOut Overlap", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        vn.edu.hust.homestay.service.entity.Service testSvc = serviceRepository.findByHomestayIdAndStatusOrderByNameAsc(
+                homestay1Id, vn.edu.hust.homestay.service.entity.Service.ServiceStatus.ACTIVE).stream().findFirst().orElseThrow();
+
+        BookingService bs = new BookingService();
+        bs.setBookingId(booking.getId());
+        bs.setHomestayId(homestay1Id);
+        bs.setRoomId(room1.getId());
+        bs.setServiceId(testSvc.getId());
+        bs.setQuantity(1);
+        bs.setUnitPrice(50_000L);
+        bs.setStatus(BookingServiceStatus.REGISTERED);
+        bs.setServiceDate(checkIn);
+        bs.setRequestedBy(manager1.getId());
+        bookingServiceRepository.saveAndFlush(bs);
+
+        String body = String.format("""
+                {
+                    "usedBookingServiceIds": [%d],
+                    "unusedBookingServiceIds": [%d]
+                }
+                """, bs.getId(), bs.getId());
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("SERVICE_USAGE_SELECTION_INCOMPLETE")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi booking không ở trạng thái CHECKED_IN - 409 CHECKOUT_NOT_ALLOWED")
+    void checkOut_NotAllowedWhenNotCheckedIn_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now();
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-OUT-06-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900006", "Khách CheckOut 6", checkIn, checkOut, BookingStatus.CONFIRMED);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CHECKOUT_NOT_ALLOWED")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi đã quá 08:00 ngày trả phòng - 409 CHECKOUT_NOT_ALLOWED")
+    void checkOut_After08AMDeadline_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(2);
+        LocalDate checkOut = LocalDate.now();
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-L8-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900099", "Khách Quá Giờ Checkout", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        managerBookingService.setClock(Clock.fixed(
+                LocalDateTime.of(checkOut, LocalTime.of(8, 30)).atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),
+                ZoneId.of("Asia/Ho_Chi_Minh")
+        ));
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("CHECKOUT_NOT_ALLOWED")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-STAY-02: Check-out thất bại khi booking thuộc cơ sở khác - 403 HOMESTAY_SCOPE_VIOLATION")
+    void checkOut_WrongHomestay_Fails() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-OUT-07-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900007", "Khách CheckOut 7", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        mockMvc.perform(post("/api/v1/manager/bookings/" + booking.getId() + "/check-out")
+                        .header("Authorization", "Bearer " + tokenMgr2))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_SCOPE_VIOLATION")));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-07: Xem cân đối tài chính booking thành công")
+    void getBookingBalance_Success() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(1);
+        LocalDate checkOut = LocalDate.now().plusDays(1);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-BAL-01-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900008", "Khách Cân Đối", checkIn, checkOut, BookingStatus.CHECKED_IN);
+
+        Payment deposit = new Payment();
+        deposit.setBookingId(booking.getId());
+        deposit.setHomestayId(booking.getHomestayId());
+        deposit.setType(Payment.PaymentType.DEPOSIT);
+        deposit.setAmount(300_000L);
+        deposit.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        deposit.setStatus(Payment.PaymentStatus.CONFIRMED);
+        deposit.setConfirmedBy(manager1.getId());
+        deposit.setConfirmedAt(LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC));
+        deposit.setCreatedBy(manager1.getId());
+        paymentRepository.saveAndFlush(deposit);
+
+        mockMvc.perform(get("/api/v1/manager/bookings/" + booking.getId() + "/balance")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.roomTotalPrice", is(1_000_000)))
+                .andExpect(jsonPath("$.data.serviceTotalPrice", is(0)))
+                .andExpect(jsonPath("$.data.grandTotalPrice", is(1_000_000)))
+                .andExpect(jsonPath("$.data.paidAmount", is(300_000)))
+                .andExpect(jsonPath("$.data.refundedAmount", is(0)))
+                .andExpect(jsonPath("$.data.outstandingAmount", is(700_000)))
+                .andExpect(jsonPath("$.data.refundPendingAmount", is(0)));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-07: Xem cân đối tài chính cho booking CANCELLED - grandTotal và outstanding bằng null, tính refundPendingAmount")
+    void getBookingBalance_CancelledBooking_Success() throws Exception {
+        LocalDate checkIn = LocalDate.now().plusDays(5);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-BAL-CAN-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900011", "Khách Hủy Cân Đối", checkIn, checkOut, BookingStatus.CANCELLED);
+        booking.setRefundAmount(200_000L);
+        bookingRepository.saveAndFlush(booking);
+
+        Payment deposit = new Payment();
+        deposit.setBookingId(booking.getId());
+        deposit.setHomestayId(booking.getHomestayId());
+        deposit.setType(Payment.PaymentType.DEPOSIT);
+        deposit.setAmount(300_000L);
+        deposit.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+        deposit.setStatus(Payment.PaymentStatus.CONFIRMED);
+        deposit.setConfirmedBy(manager1.getId());
+        deposit.setConfirmedAt(LocalDateTime.ofInstant(Instant.now(), ZoneOffset.UTC));
+        deposit.setCreatedBy(manager1.getId());
+        paymentRepository.saveAndFlush(deposit);
+
+        mockMvc.perform(get("/api/v1/manager/bookings/" + booking.getId() + "/balance")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.grandTotalPrice", is(nullValue())))
+                .andExpect(jsonPath("$.data.outstandingAmount", is(nullValue())))
+                .andExpect(jsonPath("$.data.paidAmount", is(300_000)))
+                .andExpect(jsonPath("$.data.refundedAmount", is(0)))
+                .andExpect(jsonPath("$.data.refundPendingAmount", is(200_000)));
+    }
+
+    @Test
+    @DisplayName("API-MGR-BOOK-07: Xem cân đối tài chính cho booking EXPIRED - grandTotal và outstanding bằng null")
+    void getBookingBalance_ExpiredBooking_Success() throws Exception {
+        LocalDate checkIn = LocalDate.now().minusDays(5);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = createSampleBooking(homestay1Id, room1, "HS-BAL-EXP-" + UUID.randomUUID().toString().substring(0, 4),
+                "0988900012", "Khách Hết Hạn Cân Đối", checkIn, checkOut, BookingStatus.EXPIRED);
+
+        mockMvc.perform(get("/api/v1/manager/bookings/" + booking.getId() + "/balance")
+                        .header("Authorization", "Bearer " + tokenMgr1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.grandTotalPrice", is(nullValue())))
+                .andExpect(jsonPath("$.data.outstandingAmount", is(nullValue())))
+                .andExpect(jsonPath("$.data.refundPendingAmount", is(nullValue())));
     }
 }

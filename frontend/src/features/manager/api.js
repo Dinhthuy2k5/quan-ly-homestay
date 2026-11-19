@@ -351,6 +351,41 @@ export async function checkInManagerBookingApi(bookingId, { actualGuestCount, no
   return res.data?.data || null;
 }
 
+/**
+ * API-MGR-STAY-02: Ghi nhận khách check-out (trả phòng) và quyết toán tài chính.
+ * Chỉ áp dụng cho đơn ở trạng thái CHECKED_IN thuộc homestay do Manager phụ trách.
+ */
+export async function checkOutManagerBookingApi(bookingId, {
+  usedBookingServiceIds = [],
+  unusedBookingServiceIds = [],
+  payment = null,
+  note = null,
+} = {}) {
+  const payload = {
+    usedBookingServiceIds: (usedBookingServiceIds || []).map(Number),
+    unusedBookingServiceIds: (unusedBookingServiceIds || []).map(Number),
+    payment: payment
+      ? {
+          amount: Number(payment.amount),
+          method: payment.method || 'CASH',
+          referenceCode: payment.referenceCode?.trim() || null,
+          note: payment.note?.trim() || null,
+        }
+      : null,
+    note: note?.trim() || null,
+  };
+  const res = await apiClient.post(`/manager/bookings/${bookingId}/check-out`, payload);
+  return res.data?.data || null;
+}
+
+/**
+ * API-MGR-BOOK-07: Xem cán cân tài chính hiện tại của đơn đặt phòng.
+ */
+export async function getManagerBookingBalanceApi(bookingId) {
+  const res = await apiClient.get(`/manager/bookings/${bookingId}/balance`);
+  return res.data?.data || null;
+}
+
 /** Tải riêng tư chứng từ đặt cọc để Manager đối chiếu giao dịch. */
 export async function fetchManagerDepositProofApi(bookingId, paymentId) {
   const res = await apiClient.get(`/manager/bookings/${bookingId}/payments/${paymentId}/proof`, {
