@@ -386,6 +386,24 @@ export async function getManagerBookingBalanceApi(bookingId) {
   return res.data?.data || null;
 }
 
+/** API-EXP-05 (phần danh sách): danh mục chi phí của homestay Manager đang quản lý. */
+export async function getManagerExpenseCategoriesApi() {
+  const res = await apiClient.get('/manager/expense-categories');
+  return res.data?.data || [];
+}
+
+/** API-EXP-02: tạo khoản chi và tải chứng từ tùy chọn bằng multipart/form-data. */
+export async function createManagerExpenseApi(fields, proofFile) {
+  const formData = new FormData();
+  Object.entries(fields).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) formData.append(key, String(value));
+  });
+  if (proofFile) formData.append('proofFile', proofFile);
+
+  const res = await apiClient.post('/manager/expenses', formData);
+  return res.data?.data || null;
+}
+
 /** Tải riêng tư chứng từ đặt cọc để Manager đối chiếu giao dịch. */
 export async function fetchManagerDepositProofApi(bookingId, paymentId) {
   const res = await apiClient.get(`/manager/bookings/${bookingId}/payments/${paymentId}/proof`, {

@@ -1,0 +1,69 @@
+package vn.edu.hust.homestay.expense.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import vn.edu.hust.homestay.auth.security.UserPrincipal;
+import vn.edu.hust.homestay.common.response.ApiResponse;
+import vn.edu.hust.homestay.expense.dto.CreateExpenseRequest;
+import vn.edu.hust.homestay.expense.dto.ExpenseCategoryResponse;
+import vn.edu.hust.homestay.expense.dto.ManagerExpenseResponse;
+import vn.edu.hust.homestay.expense.service.ManagerExpenseService;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/manager")
+@PreAuthorize("hasRole('MANAGER')")
+@Tag(name = "Manager Expenses")
+public class ManagerExpenseController {
+
+    private final ManagerExpenseService expenseService;
+
+    public ManagerExpenseController(ManagerExpenseService expenseService) {
+        this.expenseService = expenseService;
+    }
+
+    /** Supporting read endpoint from API-EXP-05 so the API-EXP-02 form can select a scoped category. */
+    @GetMapping("/expense-categories")
+    @Operation(summary = "API-EXP-05: Danh sách danh mục chi phí thuộc homestay quản lý")
+    public ResponseEntity<ApiResponse<List<ExpenseCategoryResponse>>> getExpenseCategories(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(expenseService.getCategories(principal)));
+    }
+
+    @PostMapping(value = "/expenses", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "API-EXP-02: Ghi nhận khoản chi vận hành")
+    public ResponseEntity<ApiResponse<ManagerExpenseResponse>> createExpense(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) String categoryId,
+            @RequestParam(required = false) String amount,
+            @RequestParam(required = false) String expenseDate,
+            @RequestParam(required = false) String description,
+            @RequestParam(required = false) String supplierName,
+            @RequestParam(required = false) String documentType,
+            @RequestParam(required = false) String documentNumber,
+            @RequestParam(required = false) String documentDate,
+            @RequestParam(required = false) String transactionReference,
+            @RequestParam(required = false) String paymentMethod,
+            @RequestParam(required = false) MultipartFile proofFile
+    ) {
+        CreateExpenseRequest request = new CreateExpenseRequest(
+                categoryId, amount, expenseDate, description, supplierName, documentType,
+                documentNumber, documentDate, transactionReference, paymentMethod
+        );
+        ManagerExpenseResponse response = expenseService.createExpense(principal, request, proofFile);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
+    }
+}

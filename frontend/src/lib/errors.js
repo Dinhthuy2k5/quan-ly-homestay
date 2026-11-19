@@ -48,6 +48,8 @@ export const ERROR_MESSAGES = {
   PRICE_RULE_NOT_FOUND: 'Không tìm thấy quy tắc giá.',
   FILE_TOO_LARGE: 'Tệp tải lên vượt quá dung lượng cho phép.',
   UNSUPPORTED_MEDIA_TYPE: 'Định dạng tệp không được hỗ trợ.',
+  EXPENSE_CATEGORY_NOT_FOUND: 'Danh mục chi phí không tồn tại hoặc không thuộc homestay của bạn.',
+  AMOUNT_MUST_BE_POSITIVE: 'Số tiền khoản chi phải lớn hơn 0.',
   SERVICE_NOT_FOUND: 'Không tìm thấy thông tin dịch vụ.',
   SERVICE_NAME_EXISTS: 'Tên dịch vụ đã tồn tại trong cơ sở homestay.',
   SERVICE_CATEGORY_SCOPE_MISMATCH: 'Danh mục dịch vụ không thuộc cơ sở homestay đang quản lý.',

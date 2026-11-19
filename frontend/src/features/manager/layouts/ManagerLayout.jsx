@@ -11,6 +11,7 @@ import {
   CalendarCheck,
   ChevronRight,
   Sparkles,
+  Receipt,
 } from 'lucide-react';
 import { getAssignedHomestayApi } from '../api';
 import StatusBadge from '../../../components/ui/StatusBadge';
@@ -50,6 +51,12 @@ const NAV_ITEMS = [
     to: '/manager/price-rules',
     label: 'Quy tắc giá',
     icon: CircleDollarSign,
+    end: true,
+  },
+  {
+    to: '/manager/expenses',
+    label: 'Chi phí',
+    icon: Receipt,
     end: true,
   },
 ];
