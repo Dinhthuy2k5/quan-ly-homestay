@@ -2,24 +2,32 @@ package vn.edu.hust.homestay.expense.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.common.response.ApiResponse;
+import vn.edu.hust.homestay.common.response.PageMeta;
 import vn.edu.hust.homestay.expense.dto.CreateExpenseRequest;
 import vn.edu.hust.homestay.expense.dto.ExpenseCategoryResponse;
+import vn.edu.hust.homestay.expense.dto.ManagerExpenseListResponse;
 import vn.edu.hust.homestay.expense.dto.ManagerExpenseResponse;
+import vn.edu.hust.homestay.expense.entity.Expense;
 import vn.edu.hust.homestay.expense.service.ManagerExpenseService;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -43,27 +51,43 @@ public class ManagerExpenseController {
         return ResponseEntity.ok(ApiResponse.ok(expenseService.getCategories(principal)));
     }
 
+    @GetMapping("/expenses")
+    @Operation(summary = "API-EXP-01: Danh sách chi phí của homestay đang quản lý")
+    public ResponseEntity<ApiResponse<List<ManagerExpenseListResponse>>> getExpenses(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Expense.PaymentMethod paymentMethod,
+            @RequestParam(required = false) String supplierName,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        int validPage = Math.max(0, page);
+        int boundedSize = Math.min(Math.max(1, size), 100);
+        Page<ManagerExpenseListResponse> result = expenseService.listExpenses(
+                principal, fromDate, toDate, categoryId, paymentMethod, supplierName,
+                PageRequest.of(validPage, boundedSize, Sort.by(
+                        Sort.Order.desc("expenseDate"), Sort.Order.desc("id")))
+        );
+        PageMeta meta = PageMeta.builder()
+                .page(result.getNumber())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .first(result.isFirst())
+                .last(result.isLast())
+                .build();
+        return ResponseEntity.ok(ApiResponse.ok(result.getContent(), meta));
+    }
+
     @PostMapping(value = "/expenses", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "API-EXP-02: Ghi nhận khoản chi vận hành")
     public ResponseEntity<ApiResponse<ManagerExpenseResponse>> createExpense(
             @AuthenticationPrincipal UserPrincipal principal,
-            @RequestParam(required = false) String categoryId,
-            @RequestParam(required = false) String amount,
-            @RequestParam(required = false) String expenseDate,
-            @RequestParam(required = false) String description,
-            @RequestParam(required = false) String supplierName,
-            @RequestParam(required = false) String documentType,
-            @RequestParam(required = false) String documentNumber,
-            @RequestParam(required = false) String documentDate,
-            @RequestParam(required = false) String transactionReference,
-            @RequestParam(required = false) String paymentMethod,
-            @RequestParam(required = false) MultipartFile proofFile
+            @ModelAttribute CreateExpenseRequest request
     ) {
-        CreateExpenseRequest request = new CreateExpenseRequest(
-                categoryId, amount, expenseDate, description, supplierName, documentType,
-                documentNumber, documentDate, transactionReference, paymentMethod
-        );
-        ManagerExpenseResponse response = expenseService.createExpense(principal, request, proofFile);
+        ManagerExpenseResponse response = expenseService.createExpense(principal, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
     }
 }

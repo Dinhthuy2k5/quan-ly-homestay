@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface ExpenseCategoryRepository extends JpaRepository<ExpenseCategory, Long> {
     Optional<ExpenseCategory> findByIdAndHomestayId(Long id, Long homestayId);
     List<ExpenseCategory> findByHomestayIdOrderByNameAsc(Long homestayId);
+    List<ExpenseCategory> findByHomestayIdAndIdIn(Long homestayId, List<Long> ids);
 }

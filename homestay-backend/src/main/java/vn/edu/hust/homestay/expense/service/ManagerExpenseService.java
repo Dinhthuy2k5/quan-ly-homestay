@@ -1,8 +1,12 @@
 package vn.edu.hust.homestay.expense.service;
 
+import jakarta.persistence.criteria.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,8 +17,10 @@ import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.expense.dto.CreateExpenseRequest;
 import vn.edu.hust.homestay.expense.dto.ExpenseCategoryResponse;
+import vn.edu.hust.homestay.expense.dto.ManagerExpenseListResponse;
 import vn.edu.hust.homestay.expense.dto.ManagerExpenseResponse;
 import vn.edu.hust.homestay.expense.entity.Expense;
+import vn.edu.hust.homestay.expense.entity.ExpenseCategory;
 import vn.edu.hust.homestay.expense.repository.ExpenseCategoryRepository;
 import vn.edu.hust.homestay.expense.repository.ExpenseRepository;
 
@@ -24,12 +30,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ManagerExpenseService {
@@ -61,6 +68,60 @@ public class ManagerExpenseService {
         return categoryRepository.findByHomestayIdOrderByNameAsc(homestayId).stream()
                 .map(ExpenseCategoryResponse::from)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ManagerExpenseListResponse> listExpenses(
+            UserPrincipal principal,
+            LocalDate fromDate,
+            LocalDate toDate,
+            Long categoryId,
+            Expense.PaymentMethod paymentMethod,
+            String supplierName,
+            Pageable pageable
+    ) {
+        long homestayId = requireHomestayId(principal);
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw validationError("fromDate không được sau toDate");
+        }
+        if (categoryId != null && categoryId <= 0) {
+            throw validationError("categoryId phải lớn hơn 0");
+        }
+        if (categoryId != null && categoryRepository.findByIdAndHomestayId(categoryId, homestayId).isEmpty()) {
+            throw BusinessException.forbidden("HOMESTAY_SCOPE_VIOLATION", "Danh mục chi phí không thuộc homestay đang quản lý");
+        }
+
+        String supplierKeyword = normalize(supplierName);
+        Specification<Expense> specification = (root, query, builder) -> {
+            var predicates = new ArrayList<Predicate>();
+            predicates.add(builder.equal(root.get("homestayId"), homestayId));
+            if (fromDate != null) predicates.add(builder.greaterThanOrEqualTo(root.get("expenseDate"), fromDate));
+            if (toDate != null) predicates.add(builder.lessThanOrEqualTo(root.get("expenseDate"), toDate));
+            if (categoryId != null) predicates.add(builder.equal(root.get("categoryId"), categoryId));
+            if (paymentMethod != null) predicates.add(builder.equal(root.get("paymentMethod"), paymentMethod));
+            if (supplierKeyword != null) {
+                predicates.add(builder.like(builder.lower(root.get("supplierName")),
+                        "%" + supplierKeyword.toLowerCase(Locale.ROOT) + "%"));
+            }
+            return builder.and(predicates.toArray(Predicate[]::new));
+        };
+
+        Page<Expense> expenses = expenseRepository.findAll(specification, pageable);
+        List<Long> categoryIds = expenses.getContent().stream().map(Expense::getCategoryId).distinct().toList();
+        Map<Long, String> categoryNames = categoryIds.isEmpty() ? Map.of()
+                : categoryRepository.findByHomestayIdAndIdIn(homestayId, categoryIds).stream()
+                .collect(Collectors.toMap(ExpenseCategory::getId, ExpenseCategory::getName));
+
+        return expenses.map(expense -> ManagerExpenseListResponse.from(
+                expense, categoryNames.get(expense.getCategoryId())));
+    }
+
+    @Transactional
+    public ManagerExpenseResponse createExpense(
+            UserPrincipal principal,
+            CreateExpenseRequest request
+    ) {
+        return createExpense(principal, request, request != null ? request.proofFile() : null);
     }
 
     @Transactional
@@ -109,21 +170,21 @@ public class ManagerExpenseService {
         expense.setTransactionReference(transactionReference);
         expense.setPaymentMethod(parseEnum(request.paymentMethod(), Expense.PaymentMethod.class, "paymentMethod"));
         expense.setCreatedBy(principal.getId());
-        expenseRepository.saveAndFlush(expense);
 
         if (proofFile != null && !proofFile.isEmpty()) {
-            StoredProof proof = storeProof(expense.getId(), proofFile);
+            StoredProof proof = storeProof(proofFile);
             expense.setProofUrl(proof.url());
-            expenseRepository.saveAndFlush(expense);
         } else if (proofFile != null && proofFile.getOriginalFilename() != null
                 && !proofFile.getOriginalFilename().isBlank()) {
             throw BusinessException.badRequest("UNSUPPORTED_MEDIA_TYPE", "Tệp chứng từ tải lên đang trống");
         }
 
-        return ManagerExpenseResponse.from(expense);
+        expenseRepository.save(expense);
+
+        return ManagerExpenseResponse.from(expense, category.getName());
     }
 
-    private StoredProof storeProof(Long expenseId, MultipartFile proofFile) {
+    private StoredProof storeProof(MultipartFile proofFile) {
         if (proofFile.getSize() > MAX_PROOF_SIZE) {
             throw new BusinessException("FILE_TOO_LARGE", "Tệp chứng từ không được vượt quá 5 MB", HttpStatus.PAYLOAD_TOO_LARGE);
         }
@@ -136,7 +197,7 @@ public class ManagerExpenseService {
         }
         ProofType proofType = detectProofType(content);
         Path expenseDirectory = uploadRoot.resolve("expenses").normalize();
-        String filename = "expense-" + expenseId + "-" + UUID.randomUUID() + proofType.extension();
+        String filename = "expense-" + UUID.randomUUID() + proofType.extension();
         Path target = expenseDirectory.resolve(filename).normalize();
         if (!expenseDirectory.startsWith(uploadRoot) || !target.startsWith(expenseDirectory)) {
             throw new IllegalStateException("Generated expense proof path escaped upload directory");

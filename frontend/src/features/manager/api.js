@@ -392,6 +392,39 @@ export async function getManagerExpenseCategoriesApi() {
   return res.data?.data || [];
 }
 
+/** API-EXP-01: danh sách khoản chi, lọc theo ngày, danh mục, phương thức, nhà cung cấp và phân trang. */
+export async function getManagerExpensesApi({ fromDate, toDate, categoryId, paymentMethod, supplierName, page = 0, size = 20 } = {}) {
+  const params = { page, size };
+  if (fromDate) params.fromDate = fromDate;
+  if (toDate) params.toDate = toDate;
+  if (categoryId) params.categoryId = categoryId;
+  if (paymentMethod) params.paymentMethod = paymentMethod;
+  if (supplierName?.trim()) params.supplierName = supplierName.trim();
+  const res = await apiClient.get('/manager/expenses', { params });
+  const payload = res.data?.data;
+  const items = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.content)
+      ? payload.content
+      : Array.isArray(payload?.items)
+        ? payload.items
+        : [];
+  const responseMeta = res.data?.meta || payload?.meta || payload?.page || payload;
+  const pageInfo = responseMeta?.page && typeof responseMeta.page === 'object'
+    ? responseMeta.page
+    : responseMeta;
+  const totalElements = Number(responseMeta?.totalElements ?? pageInfo?.totalElements ?? items.length);
+  return {
+    items,
+    meta: {
+      page: Number(pageInfo?.page ?? pageInfo?.number ?? page),
+      size: Number(pageInfo?.size ?? size),
+      totalElements,
+      totalPages: Number(pageInfo?.totalPages ?? Math.ceil(totalElements / size)),
+    },
+  };
+}
+
 /** API-EXP-02: tạo khoản chi và tải chứng từ tùy chọn bằng multipart/form-data. */
 export async function createManagerExpenseApi(fields, proofFile) {
   const formData = new FormData();

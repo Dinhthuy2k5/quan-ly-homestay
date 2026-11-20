@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, FileText, Receipt, Upload, X } from 'lucide-react';
 import { createManagerExpenseApi, getManagerExpenseCategoriesApi } from '../api';
 import { fileUrl } from '../../../lib/api/client';
@@ -157,6 +158,7 @@ export default function ManagerExpensesPage() {
         </div>
         <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)]">
           <dl className="grid gap-4 sm:grid-cols-2">
+            <div><dt className="text-xs text-[var(--color-muted)]">Danh mục</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{createdExpense.categoryName || 'Chưa phân loại'}</dd></div>
             <div><dt className="text-xs text-[var(--color-muted)]">Số tiền</dt><dd className="mt-1 font-bold text-[var(--color-ink)]">{formatVnd(createdExpense.amount)}</dd></div>
             <div><dt className="text-xs text-[var(--color-muted)]">Ngày phát sinh</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{createdExpense.expenseDate}</dd></div>
             <div><dt className="text-xs text-[var(--color-muted)]">Nhà cung cấp</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{createdExpense.supplierName || 'Chưa cung cấp'}</dd></div>
@@ -167,10 +169,11 @@ export default function ManagerExpensesPage() {
               <FileText className="h-4 w-4" /> Xem chứng từ đã tải lên
             </a>
           )}
-          <div className="mt-5 border-t border-[var(--color-border)] pt-4">
-            <button type="button" onClick={() => setCreatedExpense(null)} className="min-h-11 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white hover:bg-[var(--color-primary-hover)]">
-              Ghi nhận khoản chi khác
-            </button>
+        <div className="mt-5 flex flex-wrap gap-3 border-t border-[var(--color-border)] pt-4">
+          <Link to="/manager/expenses" className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-border)] px-5 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]">Danh sách chi phí</Link>
+          <button type="button" onClick={() => setCreatedExpense(null)} className="min-h-11 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white hover:bg-[var(--color-primary-hover)]">
+            Ghi nhận khoản chi khác
+          </button>
           </div>
         </div>
       </section>
@@ -179,14 +182,17 @@ export default function ManagerExpensesPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <header className="flex items-start gap-3">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
-          <Receipt className="h-5 w-5" />
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+            <Receipt className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--color-ink)]">Ghi nhận khoản chi</h1>
+            <p className="mt-1 text-sm text-[var(--color-body)]">Lưu chi phí vận hành và chứng từ để tiện tra cứu, đối chiếu, báo cáo.</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-ink)]">Ghi nhận khoản chi</h1>
-          <p className="mt-1 text-sm text-[var(--color-body)]">Lưu chi phí vận hành và chứng từ để tiện tra cứu, đối chiếu, báo cáo.</p>
-        </div>
+        <Link to="/manager/expenses" className="inline-flex min-h-10 items-center rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)]">Quay lại danh sách</Link>
       </header>
 
       {categoryError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{categoryError}</div>}
