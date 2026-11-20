@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CalendarDays,
@@ -10,9 +10,9 @@ import {
   Receipt,
   RotateCcw,
   Search,
-  X,
 } from 'lucide-react';
 import { getManagerExpenseCategoriesApi, getManagerExpensesApi } from '../api';
+import ManagerExpenseDetailDialog from '../components/ManagerExpenseDetailDialog';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatVnd } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
@@ -77,93 +77,6 @@ function FilterField({ label, children }) {
       <span className="text-xs font-semibold text-[var(--color-body)]">{label}</span>
       {children}
     </label>
-  );
-}
-
-function ExpenseDetailDialog({ expense, onClose }) {
-  const dialogRef = useRef(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    const previousFocus = document.activeElement;
-    const focusableSelector = 'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    dialog?.querySelector(focusableSelector)?.focus();
-
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-      } else if (event.key === 'Tab' && dialog) {
-        const focusable = [...dialog.querySelectorAll(focusableSelector)];
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      previousFocus?.focus?.();
-    };
-  }, [onClose]);
-
-  const rows = [
-    ['Ngày phát sinh', formatDate(expense.expenseDate)],
-    ['Danh mục', expense.categoryName || '—'],
-    ['Nhà cung cấp', expense.supplierName || 'Chưa cung cấp'],
-    ['Phương thức thanh toán', PAYMENT_LABELS[expense.paymentMethod] || 'Chưa xác định'],
-    ['Loại chứng từ', DOCUMENT_LABELS[expense.documentType] || 'Chưa xác định'],
-    ['Số chứng từ', expense.documentNumber || '—'],
-    ['Ngày chứng từ', formatDate(expense.documentDate) || '—'],
-    ['Mã giao dịch', expense.transactionReference || '—'],
-  ];
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-5"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
-    >
-      <section
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="expense-detail-title"
-        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-7"
-      >
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] pb-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">Khoản chi #{expense.id}</p>
-            <h2 id="expense-detail-title" className="mt-1 text-xl font-bold text-[var(--color-ink)]">{expense.description || expense.categoryName || 'Chi phí vận hành'}</h2>
-            <p className="mt-2 text-2xl font-bold tabular-nums text-[var(--color-ink)]">{formatVnd(expense.amount)}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Đóng chi tiết" className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[var(--color-border)] text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
-            <X className="h-4 w-4" />
-          </button>
-        </header>
-
-        <dl className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-          {rows.map(([label, value]) => (
-            <div key={label}>
-              <dt className="text-xs font-medium text-[var(--color-muted)]">{label}</dt>
-              <dd className="mt-1 break-words text-sm font-semibold text-[var(--color-ink)]">{value}</dd>
-            </div>
-          ))}
-        </dl>
-
-        {expense.proofUrl && (
-          <a href={fileUrl(expense.proofUrl)} target="_blank" rel="noreferrer" className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]">
-            <FileText className="h-4 w-4 text-[var(--color-primary)]" /> Mở chứng từ đính kèm
-          </a>
-        )}
-      </section>
-    </div>
   );
 }
 
@@ -353,11 +266,12 @@ export default function ManagerExpenseListPage() {
             </div>
             <div className="divide-y divide-[var(--color-border)]">
               {result.items.map((expense) => (
-                <article key={expense.id} className="grid gap-3 p-4 transition hover:bg-gray-50/70 sm:p-5 lg:grid-cols-[105px_minmax(180px,1.7fr)_minmax(130px,1fr)_minmax(120px,.9fr)_minmax(130px,1fr)_130px_78px] lg:items-center lg:gap-4">
+                <article key={expense.id} className={`grid gap-3 p-4 transition hover:bg-gray-50/70 sm:p-5 lg:grid-cols-[105px_minmax(180px,1.7fr)_minmax(130px,1fr)_minmax(120px,.9fr)_minmax(130px,1fr)_130px_78px] lg:items-center lg:gap-4 ${expense.cancelledAt ? 'bg-gray-50/70' : ''}`}>
                 <div className="text-xs font-medium text-[var(--color-muted)] lg:text-sm lg:text-[var(--color-body)]"><span className="mr-1 text-xs text-[var(--color-muted)] lg:hidden">Ngày:</span>{formatDate(expense.expenseDate)}</div>
                 <div className="min-w-0">
                   <p className="break-words font-semibold text-[var(--color-ink)]"><span className="mr-1 text-xs font-medium text-[var(--color-muted)] lg:hidden">Khoản chi:</span>{expense.description || expense.categoryName || 'Chi phí vận hành'}</p>
                   <p className="mt-1 text-xs text-[var(--color-muted)]">{expense.categoryName || 'Chưa phân loại'}</p>
+                  {expense.cancelledAt && <span className="mt-1 inline-flex rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800">Đã hủy{expense.cancelledByName ? ` · ${expense.cancelledByName}` : ''}</span>}
                 </div>
                 <div className="min-w-0 text-sm text-[var(--color-body)]"><span className="mr-1 text-xs text-[var(--color-muted)] lg:hidden">Nhà cung cấp:</span>{expense.supplierName || '—'}</div>
                 <div className="text-sm text-[var(--color-body)]"><span className="mr-1 text-xs text-[var(--color-muted)] lg:hidden">Thanh toán:</span>{PAYMENT_LABELS[expense.paymentMethod] || 'Chưa xác định'}</div>
@@ -365,7 +279,7 @@ export default function ManagerExpenseListPage() {
                   <span className="mr-1 text-xs text-[var(--color-muted)] lg:hidden">Chứng từ:</span>{expense.documentNumber || DOCUMENT_LABELS[expense.documentType] || '—'}
                   {expense.proofUrl && <a href={fileUrl(expense.proofUrl)} target="_blank" rel="noreferrer" className="ml-2 inline-flex min-h-8 items-center gap-1 text-xs font-semibold text-[var(--color-primary)] hover:underline"><FileText className="h-3.5 w-3.5" /> Mở tệp</a>}
                 </div>
-                <p className="font-bold tabular-nums text-[var(--color-ink)] lg:text-right"><span className="mr-1 text-xs font-medium text-[var(--color-muted)] lg:hidden">Số tiền:</span>{formatVnd(expense.amount)}</p>
+                <p className={`font-bold tabular-nums lg:text-right ${expense.cancelledAt ? 'text-gray-400 line-through' : 'text-[var(--color-ink)]'}`}><span className="mr-1 text-xs font-medium text-[var(--color-muted)] lg:hidden">Số tiền:</span>{formatVnd(expense.amount)}</p>
                 <button type="button" onClick={() => setSelectedExpense(expense)} className="min-h-9 justify-self-start rounded-lg px-2.5 text-xs font-semibold text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 lg:justify-self-end">Chi tiết</button>
               </article>
               ))}
@@ -382,7 +296,21 @@ export default function ManagerExpenseListPage() {
         </footer>
       </section>
 
-      {selectedExpense && <ExpenseDetailDialog expense={selectedExpense} onClose={closeExpenseDetail} />}
+      {selectedExpense && (
+        <ManagerExpenseDetailDialog
+          expense={selectedExpense}
+          categories={categories}
+          onClose={closeExpenseDetail}
+          onSaved={(updatedExpense) => {
+            setSelectedExpense(updatedExpense);
+            setReload((value) => value + 1);
+          }}
+          onCancelled={() => {
+            setSelectedExpense(null);
+            setReload((value) => value + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

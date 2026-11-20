@@ -53,6 +53,8 @@ function validateForm(form, file) {
   if (form.supplierName.length > 150) errors.supplierName = 'Nhà cung cấp tối đa 150 ký tự.';
   if (form.documentNumber.length > 100) errors.documentNumber = 'Số chứng từ tối đa 100 ký tự.';
   if (form.transactionReference.length > 100) errors.transactionReference = 'Mã giao dịch tối đa 100 ký tự.';
+  if (!form.documentType) errors.documentType = 'Vui lòng chọn loại chứng từ.';
+  if (!file) errors.proofFile = 'Vui lòng tải lên hóa đơn, biên nhận hoặc chứng từ giao dịch.';
   if (file) {
     const fileError = validateFile(file);
     if (fileError) errors.proofFile = fileError;
@@ -231,14 +233,14 @@ export default function ManagerExpensesPage() {
 
         <section className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)] sm:p-6">
           <div className="mb-5 border-b border-[var(--color-border)] pb-3">
-            <h2 className="text-base font-bold text-[var(--color-ink)]">Chứng từ và giao dịch <span className="font-normal text-[var(--color-muted)]">(không bắt buộc)</span></h2>
-            <p className="mt-1 text-xs text-[var(--color-muted)]">Có thể lưu thông tin chứng từ hoặc tải lên hóa đơn, biên nhận hay ảnh giao dịch (tối đa 5 MB).</p>
+            <h2 className="text-base font-bold text-[var(--color-ink)]">Chứng từ và giao dịch <span className="font-normal text-rose-700">(bắt buộc)</span></h2>
+            <p className="mt-1 text-xs text-[var(--color-muted)]">Mỗi khoản chi mới phải có loại chứng từ và tệp hóa đơn, biên nhận hoặc xác nhận giao dịch (tối đa 5 MB).</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Nhà cung cấp" error={errors.supplierName}>
               <input name="supplierName" maxLength={150} value={form.supplierName} onChange={updateField} placeholder="Tên đơn vị hoặc người nhận tiền" className={inputClass} />
             </Field>
-            <Field label="Loại chứng từ">
+            <Field label="Loại chứng từ" required error={errors.documentType}>
               <select name="documentType" value={form.documentType} onChange={updateField} className={inputClass}>
                 <option value="">Chưa xác định</option>
                 <option value="INVOICE">Hóa đơn</option>
@@ -266,7 +268,7 @@ export default function ManagerExpensesPage() {
               </select>
             </Field>
             <div className="sm:col-span-2">
-              <Field label="Tệp chứng từ" error={errors.proofFile}>
+              <Field label="Tệp chứng từ" required error={errors.proofFile}>
                 <input id={fileInputId} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" onChange={handleFileChange} className="sr-only" />
                 {proofFile ? (
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3">

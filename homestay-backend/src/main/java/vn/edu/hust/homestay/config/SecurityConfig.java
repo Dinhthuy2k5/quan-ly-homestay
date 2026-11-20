@@ -85,6 +85,9 @@ public class SecurityConfig {
                 // Customer booking APIs
                 .requestMatchers("/api/v1/customer/**").hasRole("CUSTOMER")
 
+                // Director APIs (reports, company policies, audit history)
+                .requestMatchers("/api/v1/director/**").hasRole("DIRECTOR")
+
                 // Mọi request còn lại yêu cầu đăng nhập
                 .anyRequest().authenticated()
             )

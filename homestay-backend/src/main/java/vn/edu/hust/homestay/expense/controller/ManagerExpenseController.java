@@ -12,8 +12,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,9 +25,12 @@ import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.common.response.PageMeta;
 import vn.edu.hust.homestay.expense.dto.CreateExpenseRequest;
+import vn.edu.hust.homestay.expense.dto.CancelExpenseRequest;
+import vn.edu.hust.homestay.expense.dto.CancelExpenseResponse;
 import vn.edu.hust.homestay.expense.dto.ExpenseCategoryResponse;
 import vn.edu.hust.homestay.expense.dto.ManagerExpenseListResponse;
 import vn.edu.hust.homestay.expense.dto.ManagerExpenseResponse;
+import vn.edu.hust.homestay.expense.dto.UpdateExpenseRequest;
 import vn.edu.hust.homestay.expense.entity.Expense;
 import vn.edu.hust.homestay.expense.service.ManagerExpenseService;
 
@@ -89,5 +96,25 @@ public class ManagerExpenseController {
     ) {
         ManagerExpenseResponse response = expenseService.createExpense(principal, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
+    }
+
+    @PatchMapping(value = "/expenses/{expenseId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "API-EXP-03: Sửa khoản chi vận hành")
+    public ResponseEntity<ApiResponse<ManagerExpenseResponse>> updateExpense(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long expenseId,
+            @ModelAttribute UpdateExpenseRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(expenseService.updateExpense(principal, expenseId, request)));
+    }
+
+    @PostMapping("/expenses/{expenseId}/cancel")
+    @Operation(summary = "API-EXP-04: Hủy khoản chi có lưu lý do và lịch sử")
+    public ResponseEntity<ApiResponse<CancelExpenseResponse>> cancelExpense(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long expenseId,
+            @Valid @RequestBody CancelExpenseRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(expenseService.cancelExpense(principal, expenseId, request)));
     }
 }

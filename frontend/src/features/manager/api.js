@@ -437,6 +437,24 @@ export async function createManagerExpenseApi(fields, proofFile) {
   return res.data?.data || null;
 }
 
+/** API-EXP-03: cập nhật một phần khoản chi; trường không gửi được backend giữ nguyên. */
+export async function updateManagerExpenseApi(expenseId, fields, proofFile) {
+  const formData = new FormData();
+  Object.entries(fields).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) formData.append(key, String(value));
+  });
+  if (proofFile) formData.append('proofFile', proofFile);
+
+  const res = await apiClient.patch(`/manager/expenses/${expenseId}`, formData);
+  return res.data?.data || null;
+}
+
+/** API-EXP-04: hủy khoản chi và lưu lý do vào nhật ký kiểm toán. */
+export async function cancelManagerExpenseApi(expenseId, reason) {
+  const res = await apiClient.post(`/manager/expenses/${expenseId}/cancel`, { reason });
+  return res.data?.data || null;
+}
+
 /** Tải riêng tư chứng từ đặt cọc để Manager đối chiếu giao dịch. */
 export async function fetchManagerDepositProofApi(bookingId, paymentId) {
   const res = await apiClient.get(`/manager/bookings/${bookingId}/payments/${paymentId}/proof`, {

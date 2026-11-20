@@ -414,6 +414,9 @@ CREATE TABLE expenses (
   transaction_reference VARCHAR(100) NULL,
   payment_method ENUM('CASH','BANK_TRANSFER','CARD','OTHER') NULL,
   proof_url VARCHAR(500) NULL,
+  cancelled_at DATETIME NULL,
+  cancelled_by BIGINT NULL,
+  cancellation_reason VARCHAR(500) NULL,
   created_by   BIGINT NOT NULL,
   created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -423,8 +426,50 @@ CREATE TABLE expenses (
   CONSTRAINT fk_exp_cat FOREIGN KEY (category_id, homestay_id)
     REFERENCES expense_categories(id, homestay_id),
   CONSTRAINT fk_exp_user FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT fk_expenses_cancelled_by FOREIGN KEY (cancelled_by) REFERENCES users(id),
   CONSTRAINT ck_exp_amount CHECK (amount > 0)
 ) ENGINE=InnoDB;
+
+-- Append-only audit trail: app role can insert/read; DB triggers reject update/delete.
+CREATE TABLE expense_audit_logs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  expense_id BIGINT NOT NULL,
+  actor_id BIGINT NOT NULL,
+  action ENUM('CREATED','UPDATED','CANCELLED','APPROVED','REJECTED') NOT NULL,
+  reason VARCHAR(500) NULL,
+  before_data JSON NULL,
+  after_data JSON NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_exp_audit_expense (expense_id, created_at),
+  KEY idx_exp_audit_actor (actor_id, created_at),
+  CONSTRAINT fk_exp_audit_expense FOREIGN KEY (expense_id) REFERENCES expenses(id),
+  CONSTRAINT fk_exp_audit_actor FOREIGN KEY (actor_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+DELIMITER $$
+CREATE TRIGGER trg_expenses_require_proof_before_insert
+BEFORE INSERT ON expenses
+FOR EACH ROW
+BEGIN
+  IF NEW.document_type IS NULL OR NEW.proof_url IS NULL OR CHAR_LENGTH(TRIM(NEW.proof_url)) = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'New expenses require a document type and proof file';
+  END IF;
+END$$
+
+CREATE TRIGGER trg_expense_audit_logs_no_update
+BEFORE UPDATE ON expense_audit_logs
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Expense audit logs are append-only';
+END$$
+
+CREATE TRIGGER trg_expense_audit_logs_no_delete
+BEFORE DELETE ON expense_audit_logs
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Expense audit logs are append-only';
+END$$
+DELIMITER ;
 -- ---------------------------------------------------------------------
 -- 8. XÁC THỰC & NHẬT KÝ
 -- ---------------------------------------------------------------------
@@ -503,6 +548,7 @@ FROM (
   UNION ALL
   SELECT homestay_id, DATE_FORMAT(expense_date, '%Y-%m'), 0, SUM(amount)
   FROM expenses
+  WHERE cancelled_at IS NULL
   GROUP BY homestay_id, DATE_FORMAT(expense_date, '%Y-%m')
 ) t
 GROUP BY homestay_id, ym;

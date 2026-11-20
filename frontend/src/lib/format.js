@@ -38,7 +38,9 @@ export function formatDate(dateStr) {
 export function formatDateTime(dateTimeStr) {
   if (!dateTimeStr) return '';
   try {
-    const d = new Date(dateTimeStr);
+    // Backend LocalDateTime fields represent UTC; append Z when the payload has no zone.
+    const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(dateTimeStr);
+    const d = new Date(hasZone ? dateTimeStr : `${dateTimeStr}Z`);
     if (isNaN(d.getTime())) return dateTimeStr;
     return new Intl.DateTimeFormat('vi-VN', {
       timeZone: 'Asia/Ho_Chi_Minh',

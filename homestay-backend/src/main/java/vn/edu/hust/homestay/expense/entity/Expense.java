@@ -28,6 +28,8 @@ public class Expense {
     public enum DocumentType { INVOICE, RECEIPT, BANK_TRANSFER_CONFIRMATION, OTHER }
     public enum PaymentMethod { CASH, BANK_TRANSFER, CARD, OTHER }
 
+    public boolean isCancelled() { return cancelledAt != null; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -69,6 +71,15 @@ public class Expense {
 
     @Column(name = "proof_url", length = 500)
     private String proofUrl;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "cancelled_by")
+    private Long cancelledBy;
+
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
 
     @Column(name = "created_by", nullable = false)
     private Long createdBy;

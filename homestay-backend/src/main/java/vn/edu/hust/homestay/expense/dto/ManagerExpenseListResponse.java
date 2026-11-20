@@ -18,13 +18,18 @@ public record ManagerExpenseListResponse(
         LocalDate documentDate,
         String transactionReference,
         Expense.PaymentMethod paymentMethod,
-        String proofUrl
+        String proofUrl,
+        java.time.LocalDateTime cancelledAt,
+        Long cancelledBy,
+        String cancelledByName,
+        String cancellationReason
 ) {
-    public static ManagerExpenseListResponse from(Expense expense, String categoryName) {
+    public static ManagerExpenseListResponse from(Expense expense, String categoryName, String cancelledByName) {
         return new ManagerExpenseListResponse(
                 expense.getId(), expense.getCategoryId(), categoryName, expense.getAmount(), expense.getExpenseDate(),
                 expense.getDescription(), expense.getSupplierName(), expense.getDocumentType(), expense.getDocumentNumber(),
-                expense.getDocumentDate(), expense.getTransactionReference(), expense.getPaymentMethod(), expense.getProofUrl()
+                expense.getDocumentDate(), expense.getTransactionReference(), expense.getPaymentMethod(), expense.getProofUrl(),
+                expense.getCancelledAt(), expense.getCancelledBy(), cancelledByName, expense.getCancellationReason()
         );
     }
 }
