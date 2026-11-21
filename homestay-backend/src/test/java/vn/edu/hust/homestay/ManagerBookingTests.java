@@ -2390,6 +2390,11 @@ class ManagerBookingTests {
         Booking booking = createSampleBooking(homestay1Id, room1, "HS-STAY-03-" + UUID.randomUUID().toString().substring(0, 4),
                 "0988800003", "Khách CheckIn 3", checkIn, checkOut, BookingStatus.CONFIRMED);
 
+        managerBookingService.setClock(Clock.fixed(
+                LocalDateTime.of(checkIn, LocalTime.of(12, 0)).atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),
+                ZoneId.of("Asia/Ho_Chi_Minh")
+        ));
+
         // Gửi số khách vượt quá sức chứa tối đa của phòng
         String body = String.format("""
                 {

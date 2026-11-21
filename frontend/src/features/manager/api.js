@@ -392,6 +392,21 @@ export async function getManagerExpenseCategoriesApi() {
   return res.data?.data || [];
 }
 
+/** API-EXP-05: CRUD danh mục chi phí của homestay đang quản lý. */
+export async function createManagerExpenseCategoryApi(name) {
+  const res = await apiClient.post('/manager/expense-categories', { name });
+  return res.data?.data || null;
+}
+
+export async function updateManagerExpenseCategoryApi(categoryId, name) {
+  const res = await apiClient.patch(`/manager/expense-categories/${categoryId}`, { name });
+  return res.data?.data || null;
+}
+
+export async function deleteManagerExpenseCategoryApi(categoryId) {
+  await apiClient.delete(`/manager/expense-categories/${categoryId}`);
+}
+
 /** API-EXP-01: danh sách khoản chi, lọc theo ngày, danh mục, phương thức, nhà cung cấp và phân trang. */
 export async function getManagerExpensesApi({ fromDate, toDate, categoryId, paymentMethod, supplierName, page = 0, size = 20 } = {}) {
   const params = { page, size };

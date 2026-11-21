@@ -10,4 +10,6 @@ public interface ExpenseCategoryRepository extends JpaRepository<ExpenseCategory
     Optional<ExpenseCategory> findByIdAndHomestayId(Long id, Long homestayId);
     List<ExpenseCategory> findByHomestayIdOrderByNameAsc(Long homestayId);
     List<ExpenseCategory> findByHomestayIdAndIdIn(Long homestayId, List<Long> ids);
+    boolean existsByHomestayIdAndNameIgnoreCase(Long homestayId, String name);
+    boolean existsByHomestayIdAndNameIgnoreCaseAndIdNot(Long homestayId, String name, Long id);
 }

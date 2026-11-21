@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ import vn.edu.hust.homestay.expense.dto.ExpenseCategoryResponse;
 import vn.edu.hust.homestay.expense.dto.ManagerExpenseListResponse;
 import vn.edu.hust.homestay.expense.dto.ManagerExpenseResponse;
 import vn.edu.hust.homestay.expense.dto.UpdateExpenseRequest;
+import vn.edu.hust.homestay.expense.dto.SaveExpenseCategoryRequest;
 import vn.edu.hust.homestay.expense.entity.Expense;
 import vn.edu.hust.homestay.expense.entity.ExpenseCategory;
 import vn.edu.hust.homestay.expense.entity.ExpenseAuditLog;
@@ -87,6 +89,67 @@ public class ManagerExpenseService {
         return categoryRepository.findByHomestayIdOrderByNameAsc(homestayId).stream()
                 .map(ExpenseCategoryResponse::from)
                 .toList();
+    }
+
+    @Transactional
+    public ExpenseCategoryResponse createCategory(UserPrincipal principal, SaveExpenseCategoryRequest request) {
+        long homestayId = requireHomestayId(principal);
+        String name = normalizeCategoryName(request == null ? null : request.name());
+        if (categoryRepository.existsByHomestayIdAndNameIgnoreCase(homestayId, name)) {
+            throw BusinessException.conflict("EXPENSE_CATEGORY_NAME_EXISTS", "Tên danh mục đã tồn tại");
+        }
+        ExpenseCategory category = new ExpenseCategory();
+        category.setHomestayId(homestayId);
+        category.setName(name);
+        try {
+            return ExpenseCategoryResponse.from(categoryRepository.saveAndFlush(category));
+        } catch (DataIntegrityViolationException exception) {
+            throw BusinessException.conflict("EXPENSE_CATEGORY_NAME_EXISTS", "Tên danh mục đã tồn tại");
+        }
+    }
+
+    @Transactional
+    public ExpenseCategoryResponse updateCategory(
+            UserPrincipal principal, Long categoryId, SaveExpenseCategoryRequest request
+    ) {
+        long homestayId = requireHomestayId(principal);
+        ExpenseCategory category = categoryRepository.findByIdAndHomestayId(categoryId, homestayId)
+                .orElseThrow(() -> BusinessException.notFound("EXPENSE_CATEGORY_NOT_FOUND", "Không tìm thấy danh mục chi phí"));
+        String name = normalizeCategoryName(request == null ? null : request.name());
+        if (categoryRepository.existsByHomestayIdAndNameIgnoreCaseAndIdNot(homestayId, name, categoryId)) {
+            throw BusinessException.conflict("EXPENSE_CATEGORY_NAME_EXISTS", "Tên danh mục đã tồn tại");
+        }
+        category.setName(name);
+        try {
+            return ExpenseCategoryResponse.from(categoryRepository.saveAndFlush(category));
+        } catch (DataIntegrityViolationException exception) {
+            throw BusinessException.conflict("EXPENSE_CATEGORY_NAME_EXISTS", "Tên danh mục đã tồn tại");
+        }
+    }
+
+    @Transactional
+    public void deleteCategory(UserPrincipal principal, Long categoryId) {
+        long homestayId = requireHomestayId(principal);
+        ExpenseCategory category = categoryRepository.findByIdAndHomestayId(categoryId, homestayId)
+                .orElseThrow(() -> BusinessException.notFound("EXPENSE_CATEGORY_NOT_FOUND", "Không tìm thấy danh mục chi phí"));
+        if (expenseRepository.existsByCategoryIdAndHomestayId(categoryId, homestayId)) {
+            throw BusinessException.conflict("EXPENSE_CATEGORY_IN_USE", "Không thể xóa danh mục đã được khoản chi sử dụng");
+        }
+        try {
+            categoryRepository.delete(category);
+            categoryRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw BusinessException.conflict("EXPENSE_CATEGORY_IN_USE", "Không thể xóa danh mục đã được khoản chi sử dụng");
+        }
+    }
+
+    private String normalizeCategoryName(String rawName) {
+        if (rawName == null || rawName.isBlank()) {
+            throw validationError("Tên danh mục không được để trống");
+        }
+        String name = rawName.trim();
+        if (name.length() > 100) throw validationError("Tên danh mục tối đa 100 ký tự");
+        return name;
     }
 
     @Transactional(readOnly = true)

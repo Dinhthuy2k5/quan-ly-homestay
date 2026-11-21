@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.http.MediaType;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -33,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -85,6 +88,57 @@ class ManagerExpenseTests {
         homestayId = manager.getHomestayId();
         category = categoryRepository.findByHomestayIdOrderByNameAsc(homestayId).stream().findFirst().orElseThrow();
         uploadRoot = Path.of("target/test-expense-uploads").toAbsolutePath().normalize();
+    }
+
+    @Test
+    @DisplayName("API-EXP-05: Manager tạo và đổi tên danh mục trong homestay được giao")
+    void managerCanCreateAndRenameExpenseCategory() throws Exception {
+        var created = mockMvc.perform(post("/api/v1/manager/expense-categories")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"  Vật tư demo  \"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.name").value("Vật tư demo"))
+                .andReturn();
+        Number createdIdValue = com.jayway.jsonpath.JsonPath.read(created.getResponse().getContentAsString(), "$.data.id");
+        Long createdId = createdIdValue.longValue();
+        assertEquals(homestayId, jdbcTemplate.queryForObject(
+                "SELECT homestay_id FROM expense_categories WHERE id = ?", Long.class, createdId));
+
+        mockMvc.perform(patch("/api/v1/manager/expense-categories/{categoryId}", createdId)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Bảo trì demo\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("Bảo trì demo"));
+        assertEquals("Bảo trì demo", jdbcTemplate.queryForObject(
+                "SELECT name FROM expense_categories WHERE id = ?", String.class, createdId));
+    }
+
+    @Test
+    @DisplayName("API-EXP-05: từ chối xóa danh mục đang được khoản chi sử dụng")
+    void deleteRejectsCategoryInUse() throws Exception {
+        createExpense();
+        mockMvc.perform(delete("/api/v1/manager/expense-categories/{categoryId}", category.getId())
+                        .header("Authorization", "Bearer " + managerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("EXPENSE_CATEGORY_IN_USE"));
+        assertTrue(categoryRepository.existsById(category.getId()));
+    }
+
+    @Test
+    @DisplayName("API-EXP-05: xóa danh mục chưa sử dụng thành công")
+    void deleteUnusedCategoryRemovesDatabaseRow() throws Exception {
+        ExpenseCategory unused = new ExpenseCategory();
+        unused.setHomestayId(homestayId);
+        unused.setName("Danh mục xóa demo " + UUID.randomUUID());
+        unused = categoryRepository.saveAndFlush(unused);
+        Long unusedId = unused.getId();
+
+        mockMvc.perform(delete("/api/v1/manager/expense-categories/{categoryId}", unusedId)
+                        .header("Authorization", "Bearer " + managerToken))
+                .andExpect(status().isNoContent());
+        assertFalse(categoryRepository.existsById(unusedId));
     }
 
     @Test

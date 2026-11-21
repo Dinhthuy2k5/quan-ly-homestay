@@ -6,6 +6,7 @@ import {
   ChevronRight,
   FileText,
   Filter,
+  ListTree,
   Plus,
   Receipt,
   RotateCcw,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 import { getManagerExpenseCategoriesApi, getManagerExpensesApi } from '../api';
 import ManagerExpenseDetailDialog from '../components/ManagerExpenseDetailDialog';
+import ManagerExpenseCategoriesDialog from '../components/ManagerExpenseCategoriesDialog';
 import { fileUrl } from '../../../lib/api/client';
 import { formatDate, formatVnd } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
@@ -88,6 +90,7 @@ export default function ManagerExpenseListPage() {
   const [page, setPage] = useState(0);
   const [result, setResult] = useState({ items: [], meta: { page: 0, size: 20, totalElements: 0, totalPages: 0 } });
   const [selectedExpense, setSelectedExpense] = useState(null);
+  const [showCategories, setShowCategories] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [categoryError, setCategoryError] = useState('');
@@ -115,6 +118,15 @@ export default function ManagerExpenseListPage() {
   }, [appliedFilters, page, reload]);
 
   useEffect(() => { loadExpenses(); }, [loadExpenses]);
+
+  useEffect(() => {
+    if (appliedFilters.categoryId
+      && !categories.some((category) => String(category.id) === String(appliedFilters.categoryId))) {
+      setFilters((current) => ({ ...current, categoryId: '' }));
+      setAppliedFilters((current) => ({ ...current, categoryId: '' }));
+      setPage(0);
+    }
+  }, [categories, appliedFilters.categoryId]);
 
   const updateFilter = (event) => {
     setFilters((current) => ({ ...current, [event.target.name]: event.target.value }));
@@ -162,9 +174,12 @@ export default function ManagerExpenseListPage() {
             <p className="mt-1 text-sm text-[var(--color-body)]">Theo dõi khoản chi, nhà cung cấp và chứng từ của homestay.</p>
           </div>
         </div>
-        <Link to="/manager/expenses/create" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white transition hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
-          <Plus className="h-4 w-4" /> Ghi nhận khoản chi
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setShowCategories(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--color-border-strong)] bg-white px-4 text-sm font-semibold text-[var(--color-ink)] transition hover:bg-[var(--color-surface-soft)]"><ListTree className="h-4 w-4" /> Danh mục</button>
+          <Link to="/manager/expenses/create" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white transition hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+            <Plus className="h-4 w-4" /> Ghi nhận khoản chi
+          </Link>
+        </div>
       </header>
 
       {(error || categoryError) && (
@@ -311,6 +326,7 @@ export default function ManagerExpenseListPage() {
           }}
         />
       )}
+      {showCategories && <ManagerExpenseCategoriesDialog categories={categories} onClose={() => setShowCategories(false)} onChanged={setCategories} />}
     </div>
   );
 }

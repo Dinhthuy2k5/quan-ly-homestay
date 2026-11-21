@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -31,6 +32,7 @@ import vn.edu.hust.homestay.expense.dto.ExpenseCategoryResponse;
 import vn.edu.hust.homestay.expense.dto.ManagerExpenseListResponse;
 import vn.edu.hust.homestay.expense.dto.ManagerExpenseResponse;
 import vn.edu.hust.homestay.expense.dto.UpdateExpenseRequest;
+import vn.edu.hust.homestay.expense.dto.SaveExpenseCategoryRequest;
 import vn.edu.hust.homestay.expense.entity.Expense;
 import vn.edu.hust.homestay.expense.service.ManagerExpenseService;
 
@@ -56,6 +58,36 @@ public class ManagerExpenseController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(ApiResponse.ok(expenseService.getCategories(principal)));
+    }
+
+    @PostMapping("/expense-categories")
+    @Operation(summary = "API-EXP-05: Tạo danh mục chi phí")
+    public ResponseEntity<ApiResponse<ExpenseCategoryResponse>> createExpenseCategory(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody SaveExpenseCategoryRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok(expenseService.createCategory(principal, request)));
+    }
+
+    @PatchMapping("/expense-categories/{categoryId}")
+    @Operation(summary = "API-EXP-05: Đổi tên danh mục chi phí")
+    public ResponseEntity<ApiResponse<ExpenseCategoryResponse>> updateExpenseCategory(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long categoryId,
+            @Valid @RequestBody SaveExpenseCategoryRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(expenseService.updateCategory(principal, categoryId, request)));
+    }
+
+    @DeleteMapping("/expense-categories/{categoryId}")
+    @Operation(summary = "API-EXP-05: Xóa danh mục chưa được khoản chi sử dụng")
+    public ResponseEntity<Void> deleteExpenseCategory(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long categoryId
+    ) {
+        expenseService.deleteCategory(principal, categoryId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/expenses")
