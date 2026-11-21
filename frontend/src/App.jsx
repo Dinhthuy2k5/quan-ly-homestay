@@ -36,6 +36,7 @@ import ManagerEditServicePage from './features/manager/pages/ManagerEditServiceP
 import ManagerServiceCategoriesPage from './features/manager/pages/ManagerServiceCategoriesPage';
 import ManagerExpensesPage from './features/manager/pages/ManagerExpensesPage';
 import ManagerExpenseListPage from './features/manager/pages/ManagerExpenseListPage';
+import ManagerReportOverviewPage from './features/manager/pages/ManagerReportOverviewPage';
 
 function SearchResultsRoute() {
   const location = useLocation();
@@ -142,6 +143,7 @@ export function App() {
               <Route path="services/categories" element={<ManagerServiceCategoriesPage />} />
               <Route path="expenses" element={<ManagerExpenseListPage />} />
               <Route path="expenses/create" element={<ManagerExpensesPage />} />
+              <Route path="reports" element={<ManagerReportOverviewPage />} />
             </Route>
 
             {/* Trang 403 Forbidden */}

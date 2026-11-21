@@ -32,7 +32,7 @@ export async function getManagerHomestayPoliciesApi() {
 /**
  * API-MGR-03: Danh sách phòng thuộc homestay của Manager
  */
-export async function getManagerRoomsApi({ status, roomTypeId, keyword, page = 0, size = 20 } = {}) {
+export async function getManagerRoomsApi({ status, roomTypeId, keyword, page = 0, size = 20, signal } = {}) {
   const params = {};
   if (status) params.status = status;
   if (roomTypeId) params.roomTypeId = roomTypeId;
@@ -40,7 +40,7 @@ export async function getManagerRoomsApi({ status, roomTypeId, keyword, page = 0
   params.page = page;
   params.size = size;
 
-  const res = await apiClient.get('/manager/rooms', { params });
+  const res = await apiClient.get('/manager/rooms', { params, signal });
   return {
     items: res.data?.data || [],
     meta: res.data?.meta || { page: 0, size: 20, totalElements: 0, totalPages: 0 },
@@ -202,6 +202,7 @@ export async function getManagerBookingsApi({
   page = 0,
   size = 10,
   sort = 'createdAt,desc',
+  signal,
 } = {}) {
   const params = { page, size, sort };
   if (status) params.status = status;
@@ -209,7 +210,7 @@ export async function getManagerBookingsApi({
   if (toDate) params.toDate = toDate;
   if (keyword?.trim()) params.keyword = keyword.trim();
 
-  const res = await apiClient.get('/manager/bookings', { params });
+  const res = await apiClient.get('/manager/bookings', { params, signal });
   return {
     items: res.data?.data || [],
     meta: res.data?.meta || { page: 0, size, totalElements: 0, totalPages: 0 },
@@ -390,6 +391,15 @@ export async function getManagerBookingBalanceApi(bookingId) {
 export async function getManagerExpenseCategoriesApi() {
   const res = await apiClient.get('/manager/expense-categories');
   return res.data?.data || [];
+}
+
+/** API-REPORT-MGR-01: Tổng quan hoạt động cơ sở theo ngày. */
+export async function getManagerReportOverviewApi({ fromDate, toDate, signal } = {}) {
+  const params = {};
+  if (fromDate) params.fromDate = fromDate;
+  if (toDate) params.toDate = toDate;
+  const res = await apiClient.get('/manager/reports/overview', { params, signal });
+  return res.data?.data || null;
 }
 
 /** API-EXP-05: CRUD danh mục chi phí của homestay đang quản lý. */

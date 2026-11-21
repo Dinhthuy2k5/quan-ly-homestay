@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Sparkles,
   Receipt,
+  BarChart3,
 } from 'lucide-react';
 import { getAssignedHomestayApi } from '../api';
 import StatusBadge from '../../../components/ui/StatusBadge';
@@ -58,6 +59,12 @@ const NAV_ITEMS = [
     label: 'Chi phí',
     icon: Receipt,
     end: true,
+  },
+  {
+    to: '/manager/reports',
+    label: 'Trung tâm điều hành',
+    icon: BarChart3,
+    end: false,
   },
 ];
 
@@ -135,10 +142,9 @@ export function ManagerLayout() {
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
-                  `inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                    isActive
-                      ? 'bg-[var(--color-primary)] text-white shadow-xs'
-                      : 'bg-[var(--color-surface-soft)] text-[var(--color-body)] hover:text-[var(--color-ink)]'
+                  `inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${isActive
+                    ? 'bg-[var(--color-primary)] text-white shadow-xs'
+                    : 'bg-[var(--color-surface-soft)] text-[var(--color-body)] hover:text-[var(--color-ink)]'
                   }`
                 }
               >
@@ -228,10 +234,9 @@ export function ManagerLayout() {
                     to={item.to}
                     end={item.end}
                     className={({ isActive }) =>
-                      `group flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all ${
-                        isActive
-                          ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)] font-bold border border-[var(--color-primary-disabled)] shadow-xs'
-                          : 'text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] border border-transparent'
+                      `group flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all ${isActive
+                        ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)] font-bold border border-[var(--color-primary-disabled)] shadow-xs'
+                        : 'text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)] border border-transparent'
                       }`
                     }
                   >
@@ -239,20 +244,18 @@ export function ManagerLayout() {
                       <>
                         <div className="flex items-center gap-3">
                           <item.icon
-                            className={`h-4 w-4 shrink-0 transition-colors ${
-                              isActive
+                            className={`h-4 w-4 shrink-0 transition-colors ${isActive
                                 ? 'text-[var(--color-primary)]'
                                 : 'text-[var(--color-muted)] group-hover:text-[var(--color-ink)]'
-                            }`}
+                              }`}
                           />
                           <span>{item.label}</span>
                         </div>
                         <ChevronRight
-                          className={`h-4 w-4 transition-transform ${
-                            isActive
+                          className={`h-4 w-4 transition-transform ${isActive
                               ? 'text-[var(--color-primary)] opacity-100 translate-x-0.5'
                               : 'text-[var(--color-muted)] opacity-0 group-hover:opacity-60'
-                          }`}
+                            }`}
                         />
                       </>
                     )}
@@ -280,7 +283,7 @@ export function ManagerLayout() {
             context={{
               homestay,
               reloadHomestay: () => {
-                getAssignedHomestayApi().then(setHomestay).catch(() => {});
+                getAssignedHomestayApi().then(setHomestay).catch(() => { });
               },
             }}
           />
