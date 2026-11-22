@@ -36,6 +36,7 @@ import ManagerEditServicePage from './features/manager/pages/ManagerEditServiceP
 import ManagerServiceCategoriesPage from './features/manager/pages/ManagerServiceCategoriesPage';
 import ManagerExpensesPage from './features/manager/pages/ManagerExpensesPage';
 import ManagerExpenseListPage from './features/manager/pages/ManagerExpenseListPage';
+import ManagerDashboardPage from './features/manager/pages/ManagerDashboardPage';
 import ManagerReportOverviewPage from './features/manager/pages/ManagerReportOverviewPage';
 
 function SearchResultsRoute() {
@@ -126,7 +127,8 @@ export function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<Navigate to="homestay" replace />} />
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<ManagerDashboardPage />} />
               <Route path="homestay" element={<ManagerHomestayPage />} />
               <Route path="bookings" element={<ManagerBookingsPage />} />
               <Route path="bookings/create" element={<ManagerCreateBookingPage />} />

@@ -13,11 +13,18 @@ import {
   Sparkles,
   Receipt,
   BarChart3,
+  LayoutDashboard,
 } from 'lucide-react';
 import { getAssignedHomestayApi } from '../api';
 import StatusBadge from '../../../components/ui/StatusBadge';
 
 const NAV_ITEMS = [
+  {
+    to: '/manager/dashboard',
+    label: 'Trung tâm điều hành',
+    icon: LayoutDashboard,
+    end: true,
+  },
   {
     to: '/manager/homestay',
     label: 'Thông tin cơ sở',
@@ -62,7 +69,7 @@ const NAV_ITEMS = [
   },
   {
     to: '/manager/reports',
-    label: 'Trung tâm điều hành',
+    label: 'Báo cáo',
     icon: BarChart3,
     end: false,
   },

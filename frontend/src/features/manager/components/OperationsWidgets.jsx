@@ -310,10 +310,12 @@ export function OperationalScheduleCard({
   appliedFilters,
   homestay,
   sectionRef,
+  rangeControls = null,
+  scopeLabel = 'trong kỳ đã chọn',
 }) {
   const tabs = [
-    { key: 'arrivals', label: 'Nhận phòng', count: arrivals.length, icon: LogIn },
-    { key: 'departures', label: 'Trả phòng', count: departures.length, icon: LogOut },
+    { key: 'arrivals', label: 'Chờ nhận phòng', count: arrivals.length, icon: LogIn },
+    { key: 'departures', label: 'Chờ trả phòng', count: departures.length, icon: LogOut },
     { key: 'inHouse', label: 'Đang lưu trú', count: inHouse.length, icon: Moon },
   ];
 
@@ -322,15 +324,15 @@ export function OperationalScheduleCard({
   const visibleItems = activeList.slice(0, 6);
 
   const viewAllHref =
-    activeTab === 'inHouse'
-      ? '/manager/bookings?status=CHECKED_IN'
-      : `/manager/bookings?fromDate=${appliedFilters.fromDate}&toDate=${appliedFilters.toDate}`;
+    activeTab === 'arrivals'
+      ? `/manager/bookings?status=CONFIRMED&fromDate=${appliedFilters.fromDate}&toDate=${appliedFilters.toDate}`
+      : '/manager/bookings?status=CHECKED_IN';
 
   const emptyMessage =
     activeTab === 'arrivals'
-      ? 'Không có lịch khách nhận phòng trong kỳ đã chọn.'
+      ? `Không có đơn chờ nhận phòng ${scopeLabel}.`
       : activeTab === 'departures'
-      ? 'Không có lịch khách trả phòng trong kỳ đã chọn.'
+      ? `Không có đoàn chờ trả phòng ${scopeLabel}.`
       : 'Hiện chưa có đoàn khách nào đang lưu trú tại cơ sở.';
 
   return (
@@ -349,7 +351,11 @@ export function OperationalScheduleCard({
           </h2>
         </div>
 
-        {/* Segmented tabs */}
+        {rangeControls}
+      </div>
+
+      {/* Segmented tabs */}
+      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2">
         <div
           className="inline-flex flex-wrap rounded-xl bg-[var(--color-surface-soft)] p-1"
           role="tablist"
@@ -437,6 +443,11 @@ export function OperationalScheduleCard({
                       {activeTab === 'arrivals' && isTodayCheckIn && (
                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                           Nhận hôm nay
+                        </span>
+                      )}
+                      {activeTab === 'inHouse' && isTodayCheckIn && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          Mới nhận hôm nay
                         </span>
                       )}
                       {(activeTab === 'departures' || activeTab === 'inHouse') && isTodayCheckOut && (
@@ -542,9 +553,11 @@ export function OperationalScheduleCard({
         <span className="text-[var(--color-muted)]">
           {!loading && activeList.length > visibleItems.length
             ? `Hiển thị ${visibleItems.length}/${activeList.length} đơn gần nhất`
-            : activeTab === 'inHouse'
-            ? 'Dữ liệu thực tế tại thời điểm hiện tại'
-            : 'Dựa trên danh sách đơn của kỳ đang chọn'}
+            : activeTab === 'arrivals'
+            ? 'Đơn đã check-in sẽ tự động chuyển sang tab Đang lưu trú'
+            : activeTab === 'departures'
+            ? 'Chỉ hiển thị khách đang lưu trú có hạn trả phòng trong phạm vi chọn'
+            : 'Dữ liệu khách đang có mặt tại thời điểm hiện tại'}
         </span>
         <Link
           to={viewAllHref}
