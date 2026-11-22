@@ -3,18 +3,14 @@ import { Link, useLocation, useNavigate, useOutletContext, useParams } from 'rea
 import {
   AlertCircle,
   ArrowLeft,
-  CalendarDays,
+  Banknote,
   Check,
+  CheckCircle2,
   Clock,
-  CreditCard,
-  DoorOpen,
-  Info,
+  Landmark,
   LoaderCircle,
   LogOut,
   RefreshCw,
-  Sparkles,
-  User,
-  Users,
   X,
 } from 'lucide-react';
 import { checkOutManagerBookingApi, fetchManagerBookingDetailApi, getManagerBookingBalanceApi } from '../api';
@@ -22,6 +18,8 @@ import { formatDate, formatVnd, nightsBetween } from '../../../lib/format';
 import { CHECK_IN_TIME, CHECK_OUT_DEADLINE } from '../../../lib/constants';
 import { getErrorMessage } from '../../../lib/errors';
 import StatusBadge from '../../../components/ui/StatusBadge';
+
+const CARD_CLASS = 'rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-1)]';
 
 export default function ManagerCheckOutBookingPage() {
   const { bookingId } = useParams();
@@ -92,9 +90,10 @@ export default function ManagerCheckOutBookingPage() {
   const isCheckedIn = booking?.status === 'CHECKED_IN';
   const canCheckOut = Boolean(isCheckedIn && !isCheckOutExpired && !isCheckOutTooEarly);
 
-  const nights = booking?.checkInDate && booking?.checkOutDate
-    ? nightsBetween(booking.checkInDate, booking.checkOutDate)
-    : 0;
+  const nights =
+    booking?.checkInDate && booking?.checkOutDate
+      ? nightsBetween(booking.checkInDate, booking.checkOutDate)
+      : 0;
 
   // Dịch vụ
   const registeredServices = useMemo(
@@ -116,25 +115,33 @@ export default function ManagerCheckOutBookingPage() {
   const checkoutGrandTotalPrice = checkoutRoomTotalPrice + checkoutServiceTotalPrice;
 
   // Tiền đã thanh toán trước (DEPOSIT và PAYMENT đã CONFIRMED)
-  const checkoutPaidBefore = balance?.paidAmount != null
-    ? Number(balance.paidAmount)
-    : (booking?.payments || []).reduce((sum, p) =>
-      p.status === 'CONFIRMED' && (p.paymentType === 'DEPOSIT' || p.paymentType === 'PAYMENT')
-        ? sum + Number(p.amount || 0)
-        : sum, 0);
+  const checkoutPaidBefore =
+    balance?.paidAmount != null
+      ? Number(balance.paidAmount)
+      : (booking?.payments || []).reduce(
+          (sum, p) =>
+            p.status === 'CONFIRMED' && (p.paymentType === 'DEPOSIT' || p.paymentType === 'PAYMENT')
+              ? sum + Number(p.amount || 0)
+              : sum,
+          0
+        );
 
   const checkoutOutstandingAmount = Math.max(0, checkoutGrandTotalPrice - checkoutPaidBefore);
 
   // Thao tác phân loại dịch vụ hàng loạt
   const handleSelectAllUsed = () => {
     const next = {};
-    registeredServices.forEach((s) => { next[s.id] = 'USED'; });
+    registeredServices.forEach((s) => {
+      next[s.id] = 'USED';
+    });
     setServiceDecisions(next);
   };
 
   const handleSelectAllCancelled = () => {
     const next = {};
-    registeredServices.forEach((s) => { next[s.id] = 'CANCELLED'; });
+    registeredServices.forEach((s) => {
+      next[s.id] = 'CANCELLED';
+    });
     setServiceDecisions(next);
   };
 
@@ -144,11 +151,13 @@ export default function ManagerCheckOutBookingPage() {
     setFormError('');
 
     if (!isCheckedIn) {
-      setFormError('Đơn đặt phòng phải ở trạng thái Đang lưu trú (CHECKED_IN) để thực hiện trả phòng.');
+      setFormError('Đơn đặt phòng phải ở trạng thái Đang lưu trú để thực hiện trả phòng.');
       return;
     }
     if (isCheckOutExpired) {
-      setFormError(`Đã quá hạn trả phòng (hạn trả phòng: ${CHECK_OUT_DEADLINE} ngày ${formatDate(booking.checkOutDate)}). Vui lòng đối soát lại.`);
+      setFormError(
+        `Đã quá hạn trả phòng (hạn trả phòng: ${CHECK_OUT_DEADLINE} ngày ${formatDate(booking.checkOutDate)}). Vui lòng đối soát lại.`
+      );
       return;
     }
     if (isCheckOutTooEarly) {
@@ -156,11 +165,10 @@ export default function ManagerCheckOutBookingPage() {
       return;
     }
 
-    // Kiểm tra đã phân loại đủ mọi dịch vụ REGISTERED
     const unselected = registeredServices.filter((s) => !serviceDecisions[s.id]);
     if (unselected.length > 0) {
       setFormError(
-        `Vui lòng chọn trạng thái (Đã sử dụng hoặc Hủy) cho tất cả ${unselected.length} dịch vụ chưa xác nhận: ${unselected.map((s) => s.serviceName || s.name).join(', ')}`
+        `Vui lòng chọn trạng thái cho ${unselected.length} dịch vụ: ${unselected.map((s) => s.serviceName || s.name).join(', ')}`
       );
       return;
     }
@@ -181,7 +189,7 @@ export default function ManagerCheckOutBookingPage() {
       paymentPayload = {
         amount: checkoutOutstandingAmount,
         method: checkoutPaymentMethod,
-        referenceCode: checkoutPaymentMethod === 'BANK_TRANSFER' ? (checkoutPaymentRef?.trim() || null) : null,
+        referenceCode: checkoutPaymentMethod === 'BANK_TRANSFER' ? checkoutPaymentRef?.trim() || null : null,
         note: checkoutPaymentNote?.trim() || null,
       };
     }
@@ -196,9 +204,10 @@ export default function ManagerCheckOutBookingPage() {
       });
 
       const collected = res?.collectedAtCheckout || 0;
-      const successMsg = collected > 0
-        ? `Đã hoàn tất trả phòng (Check-out) và thu ${formatVnd(collected)} tại quầy thành công! Tổng đã thu: ${formatVnd(res?.totalCollected || 0)}.`
-        : 'Đã hoàn tất trả phòng (Check-out) và quyết toán thành công!';
+      const successMsg =
+        collected > 0
+          ? `Đã hoàn tất trả phòng và thu ${formatVnd(collected)} tại quầy. Tổng đã thu: ${formatVnd(res?.totalCollected || 0)}.`
+          : 'Đã hoàn tất trả phòng và quyết toán thành công.';
 
       navigate(`/manager/bookings/${booking.id}`, {
         state: { adjustSuccessToast: successMsg },
@@ -207,11 +216,13 @@ export default function ManagerCheckOutBookingPage() {
     } catch (err) {
       const code = err.response?.data?.error?.code;
       if (code === 'CHECKOUT_NOT_ALLOWED') {
-        setFormError('Không thể trả phòng: Đơn đặt phòng phải ở trạng thái Đang lưu trú (CHECKED_IN).');
+        setFormError('Không thể trả phòng: Đơn đặt phòng phải ở trạng thái Đang lưu trú.');
       } else if (code === 'SERVICE_USAGE_SELECTION_INCOMPLETE') {
-        setFormError('Mọi dịch vụ đã đăng ký phải được phân loại đầy đủ (Đã dùng hoặc Hủy).');
+        setFormError('Mọi dịch vụ đã đăng ký phải được chọn trạng thái Đã dùng hoặc Không dùng.');
       } else if (code === 'OUTSTANDING_BALANCE' || code === 'PAYMENT_AMOUNT_MISMATCH') {
-        setFormError(`Số tiền thanh toán phải khớp chính xác với số dư còn thiếu (${formatVnd(checkoutOutstandingAmount)}).`);
+        setFormError(
+          `Số tiền thanh toán phải khớp chính xác với số dư còn thiếu (${formatVnd(checkoutOutstandingAmount)}).`
+        );
       } else {
         setFormError(getErrorMessage(err) || 'Không thể thực hiện trả phòng. Vui lòng kiểm tra lại.');
       }
@@ -222,12 +233,12 @@ export default function ManagerCheckOutBookingPage() {
 
   if (loading) {
     return (
-      <div className="w-full max-w-6xl mx-auto space-y-6 animate-pulse pb-16">
-        <div className="h-6 w-52 rounded bg-[var(--color-surface-soft)]" />
-        <div className="h-32 w-full rounded-2xl bg-[var(--color-surface-soft)]" />
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 h-96 rounded-2xl bg-[var(--color-surface-soft)]" />
-          <div className="lg:col-span-5 h-96 rounded-2xl bg-[var(--color-surface-soft)]" />
+      <div className="mx-auto w-full max-w-6xl space-y-5 pb-16 animate-pulse">
+        <div className="h-5 w-44 rounded bg-[var(--color-surface-soft)]" />
+        <div className="h-12 w-72 rounded-xl bg-[var(--color-surface-soft)]" />
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="h-80 rounded-2xl bg-[var(--color-surface-soft)] lg:col-span-7" />
+          <div className="h-96 rounded-2xl bg-[var(--color-surface-soft)] lg:col-span-5" />
         </div>
       </div>
     );
@@ -235,28 +246,28 @@ export default function ManagerCheckOutBookingPage() {
 
   if (error || !booking) {
     return (
-      <div className="w-full max-w-4xl mx-auto py-12 px-4">
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-900 space-y-4 shadow-xs">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="h-6 w-6 text-rose-600 shrink-0" />
-            <h2 className="text-base font-bold">Không thể mở trang trả phòng</h2>
+      <div className="mx-auto w-full max-w-3xl py-10">
+        <div className="space-y-4 rounded-2xl border border-[var(--color-danger)]/20 bg-[var(--color-danger-soft)] p-6 text-[var(--color-danger)]">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <h2 className="text-base font-bold text-[var(--color-ink)]">Không thể mở trang trả phòng</h2>
           </div>
-          <p className="text-sm text-rose-800">{error || 'Không tìm thấy dữ liệu đơn đặt phòng.'}</p>
-          <div className="flex items-center gap-3 pt-2">
+          <p className="text-sm text-[var(--color-body)]">{error || 'Không tìm thấy dữ liệu đơn đặt phòng.'}</p>
+          <div className="flex flex-wrap items-center gap-2.5 pt-1">
             <button
               type="button"
               onClick={() => setReloadKey((k) => k + 1)}
-              className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--color-ink)] px-4 py-2 text-xs font-semibold text-white hover:bg-black"
             >
-              <RefreshCw className="h-4 w-4" />
-              <span>Tải lại dữ liệu</span>
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Tải lại</span>
             </button>
             <Link
               to="/manager/bookings"
-              className="inline-flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]"
             >
-              <ArrowLeft className="h-4 w-4" />
-              <span>Quay lại danh sách đơn</span>
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span>Danh sách đơn</span>
             </Link>
           </div>
         </div>
@@ -264,427 +275,402 @@ export default function ManagerCheckOutBookingPage() {
     );
   }
 
-  const unclassifiedCount = registeredServices.filter((s) => !serviceDecisions[s.id]).length;
+  const classifiedCount = registeredServices.filter((s) => Boolean(serviceDecisions[s.id])).length;
+  const unclassifiedCount = registeredServices.length - classifiedCount;
+  const homestayName = booking.homestayName || homestayFromContext?.name || '';
+  const contactDetails = [booking.contactPhone, booking.contactEmail].filter(Boolean).join(' · ');
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-6 pb-20">
-      {/* Breadcrumb & Navigation */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="mx-auto w-full max-w-6xl space-y-6 pb-20">
+      {/* Top Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           to={`/manager/bookings/${booking.id}`}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-muted)] hover:text-[var(--color-ink)] transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-muted)] transition hover:text-[var(--color-ink)]"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Quay lại chi tiết đơn đặt phòng</span>
+          <span>Chi tiết đơn #{booking.code}</span>
         </Link>
-        <span className="text-xs text-[var(--color-muted)]">
-          Cơ sở: <strong>{booking.homestayName || homestayFromContext?.name || 'Mai Châu Valley'}</strong>
-        </span>
+
+        <button
+          type="button"
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-body)] transition hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          <span>Làm mới</span>
+        </button>
       </div>
 
-      {/* Page Header Banner */}
-      <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-start gap-4">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 shrink-0 border border-indigo-100">
-            <LogOut className="h-6 w-6" />
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-extrabold text-[var(--color-ink)] tracking-tight">
-                Trả phòng & Quyết toán (Check-out)
-              </h1>
-              <span className="font-mono text-base font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-0.5">
-                #{booking.code}
-              </span>
-              <StatusBadge type="booking" status={booking.status} />
-            </div>
-            <p className="text-xs sm:text-sm text-[var(--color-muted)]">
-              Đối soát dịch vụ đã sử dụng, thu công nợ còn lại tại quầy và ghi nhận hoàn tất kỳ lưu trú của khách hàng.
-            </p>
-          </div>
+      {/* Page Title */}
+      <header className="space-y-1">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-ink)]">
+            Trả phòng & Quyết toán
+          </h1>
+          <span className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-0.5 font-mono text-sm font-bold text-[var(--color-ink)]">
+            #{booking.code}
+          </span>
+          <StatusBadge type="booking" status={booking.status} />
         </div>
+        <p className="text-sm text-[var(--color-muted)]">
+          {homestayName ? `${homestayName} · ` : ''}
+          Xác nhận dịch vụ đã sử dụng và thu phần công nợ còn lại khi khách trả phòng.
+        </p>
+      </header>
 
-        <div className="flex items-center gap-2 self-start md:self-center">
-          <button
-            type="button"
-            onClick={() => setReloadKey((k) => k + 1)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors shadow-2xs"
-            title="Làm mới thông tin"
-          >
-            <RefreshCw className="h-3.5 w-3.5 text-[var(--color-muted)]" />
-            <span>Làm mới</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Cảnh báo trạng thái không hợp lệ nếu có */}
+      {/* Cảnh báo điều kiện check-out (nếu có) */}
       {!isCheckedIn ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 flex items-start gap-3 shadow-xs">
-          <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 rounded-2xl border border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)] p-4 text-sm">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-warning)]" />
           <div className="space-y-1">
-            <h3 className="font-bold text-sm">Không thể thực hiện trả phòng</h3>
-            <p className="text-xs sm:text-sm text-amber-800">
-              Đơn đặt phòng đang ở trạng thái <strong>{booking.status}</strong>. Chỉ những đơn đang ở trạng thái <strong>Đang lưu trú (CHECKED_IN)</strong> mới có thể tiến hành thủ tục trả phòng và quyết toán tài chính.
+            <p className="font-bold text-[var(--color-ink)]">Chưa thể thực hiện trả phòng</p>
+            <p className="text-[var(--color-body)]">
+              Chỉ các đơn đang ở trạng thái <strong>Đang lưu trú</strong> mới có thể làm thủ tục trả phòng và quyết toán.
             </p>
-            <div className="pt-2">
-              <Link
-                to={`/manager/bookings/${booking.id}`}
-                className="inline-flex items-center gap-1 text-xs font-bold text-amber-900 underline hover:no-underline"
-              >
-                Quay lại trang chi tiết đơn
-              </Link>
-            </div>
+            <Link
+              to={`/manager/bookings/${booking.id}`}
+              className="inline-block pt-1 text-xs font-semibold text-[var(--color-ink)] underline"
+            >
+              Quay lại chi tiết đơn
+            </Link>
           </div>
         </div>
       ) : isCheckOutExpired ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-900 flex items-start gap-3 shadow-xs">
-          <AlertCircle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 rounded-2xl border border-[var(--color-danger)]/25 bg-[var(--color-danger-soft)] p-4 text-sm">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-danger)]" />
           <div className="space-y-1">
-            <h3 className="font-bold text-sm">Đã quá thời hạn trả phòng tiêu chuẩn</h3>
-            <p className="text-xs sm:text-sm text-rose-800">
-              Theo quy định, hạn trả phòng không được muộn hơn <strong>{CHECK_OUT_DEADLINE}</strong> ngày kết thúc lưu trú ({formatDate(booking.checkOutDate)}). Vui lòng liên hệ ban quản trị để được hỗ trợ đối soát bổ sung.
+            <p className="font-bold text-[var(--color-ink)]">Đã quá thời hạn trả phòng</p>
+            <p className="text-[var(--color-body)]">
+              Hạn trả phòng tiêu chuẩn là <strong>{CHECK_OUT_DEADLINE}</strong> ngày{' '}
+              <strong>{formatDate(booking.checkOutDate)}</strong>. Vui lòng kiểm tra lại với quản trị viên.
             </p>
           </div>
         </div>
       ) : null}
 
-      {/* Form Check-out: Bố cục 2 cột cân đối */}
-      <form onSubmit={handleCheckOutSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* CỘT TRÁI (7 cột): Thông tin khách, phòng, phân loại dịch vụ & ghi chú */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* 1. Thẻ thông tin khách và lưu trú */}
-          <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3.5">
-              <div className="flex items-center gap-2">
-                <CalendarDays className="h-5 w-5 text-[var(--color-primary)]" />
-                <h3 className="text-base font-bold text-[var(--color-ink)]">Thông tin lưu trú & Khách hàng</h3>
-              </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {nights} đêm lưu trú
+      {/* Form 2 cột: Trái (Thông tin + Dịch vụ + Ghi chú) | Phải (Quyết toán) */}
+      <form onSubmit={handleCheckOutSubmit} className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+        {/* CỘT TRÁI (7 cột) */}
+        <div className="space-y-5 lg:col-span-7">
+          {/* 1. Thông tin lưu trú */}
+          <section className={`${CARD_CLASS} p-5 sm:p-6`}>
+            <div className="flex items-center justify-between gap-2 pb-4 border-b border-[var(--color-border)]">
+              <h2 className="text-base font-bold text-[var(--color-ink)]">Thông tin lưu trú</h2>
+              <span className="rounded-full bg-[var(--color-surface-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--color-body)]">
+                {nights} đêm
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
-              <div className="space-y-1">
-                <span className="text-xs text-[var(--color-muted)] font-medium">Khách hàng liên hệ:</span>
-                <p className="font-bold text-[var(--color-ink)] flex items-center gap-1.5">
-                  <User className="h-4 w-4 text-[var(--color-muted)]" />
-                  <span>{booking.contactName}</span>
-                </p>
-                <p className="text-xs text-[var(--color-muted)] pl-5">{booking.contactPhone} • {booking.contactEmail}</p>
+            <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-medium text-[var(--color-muted)]">Khách hàng</dt>
+                <dd className="mt-1 font-semibold text-[var(--color-ink)]">{booking.contactName}</dd>
+                {contactDetails && (
+                  <dd className="mt-0.5 text-xs text-[var(--color-muted)]">{contactDetails}</dd>
+                )}
               </div>
 
-              <div className="space-y-1">
-                <span className="text-xs text-[var(--color-muted)] font-medium">Số lượng khách:</span>
-                <p className="font-bold text-[var(--color-ink)] flex items-center gap-1.5">
-                  <Users className="h-4 w-4 text-[var(--color-muted)]" />
-                  <span>{booking.actualGuestCount || booking.guestCount || 1} khách thực tế</span>
-                </p>
+              <div>
+                <dt className="text-xs font-medium text-[var(--color-muted)]">Số khách</dt>
+                <dd className="mt-1 font-semibold text-[var(--color-ink)]">
+                  {booking.actualGuestCount || booking.guestCount || 1} khách
+                  {booking.actualGuestCount ? (
+                    <span className="ml-1 text-xs font-normal text-[var(--color-muted)]">(thực tế)</span>
+                  ) : null}
+                </dd>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-xs text-[var(--color-muted)] font-medium">Thời gian lưu trú:</span>
-                <p className="font-semibold text-[var(--color-ink)]">
+              <div>
+                <dt className="text-xs font-medium text-[var(--color-muted)]">Thời gian lưu trú</dt>
+                <dd className="mt-1 font-semibold text-[var(--color-ink)]">
                   {formatDate(booking.checkInDate)} → {formatDate(booking.checkOutDate)}
-                </p>
-                <p className="text-2xs text-[var(--color-muted)] flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  <span>Check-in: {CHECK_IN_TIME} • Check-out trước: {CHECK_OUT_DEADLINE}</span>
-                </p>
+                </dd>
+                <dd className="mt-0.5 inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
+                  <Clock className="h-3 w-3 shrink-0" />
+                  <span>Nhận từ {CHECK_IN_TIME} · Trả trước {CHECK_OUT_DEADLINE}</span>
+                </dd>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-xs text-[var(--color-muted)] font-medium">Phòng đã nhận:</span>
-                <div className="space-y-1">
-                  {booking.rooms?.map((r) => (
-                    <div key={r.roomId || r.id} className="font-bold text-[var(--color-ink)] flex items-center gap-1.5">
-                      <DoorOpen className="h-4 w-4 text-[var(--color-muted)]" />
-                      <span>{r.roomName || `Phòng #${r.roomId}`}</span>
-                      {r.roomTypeName && (
-                        <span className="text-xs font-normal text-[var(--color-muted)]">({r.roomTypeName})</span>
-                      )}
-                    </div>
-                  )) || <p className="text-[var(--color-muted)]">—</p>}
-                </div>
+              <div>
+                <dt className="text-xs font-medium text-[var(--color-muted)]">Phòng đã nhận</dt>
+                <dd className="mt-1.5 flex flex-wrap gap-1.5">
+                  {booking.rooms?.length > 0 ? (
+                    booking.rooms.map((r) => (
+                      <span
+                        key={r.roomId || r.id}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--color-ink)]"
+                      >
+                        <span>{r.roomName || `Phòng #${r.roomId}`}</span>
+                        {r.roomTypeName && (
+                          <span className="font-normal text-[var(--color-muted)]">· {r.roomTypeName}</span>
+                        )}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-[var(--color-muted)]">—</span>
+                  )}
+                </dd>
               </div>
-            </div>
-          </div>
+            </dl>
+          </section>
 
-          {/* 2. Thẻ phân loại dịch vụ phát sinh */}
-          <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2 border-b border-[var(--color-border)] pb-3.5">
+          {/* 2. Dịch vụ phát sinh */}
+          <section className={`${CARD_CLASS} p-5 sm:p-6`}>
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-[var(--color-border)]">
               <div>
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-amber-500" />
-                  <h3 className="text-base font-bold text-[var(--color-ink)]">
-                    Xác nhận dịch vụ phát sinh ({registeredServices.length})
-                  </h3>
+                  <h2 className="text-base font-bold text-[var(--color-ink)]">Dịch vụ phát sinh</h2>
+                  {registeredServices.length > 0 && (
+                    <span
+                      className={`text-xs font-semibold tabular-nums ${
+                        unclassifiedCount === 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-muted)]'
+                      }`}
+                    >
+                      ({classifiedCount}/{registeredServices.length})
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-[var(--color-muted)] mt-0.5">
-                  Phân loại từng dịch vụ: <strong>Đã dùng</strong> (tính tiền vào hóa đơn) hoặc <strong>Hủy</strong> (không tính tiền).
+                <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+                  Chọn <strong>Đã dùng</strong> để tính vào hóa đơn hoặc <strong>Không dùng</strong> để bỏ qua.
                 </p>
               </div>
 
-              {registeredServices.length > 0 && (
+              {registeredServices.length > 1 && (
                 <div className="flex items-center gap-2 text-xs">
                   <button
                     type="button"
                     onClick={handleSelectAllUsed}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 font-semibold hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
+                    className="rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 font-semibold text-[var(--color-body)] transition hover:border-[var(--color-ink)] hover:text-[var(--color-ink)] cursor-pointer"
                   >
-                    ✓ Chọn tất cả đã dùng
+                    Dùng tất cả
                   </button>
                   <button
                     type="button"
                     onClick={handleSelectAllCancelled}
-                    className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-800 font-semibold hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer"
+                    className="rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 font-semibold text-[var(--color-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)] cursor-pointer"
                   >
-                    ✕ Chọn tất cả hủy
+                    Hủy tất cả
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Trạng thái đếm phân loại */}
-            {registeredServices.length > 0 && (
-              <div className="flex items-center justify-between text-xs rounded-xl bg-[var(--color-surface-soft)] p-3 border border-[var(--color-border)] flex-wrap gap-2">
-                <div className="flex items-center gap-3">
-                  <span>
-                    Đã dùng:{' '}
-                    <strong className="text-emerald-700">
-                      {registeredServices.filter((s) => serviceDecisions[s.id] === 'USED').length}
-                    </strong>
-                  </span>
-                  <span>
-                    Hủy:{' '}
-                    <strong className="text-rose-700">
-                      {registeredServices.filter((s) => serviceDecisions[s.id] === 'CANCELLED').length}
-                    </strong>
-                  </span>
-                </div>
-                {unclassifiedCount > 0 ? (
-                  <span className="font-bold text-amber-700 inline-flex items-center gap-1">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    Còn {unclassifiedCount} dịch vụ chưa chọn
-                  </span>
-                ) : (
-                  <span className="font-bold text-emerald-700 inline-flex items-center gap-1">
-                    <Check className="h-3.5 w-3.5" />
-                    Tất cả dịch vụ đã được phân loại
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Danh sách các dịch vụ REGISTERED */}
             {registeredServices.length > 0 ? (
-              <div className="space-y-3">
+              <ul className="divide-y divide-[var(--color-border)]">
                 {registeredServices.map((svc) => {
                   const decision = serviceDecisions[svc.id];
-                  const isUnset = !decision;
                   const isUsed = decision === 'USED';
                   const isCancelled = decision === 'CANCELLED';
 
                   return (
-                    <div
+                    <li
                       key={svc.id}
-                      className={`rounded-xl border p-4 transition-all ${isUnset
-                        ? 'border-amber-300 bg-amber-50/40 shadow-2xs ring-1 ring-amber-300/60'
-                        : isUsed
-                          ? 'border-emerald-200 bg-emerald-50/30'
-                          : 'border-rose-200 bg-rose-50/30'
-                        }`}
+                      className="flex flex-col gap-3 py-4 first:pt-4 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-bold text-sm sm:text-base text-[var(--color-ink)]">
-                              {svc.serviceName || svc.name}
-                            </h4>
-                            {isUnset && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-3xs font-extrabold uppercase bg-amber-200 text-amber-900 border border-amber-300">
-                                Chưa chọn (Bắt buộc)
-                              </span>
-                            )}
-                            {isUsed && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-3xs font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                ✓ Đã sử dụng (+{formatVnd(svc.totalPrice)})
-                              </span>
-                            )}
-                            {isCancelled && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-3xs font-bold uppercase bg-rose-100 text-rose-800 border border-rose-300">
-                                ✕ Không dùng / Hủy (0 ₫)
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-[var(--color-muted)] flex flex-wrap gap-x-3 gap-y-1">
-                            <span>Phòng: <strong>{svc.roomName || `#${svc.roomId}`}</strong></span>
-                            {svc.serviceDate && <span>Ngày: <strong>{formatDate(svc.serviceDate)}</strong></span>}
-                            <span>Đơn giá: {formatVnd(svc.unitPrice)} / {svc.unit || 'lần'}</span>
-                            <span>Số lượng: <strong>{svc.quantity}</strong></span>
-                          </div>
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <h3 className="text-sm font-bold text-[var(--color-ink)]">
+                            {svc.serviceName || svc.name}
+                          </h3>
+                          <span className="text-xs text-[var(--color-muted)]">
+                            {svc.roomName || `Phòng #${svc.roomId}`}
+                          </span>
                         </div>
-                        <div className="text-left sm:text-right font-extrabold text-base text-[var(--color-ink)]">
-                          {formatVnd(svc.totalPrice)}
-                        </div>
+                        <p className="text-xs text-[var(--color-muted)]">
+                          {formatVnd(svc.unitPrice)} / {svc.unit || 'lần'} × {svc.quantity}
+                          {svc.serviceDate ? ` · ${formatDate(svc.serviceDate)}` : ''}
+                        </p>
                       </div>
 
-                      {/* Nút phân loại */}
-                      <div className="flex items-center justify-between gap-3 pt-3 mt-3 border-t border-[var(--color-border)] text-xs flex-wrap">
-                        <span className="text-[var(--color-muted)] text-2xs font-bold uppercase">
-                          {isUnset ? 'Yêu cầu lựa chọn:' : 'Trạng thái ghi nhận:'}
+                      <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+                        <span
+                          className={`text-sm font-bold tabular-nums ${
+                            isCancelled
+                              ? 'text-[var(--color-muted)] line-through'
+                              : 'text-[var(--color-ink)]'
+                          }`}
+                        >
+                          {formatVnd(svc.totalPrice)}
                         </span>
-                        <div className="flex items-center gap-2">
+
+                        <div
+                          className="inline-flex rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-0.5"
+                          role="group"
+                          aria-label={`Trạng thái dịch vụ ${svc.serviceName || svc.name}`}
+                        >
                           <button
                             type="button"
                             onClick={() => setServiceDecisions((prev) => ({ ...prev, [svc.id]: 'USED' }))}
-                            className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${isUsed
-                              ? 'bg-emerald-600 text-white shadow-xs'
-                              : 'bg-white border border-[var(--color-border)] text-[var(--color-body)] hover:bg-emerald-50 hover:text-emerald-800'
-                              }`}
+                            aria-pressed={isUsed}
+                            className={`inline-flex items-center gap-1 rounded-[10px] px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                              isUsed
+                                ? 'bg-[var(--color-ink)] text-white shadow-2xs'
+                                : 'text-[var(--color-body)] hover:text-[var(--color-ink)]'
+                            }`}
                           >
                             <Check className="h-3.5 w-3.5" />
-                            <span>Đã sử dụng (Tính tiền)</span>
+                            <span>Đã dùng</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => setServiceDecisions((prev) => ({ ...prev, [svc.id]: 'CANCELLED' }))}
-                            className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${isCancelled
-                              ? 'bg-rose-600 text-white shadow-xs'
-                              : 'bg-white border border-[var(--color-border)] text-[var(--color-body)] hover:bg-rose-50 hover:text-rose-800'
-                              }`}
+                            aria-pressed={isCancelled}
+                            className={`inline-flex items-center gap-1 rounded-[10px] px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                              isCancelled
+                                ? 'bg-white text-[var(--color-danger)] shadow-2xs ring-1 ring-[var(--color-danger)]/25'
+                                : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
+                            }`}
                           >
                             <X className="h-3.5 w-3.5" />
-                            <span>Không sử dụng (Hủy)</span>
+                            <span>Không dùng</span>
                           </button>
                         </div>
                       </div>
-                    </div>
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             ) : (
-              <div className="rounded-xl border border-dashed border-[var(--color-border)] p-6 text-center text-xs sm:text-sm text-[var(--color-muted)] bg-[var(--color-surface-soft)]">
-                Không có dịch vụ phát sinh nào đang chờ xác nhận sử dụng.
-              </div>
+              <p className="mt-4 rounded-xl bg-[var(--color-surface-soft)] px-4 py-5 text-center text-xs text-[var(--color-muted)]">
+                Không có dịch vụ phát sinh cần xác nhận.
+              </p>
             )}
 
-            {/* Dịch vụ đã dùng trước đó nếu có */}
             {existingUsedServices.length > 0 && (
-              <div className="text-xs text-emerald-800 bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
-                <Info className="h-4 w-4 text-emerald-600 shrink-0" />
+              <div className="mt-4 flex items-center justify-between gap-2 rounded-xl bg-[var(--color-surface-soft)] px-3.5 py-2.5 text-xs text-[var(--color-body)]">
                 <span>
-                  Đã ghi nhận <strong>{existingUsedServices.length}</strong> dịch vụ hoàn tất trước đó với tổng tiền{' '}
-                  <strong>{formatVnd(checkoutExistingUsedPrice)}</strong>.
+                  Dịch vụ đã xác nhận trước đó ({existingUsedServices.length})
+                </span>
+                <span className="font-semibold tabular-nums text-[var(--color-ink)]">
+                  {formatVnd(checkoutExistingUsedPrice)}
                 </span>
               </div>
             )}
-          </div>
+          </section>
 
-          {/* 3. Ghi chú bàn giao trả phòng */}
-          <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-3">
-            <label htmlFor="checkOutNoteInput" className="block text-sm font-bold text-[var(--color-ink)]">
-              Ghi chú trả phòng (Tùy chọn)
-            </label>
+          {/* 3. Ghi chú trả phòng */}
+          <section className={`${CARD_CLASS} p-5 sm:p-6`}>
+            <div className="flex items-center justify-between">
+              <label htmlFor="checkOutNoteInput" className="text-sm font-bold text-[var(--color-ink)]">
+                Ghi chú bàn giao
+              </label>
+              <span className="text-xs text-[var(--color-muted)]">Tùy chọn</span>
+            </div>
             <textarea
               id="checkOutNoteInput"
               rows={3}
               maxLength={500}
               value={checkOutNote}
               onChange={(e) => setCheckOutNote(e.target.value)}
-              placeholder="VD: Khách đã bàn giao phòng và chìa khóa đầy đủ, thiết bị phòng nguyên vẹn, hài lòng về chuyến đi..."
-              className="w-full rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm text-[var(--color-ink)] placeholder-[var(--color-muted)] focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none"
+              placeholder="Ghi nhận tình trạng phòng, chìa khóa hoặc lưu ý sau lưu trú..."
+              className="mt-2.5 w-full rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm text-[var(--color-ink)] placeholder-[var(--color-muted)] outline-none transition focus:border-[var(--color-ink)] focus:ring-2 focus:ring-[var(--color-ink)]/10"
             />
-            <p className="text-2xs text-[var(--color-muted)] text-right">{checkOutNote.length} / 500 ký tự</p>
-          </div>
+            <p className="mt-1 text-right text-[11px] tabular-nums text-[var(--color-muted)]">
+              {checkOutNote.length}/500
+            </p>
+          </section>
         </div>
 
-        {/* CỘT PHẢI (5 cột): Bảng quyết toán tài chính & Xử lý thu tiền */}
-        <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-6">
-          {/* Card Quyết toán tài chính */}
-          <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-5">
-            <div className="flex items-center gap-2 border-b border-[var(--color-border)] pb-3.5">
-              <CreditCard className="h-5 w-5 text-indigo-600" />
-              <h3 className="text-base font-bold text-[var(--color-ink)]">Bảng quyết toán tài chính</h3>
+        {/* CỘT PHẢI (5 cột): Bảng quyết toán */}
+        <aside className="lg:col-span-5 lg:sticky lg:top-24">
+          <div className={`${CARD_CLASS} p-5 sm:p-6 space-y-5`}>
+            <h2 className="border-b border-[var(--color-border)] pb-4 text-base font-bold text-[var(--color-ink)]">
+              Quyết toán hóa đơn
+            </h2>
+
+            {/* Chi tiết các khoản */}
+            <dl className="space-y-2.5 text-sm">
+              <div className="flex items-center justify-between">
+                <dt className="text-[var(--color-muted)]">Tiền phòng ({nights} đêm)</dt>
+                <dd className="font-semibold tabular-nums text-[var(--color-ink)]">
+                  {formatVnd(checkoutRoomTotalPrice)}
+                </dd>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <dt className="text-[var(--color-muted)]">Dịch vụ đã dùng</dt>
+                <dd className="font-semibold tabular-nums text-[var(--color-ink)]">
+                  {checkoutServiceTotalPrice > 0 ? `+${formatVnd(checkoutServiceTotalPrice)}` : '0 ₫'}
+                </dd>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-3">
+                <dt className="font-semibold text-[var(--color-ink)]">Tổng giá trị đơn</dt>
+                <dd className="font-bold tabular-nums text-[var(--color-ink)]">
+                  {formatVnd(checkoutGrandTotalPrice)}
+                </dd>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <dt className="text-[var(--color-muted)]">Đã thanh toán trước</dt>
+                <dd className="font-semibold tabular-nums text-[var(--color-success)]">
+                  -{formatVnd(checkoutPaidBefore)}
+                </dd>
+              </div>
+            </dl>
+
+            {/* Điểm nhấn: Số tiền cần thu */}
+            <div className="flex items-baseline justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3.5">
+              <div>
+                <p className="text-xs font-semibold text-[var(--color-body)]">Còn phải thu</p>
+                <p className="text-[11px] text-[var(--color-muted)]">
+                  {checkoutOutstandingAmount > 0 ? 'Thanh toán tại quầy' : 'Đã hoàn tất thanh toán'}
+                </p>
+              </div>
+              <p
+                className={`text-2xl font-extrabold tracking-tight tabular-nums ${
+                  checkoutOutstandingAmount > 0 ? 'text-[var(--color-ink)]' : 'text-[var(--color-success)]'
+                }`}
+              >
+                {formatVnd(checkoutOutstandingAmount)}
+              </p>
             </div>
 
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between items-center text-[var(--color-body)]">
-                <span className="text-[var(--color-muted)]">Tiền phòng ({nights} đêm):</span>
-                <span className="font-semibold text-[var(--color-ink)]">{formatVnd(checkoutRoomTotalPrice)}</span>
-              </div>
-
-              <div className="flex justify-between items-center text-[var(--color-body)]">
-                <span className="text-[var(--color-muted)]">Tiền dịch vụ (đã sử dụng):</span>
-                <span className="font-semibold text-[var(--color-ink)]">+{formatVnd(checkoutServiceTotalPrice)}</span>
-              </div>
-
-              <div className="flex justify-between items-center text-[var(--color-ink)] font-bold border-t border-[var(--color-border)] pt-3 text-sm sm:text-base">
-                <span>Tổng giá trị đơn:</span>
-                <span>{formatVnd(checkoutGrandTotalPrice)}</span>
-              </div>
-
-              <div className="flex justify-between items-center text-emerald-700">
-                <span className="text-xs sm:text-sm font-medium">Đã thanh toán (Cọc ):</span>
-                <span className="font-bold">-{formatVnd(checkoutPaidBefore)}</span>
-              </div>
-
-              <div className="flex justify-between items-center border-t-2 border-[var(--color-border)] pt-3.5 bg-indigo-50/50 rounded-xl p-3.5">
-                <div>
-                  <span className="block font-bold text-sm text-[var(--color-ink)]">
-                    Còn phải thanh toán:
-                  </span>
-                  <span className="text-2xs text-[var(--color-muted)]">Thu tại quầy khi trả phòng</span>
-                </div>
-                <span
-                  className={`text-lg sm:text-xl font-black ${checkoutOutstandingAmount > 0 ? 'text-amber-600' : 'text-emerald-600'
-                    }`}
-                >
-                  {checkoutOutstandingAmount > 0 ? formatVnd(checkoutOutstandingAmount) : '0 ₫ (Đã thanh toán đủ)'}
-                </span>
-              </div>
-            </div>
-
-            {/* Mục thu tiền nếu outstandingAmount > 0 */}
+            {/* Phương thức thu tiền (chỉ hiện khi còn công nợ) */}
             {checkoutOutstandingAmount > 0 ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3.5">
-                <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-amber-950">
-                  <CreditCard className="h-4 w-4 text-amber-600" />
-                  <span>Thu tiền quyết toán: {formatVnd(checkoutOutstandingAmount)}</span>
-                </div>
-
+              <div className="space-y-3.5 border-t border-[var(--color-border)] pt-4">
                 <div>
-                  <label className="block text-xs font-semibold text-amber-950 mb-1.5">
-                    Phương thức thanh toán <span className="text-rose-600">*</span>
-                  </label>
+                  <span className="block text-xs font-semibold text-[var(--color-body)] mb-2">
+                    Phương thức thu tiền
+                  </span>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setCheckoutPaymentMethod('CASH')}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${checkoutPaymentMethod === 'CASH'
-                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                        : 'bg-white text-gray-700 border-[var(--color-border)] hover:bg-gray-50'
-                        }`}
+                      aria-pressed={checkoutPaymentMethod === 'CASH'}
+                      className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition cursor-pointer ${
+                        checkoutPaymentMethod === 'CASH'
+                          ? 'border-[var(--color-ink)] bg-[var(--color-ink)] text-white'
+                          : 'border-[var(--color-border)] bg-white text-[var(--color-body)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]'
+                      }`}
                     >
-                      💵 Tiền mặt (CASH)
+                      <Banknote className="h-4 w-4 shrink-0" />
+                      <span>Tiền mặt</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setCheckoutPaymentMethod('BANK_TRANSFER')}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${checkoutPaymentMethod === 'BANK_TRANSFER'
-                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                        : 'bg-white text-gray-700 border-[var(--color-border)] hover:bg-gray-50'
-                        }`}
+                      aria-pressed={checkoutPaymentMethod === 'BANK_TRANSFER'}
+                      className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition cursor-pointer ${
+                        checkoutPaymentMethod === 'BANK_TRANSFER'
+                          ? 'border-[var(--color-ink)] bg-[var(--color-ink)] text-white'
+                          : 'border-[var(--color-border)] bg-white text-[var(--color-body)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]'
+                      }`}
                     >
-                      🏦 Chuyển khoản (BANK)
+                      <Landmark className="h-4 w-4 shrink-0" />
+                      <span>Chuyển khoản</span>
                     </button>
                   </div>
                 </div>
 
                 {checkoutPaymentMethod === 'BANK_TRANSFER' && (
                   <div>
-                    <label htmlFor="refCodeInput" className="block text-xs font-semibold text-amber-950 mb-1">
-                      Mã tham chiếu / Mã giao dịch ngân hàng
+                    <label
+                      htmlFor="refCodeInput"
+                      className="mb-1 block text-xs font-semibold text-[var(--color-body)]"
+                    >
+                      Mã giao dịch ngân hàng
                     </label>
                     <input
                       id="refCodeInput"
@@ -693,13 +679,16 @@ export default function ManagerCheckOutBookingPage() {
                       value={checkoutPaymentRef}
                       onChange={(e) => setCheckoutPaymentRef(e.target.value)}
                       placeholder="VD: FT261118123456"
-                      className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-xs font-mono text-[var(--color-ink)] focus:border-amber-600 outline-none"
+                      className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 font-mono text-xs text-[var(--color-ink)] outline-none transition focus:border-[var(--color-ink)] focus:ring-2 focus:ring-[var(--color-ink)]/10"
                     />
                   </div>
                 )}
 
                 <div>
-                  <label htmlFor="paymentNoteInput" className="block text-xs font-semibold text-amber-950 mb-1">
+                  <label
+                    htmlFor="paymentNoteInput"
+                    className="mb-1 block text-xs font-semibold text-[var(--color-body)]"
+                  >
                     Ghi chú thu tiền
                   </label>
                   <input
@@ -708,55 +697,68 @@ export default function ManagerCheckOutBookingPage() {
                     maxLength={255}
                     value={checkoutPaymentNote}
                     onChange={(e) => setCheckoutPaymentNote(e.target.value)}
-                    placeholder="VD: Thu tiền mặt phần còn lại khi trả phòng"
-                    className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-xs text-[var(--color-ink)] focus:border-amber-600 outline-none"
+                    placeholder="Thu phần còn lại khi trả phòng"
+                    className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-xs text-[var(--color-ink)] outline-none transition focus:border-[var(--color-ink)] focus:ring-2 focus:ring-[var(--color-ink)]/10"
                   />
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs text-emerald-800 flex items-center gap-2">
-                <Check className="h-4 w-4 text-emerald-600 shrink-0" />
-                <span>Đơn đặt phòng đã được thanh toán đầy đủ, không phát sinh khoản thu thêm tại quầy.</span>
+              <div className="flex items-center gap-2 rounded-xl bg-[var(--color-success-soft)] px-3.5 py-2.5 text-xs font-medium text-[var(--color-success)]">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>Không phát sinh khoản thu thêm tại quầy.</span>
               </div>
             )}
 
-            {/* Lỗi submit nếu có */}
+            {/* Lỗi submit */}
             {formError && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-900 flex items-start gap-2 shadow-2xs">
-                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-                <div className="flex-1 font-medium">{formError}</div>
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-xl border border-[var(--color-danger)]/25 bg-[var(--color-danger-soft)] p-3 text-xs font-medium text-[var(--color-danger)]"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{formError}</span>
               </div>
             )}
 
-            {/* Các nút hành động */}
-            <div className="space-y-2 pt-2">
+            {/* Nút hành động chính */}
+            <div className="space-y-2.5 pt-1">
               <button
                 type="submit"
                 disabled={submitting || !canCheckOut || unclassifiedCount > 0}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-xs hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 py-3 text-sm font-bold text-white shadow-xs transition hover:bg-[var(--color-primary-hover)] active:scale-[0.99] disabled:pointer-events-none disabled:opacity-45"
               >
                 {submitting ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    <span>Đang hoàn tất quyết toán…</span>
+                    <span>Đang xử lý...</span>
                   </>
                 ) : (
                   <>
                     <LogOut className="h-4 w-4" />
-                    <span>Xác nhận Trả phòng & Quyết toán</span>
+                    <span>
+                      {checkoutOutstandingAmount > 0
+                        ? 'Xác nhận thu tiền & Trả phòng'
+                        : 'Xác nhận trả phòng'}
+                    </span>
                   </>
                 )}
               </button>
 
+              {canCheckOut && unclassifiedCount > 0 && (
+                <p className="text-center text-xs text-[var(--color-muted)]">
+                  Chọn trạng thái cho {unclassifiedCount} dịch vụ phát sinh để tiếp tục.
+                </p>
+              )}
+
               <Link
                 to={`/manager/bookings/${booking.id}`}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2.5 text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors text-center"
+                className="block w-full rounded-xl py-2 text-center text-xs font-semibold text-[var(--color-muted)] transition hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
               >
-                Hủy bỏ & Quay lại chi tiết đơn
+                Quay lại chi tiết đơn
               </Link>
             </div>
           </div>
-        </div>
+        </aside>
       </form>
     </div>
   );
