@@ -3,6 +3,8 @@ package vn.edu.hust.homestay.homestay.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_ADDRESS_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_NAME_MAX_LENGTH;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,11 +24,11 @@ import lombok.Setter;
 public class UpdateManagerHomestayRequest {
 
     @NotBlank(message = "Tên homestay không được để trống")
-    @Size(max = 150, message = "Tên homestay không được vượt quá 150 ký tự")
+    @Size(max = HOMESTAY_NAME_MAX_LENGTH, message = "Tên homestay không được vượt quá " + HOMESTAY_NAME_MAX_LENGTH + " ký tự")
     private String name;
 
     @NotBlank(message = "Địa chỉ homestay không được để trống")
-    @Size(max = 255, message = "Địa chỉ homestay không được vượt quá 255 ký tự")
+    @Size(max = HOMESTAY_ADDRESS_MAX_LENGTH, message = "Địa chỉ homestay không được vượt quá " + HOMESTAY_ADDRESS_MAX_LENGTH + " ký tự")
     private String address;
 
     @NotBlank(message = "Số điện thoại hotline không được để trống")

@@ -43,6 +43,7 @@ import vn.edu.hust.homestay.booking.repository.BookingRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomNightRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomRepository;
 import vn.edu.hust.homestay.common.exception.BusinessException;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_NOTE_MAX_LENGTH;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
 import vn.edu.hust.homestay.media.entity.Media;
@@ -1180,8 +1181,8 @@ public class ManagerBookingService {
         if (request.reason() != null && !request.reason().isBlank()) {
             String notePrefix = (booking.getNote() != null && !booking.getNote().isBlank()) ? booking.getNote() + " | " : "";
             String updatedNote = notePrefix + "Điều chỉnh: " + request.reason().trim();
-            if (updatedNote.length() > 500) {
-                updatedNote = updatedNote.substring(0, 497) + "...";
+            if (updatedNote.length() > BOOKING_NOTE_MAX_LENGTH) {
+                updatedNote = updatedNote.substring(0, BOOKING_NOTE_MAX_LENGTH - 3) + "...";
             }
             booking.setNote(updatedNote);
         }
@@ -1381,8 +1382,8 @@ public class ManagerBookingService {
             if (request.note() != null && !request.note().isBlank()) {
                 String notePrefix = (booking.getNote() != null && !booking.getNote().isBlank()) ? booking.getNote() + " | " : "";
                 String updatedNote = notePrefix + "Check-in: " + request.note().trim();
-                if (updatedNote.length() > 500) {
-                    updatedNote = updatedNote.substring(0, 497) + "...";
+                if (updatedNote.length() > BOOKING_NOTE_MAX_LENGTH) {
+                    updatedNote = updatedNote.substring(0, BOOKING_NOTE_MAX_LENGTH - 3) + "...";
                 }
                 booking.setNote(updatedNote);
             }
@@ -1551,8 +1552,8 @@ public class ManagerBookingService {
         if (request != null && request.note() != null && !request.note().isBlank()) {
             String notePrefix = (booking.getNote() != null && !booking.getNote().isBlank()) ? booking.getNote() + " | " : "";
             String updatedNote = notePrefix + "Check-out: " + request.note().trim();
-            if (updatedNote.length() > 500) {
-                updatedNote = updatedNote.substring(0, 497) + "...";
+            if (updatedNote.length() > BOOKING_NOTE_MAX_LENGTH) {
+                updatedNote = updatedNote.substring(0, BOOKING_NOTE_MAX_LENGTH - 3) + "...";
             }
             booking.setNote(updatedNote);
         }

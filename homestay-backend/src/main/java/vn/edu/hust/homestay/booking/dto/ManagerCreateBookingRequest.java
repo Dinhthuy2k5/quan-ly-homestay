@@ -14,6 +14,12 @@ import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSelectionRequest;
 import java.time.LocalDate;
 import java.util.List;
 
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_GUEST_COUNT_MAX;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_GUEST_COUNT_MIN;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_NOTE_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.CONTACT_EMAIL_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.CONTACT_NAME_MAX_LENGTH;
+
 /**
  * Request DTO cho API-MGR-BOOK-02: Đặt phòng hộ khách.
  * Manager tạo booking cho khách gọi điện hoặc đến trực tiếp tại cơ sở.
@@ -21,7 +27,7 @@ import java.util.List;
 @Builder
 public record ManagerCreateBookingRequest(
         @NotBlank(message = "Tên liên hệ không được để trống")
-        @Size(max = 100, message = "Tên liên hệ không được quá 100 ký tự")
+        @Size(max = CONTACT_NAME_MAX_LENGTH, message = "Tên liên hệ không được quá " + CONTACT_NAME_MAX_LENGTH + " ký tự")
         String contactName,
 
         @NotBlank(message = "Số điện thoại không được để trống")
@@ -32,7 +38,7 @@ public record ManagerCreateBookingRequest(
                 regexp = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$",
                 message = "Email không đúng định dạng (ví dụ: user@example.com)"
         )
-        @Size(max = 150, message = "Email không được quá 150 ký tự")
+        @Size(max = CONTACT_EMAIL_MAX_LENGTH, message = "Email không được quá " + CONTACT_EMAIL_MAX_LENGTH + " ký tự")
         String contactEmail,
 
         @NotEmpty(message = "Danh sách phòng không được để trống")
@@ -45,11 +51,11 @@ public record ManagerCreateBookingRequest(
         LocalDate checkOutDate,
 
         @NotNull(message = "Số lượng khách không được để trống")
-        @Min(value = 1, message = "Số lượng khách tối thiểu là 1")
-        @Max(value = 50, message = "Số lượng khách tối đa là 50")
+        @Min(value = BOOKING_GUEST_COUNT_MIN, message = "Số lượng khách tối thiểu là " + BOOKING_GUEST_COUNT_MIN)
+        @Max(value = BOOKING_GUEST_COUNT_MAX, message = "Số lượng khách tối đa là " + BOOKING_GUEST_COUNT_MAX)
         Integer guestCount,
 
-        @Size(max = 500, message = "Ghi chú không được quá 500 ký tự")
+        @Size(max = BOOKING_NOTE_MAX_LENGTH, message = "Ghi chú không được quá " + BOOKING_NOTE_MAX_LENGTH + " ký tự")
         String note,
 
         Long customerId,

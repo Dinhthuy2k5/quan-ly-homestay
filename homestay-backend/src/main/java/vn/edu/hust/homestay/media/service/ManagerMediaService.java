@@ -27,14 +27,20 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MAX_UPLOAD_FILE_SIZE_BYTES;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MEDIA_CAPTION_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MEDIA_MAX_HOMESTAY_FILES;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MEDIA_MAX_ROOM_FILES;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MEDIA_MAX_SERVICE_FILES;
+
 @Service
 public class ManagerMediaService {
 
     private static final Logger log = LoggerFactory.getLogger(ManagerMediaService.class);
-    private static final long MAX_FILE_SIZE = 5L * 1024 * 1024;
-    private static final int MAX_HOMESTAY_MEDIA = 20;
-    private static final int MAX_ROOM_MEDIA = 12;
-    private static final int MAX_SERVICE_MEDIA = 10;
+    private static final long MAX_FILE_SIZE = MAX_UPLOAD_FILE_SIZE_BYTES;
+    private static final int MAX_HOMESTAY_MEDIA = MEDIA_MAX_HOMESTAY_FILES;
+    private static final int MAX_ROOM_MEDIA = MEDIA_MAX_ROOM_FILES;
+    private static final int MAX_SERVICE_MEDIA = MEDIA_MAX_SERVICE_FILES;
 
     private final MediaRepository mediaRepository;
     private final HomestayRepository homestayRepository;
@@ -88,8 +94,10 @@ public class ManagerMediaService {
         if (file.getSize() > MAX_FILE_SIZE) {
             throw new BusinessException("FILE_TOO_LARGE", "Tệp không được vượt quá 5 MB", org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE);
         }
-        if (caption != null && caption.length() > 255) {
-            throw BusinessException.badRequest("VALIDATION_ERROR", "caption không được vượt quá 255 ký tự");
+        if (caption != null && caption.length() > MEDIA_CAPTION_MAX_LENGTH) {
+            throw BusinessException.badRequest(
+                    "VALIDATION_ERROR",
+                    "caption không được vượt quá " + MEDIA_CAPTION_MAX_LENGTH + " ký tự");
         }
         if (sortOrder != null && sortOrder < 0) {
             throw BusinessException.badRequest("VALIDATION_ERROR", "sortOrder không được âm");

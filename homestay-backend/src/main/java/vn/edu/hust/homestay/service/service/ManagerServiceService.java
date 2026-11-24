@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.common.exception.BusinessException;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.*;
 import vn.edu.hust.homestay.common.response.PagedResult;
 import vn.edu.hust.homestay.service.dto.CreateManagerServiceRequest;
 import vn.edu.hust.homestay.service.dto.ManagerCreateServiceResponse;
@@ -76,7 +77,6 @@ public class ManagerServiceService {
     public ManagerCreateServiceResponse createService(UserPrincipal principal, CreateManagerServiceRequest request) {
         Long homestayId = validateAndGetHomestayId(principal);
 
-        // đưa các giá trị hardcode vào  config
         if (request == null) {
             throw BusinessException.badRequest("INVALID_REQUEST", "Dữ liệu yêu cầu không được để trống");
         }
@@ -87,27 +87,35 @@ public class ManagerServiceService {
             throw BusinessException.badRequest("INVALID_SERVICE_NAME", "Tên dịch vụ không được để trống");
         }
         String trimmedName = request.name().trim();
-        if (trimmedName.length() > 150) {
-            throw BusinessException.badRequest("INVALID_SERVICE_NAME", "Tên dịch vụ không được vượt quá 150 ký tự");
+        if (trimmedName.length() > SERVICE_NAME_MAX_LENGTH) {
+            throw BusinessException.badRequest(
+                    "INVALID_SERVICE_NAME",
+                    "Tên dịch vụ không được vượt quá " + SERVICE_NAME_MAX_LENGTH + " ký tự");
         }
         if (request.unit() == null || request.unit().trim().isEmpty()) {
             throw BusinessException.badRequest("INVALID_SERVICE_UNIT", "Đơn vị tính không được để trống");
         }
         String trimmedUnit = request.unit().trim();
-        if (trimmedUnit.length() > 30) {
-            throw BusinessException.badRequest("INVALID_SERVICE_UNIT", "Đơn vị tính không được vượt quá 30 ký tự");
+        if (trimmedUnit.length() > SERVICE_UNIT_MAX_LENGTH) {
+            throw BusinessException.badRequest(
+                    "INVALID_SERVICE_UNIT",
+                    "Đơn vị tính không được vượt quá " + SERVICE_UNIT_MAX_LENGTH + " ký tự");
         }
         if (request.unitPrice() == null) {
             throw BusinessException.badRequest("INVALID_UNIT_PRICE", "Đơn giá không được để trống");
         }
-        if (request.unitPrice() < 0) {
-            throw BusinessException.badRequest("INVALID_UNIT_PRICE", "Đơn giá phải lớn hơn hoặc bằng 0");
+        if (request.unitPrice() < SERVICE_UNIT_PRICE_MIN) {
+            throw BusinessException.badRequest(
+                    "INVALID_UNIT_PRICE",
+                    "Đơn giá phải lớn hơn hoặc bằng " + SERVICE_UNIT_PRICE_MIN);
         }
-        if (request.unitPrice() > 1_000_000_000L) {
+        if (request.unitPrice() > SERVICE_UNIT_PRICE_MAX) {
             throw BusinessException.badRequest("INVALID_UNIT_PRICE", "Đơn giá không được vượt quá 1.000.000.000 VNĐ");
         }
-        if (request.description() != null && request.description().length() > 255) {
-            throw BusinessException.badRequest("INVALID_DESCRIPTION", "Mô tả không được vượt quá 255 ký tự");
+        if (request.description() != null && request.description().length() > SERVICE_DESCRIPTION_MAX_LENGTH) {
+            throw BusinessException.badRequest(
+                    "INVALID_DESCRIPTION",
+                    "Mô tả không được vượt quá " + SERVICE_DESCRIPTION_MAX_LENGTH + " ký tự");
         }
 
         ServiceCategory category = serviceCategoryRepository.findByIdAndHomestayId(request.categoryId(), homestayId)
@@ -218,8 +226,10 @@ public class ManagerServiceService {
             if (trimmedName.isEmpty()) {
                 throw BusinessException.badRequest("INVALID_SERVICE_NAME", "Tên dịch vụ không được để trống");
             }
-            if (trimmedName.length() > 150) {
-                throw BusinessException.badRequest("INVALID_SERVICE_NAME", "Tên dịch vụ không được vượt quá 150 ký tự");
+            if (trimmedName.length() > SERVICE_NAME_MAX_LENGTH) {
+                throw BusinessException.badRequest(
+                        "INVALID_SERVICE_NAME",
+                        "Tên dịch vụ không được vượt quá " + SERVICE_NAME_MAX_LENGTH + " ký tự");
             }
             if (serviceRepository.existsByHomestayIdAndNameIgnoreCaseAndIdNot(homestayId, trimmedName, serviceId)) {
                 throw BusinessException.conflict("SERVICE_NAME_EXISTS", "Tên dịch vụ đã tồn tại trong homestay");
@@ -232,25 +242,31 @@ public class ManagerServiceService {
             if (trimmedUnit.isEmpty()) {
                 throw BusinessException.badRequest("INVALID_SERVICE_UNIT", "Đơn vị tính không được để trống");
             }
-            if (trimmedUnit.length() > 30) {
-                throw BusinessException.badRequest("INVALID_SERVICE_UNIT", "Đơn vị tính không được vượt quá 30 ký tự");
+            if (trimmedUnit.length() > SERVICE_UNIT_MAX_LENGTH) {
+                throw BusinessException.badRequest(
+                        "INVALID_SERVICE_UNIT",
+                        "Đơn vị tính không được vượt quá " + SERVICE_UNIT_MAX_LENGTH + " ký tự");
             }
             service.setUnit(trimmedUnit);
         }
 
         if (request.unitPrice() != null) {
-            if (request.unitPrice() < 0) {
-                throw BusinessException.badRequest("INVALID_UNIT_PRICE", "Đơn giá phải lớn hơn hoặc bằng 0");
+            if (request.unitPrice() < SERVICE_UNIT_PRICE_MIN) {
+                throw BusinessException.badRequest(
+                        "INVALID_UNIT_PRICE",
+                        "Đơn giá phải lớn hơn hoặc bằng " + SERVICE_UNIT_PRICE_MIN);
             }
-            if (request.unitPrice() > 1_000_000_000L) {
+            if (request.unitPrice() > SERVICE_UNIT_PRICE_MAX) {
                 throw BusinessException.badRequest("INVALID_UNIT_PRICE", "Đơn giá không được vượt quá 1.000.000.000 VNĐ");
             }
             service.setUnitPrice(request.unitPrice());
         }
 
         if (request.description() != null) {
-            if (request.description().length() > 255) {
-                throw BusinessException.badRequest("INVALID_DESCRIPTION", "Mô tả không được vượt quá 255 ký tự");
+            if (request.description().length() > SERVICE_DESCRIPTION_MAX_LENGTH) {
+                throw BusinessException.badRequest(
+                        "INVALID_DESCRIPTION",
+                        "Mô tả không được vượt quá " + SERVICE_DESCRIPTION_MAX_LENGTH + " ký tự");
             }
             service.setDescription(request.description().isBlank() ? null : request.description().trim());
         }
@@ -288,8 +304,10 @@ public class ManagerServiceService {
         }
 
         String name = request.name().trim();
-        if (name.length() > 100) {
-            throw BusinessException.badRequest("INVALID_CATEGORY_NAME", "Tên danh mục không được vượt quá 100 ký tự");
+        if (name.length() > SERVICE_CATEGORY_NAME_MAX_LENGTH) {
+            throw BusinessException.badRequest(
+                    "INVALID_CATEGORY_NAME",
+                    "Tên danh mục không được vượt quá " + SERVICE_CATEGORY_NAME_MAX_LENGTH + " ký tự");
         }
 
         // Check trùng tên (case-insensitive) trong cùng homestay
@@ -320,8 +338,10 @@ public class ManagerServiceService {
         }
 
         String name = request.name().trim();
-        if (name.length() > 100) {
-            throw BusinessException.badRequest("INVALID_CATEGORY_NAME", "Tên danh mục không được vượt quá 100 ký tự");
+        if (name.length() > SERVICE_CATEGORY_NAME_MAX_LENGTH) {
+            throw BusinessException.badRequest(
+                    "INVALID_CATEGORY_NAME",
+                    "Tên danh mục không được vượt quá " + SERVICE_CATEGORY_NAME_MAX_LENGTH + " ký tự");
         }
 
         // Check trùng tên với danh mục khác trong cùng homestay

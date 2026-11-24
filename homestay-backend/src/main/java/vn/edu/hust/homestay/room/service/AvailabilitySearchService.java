@@ -49,7 +49,7 @@ public class AvailabilitySearchService {
 
     private static final Logger log = LoggerFactory.getLogger(AvailabilitySearchService.class);
     private static final int DEFAULT_PAGE_SIZE = 10;
-    private static final int MAX_PAGE_SIZE = 100;
+    private static final int MAX_PAGE_SIZE = vn.edu.hust.homestay.common.constant.ValidationConstants.MAX_PAGE_SIZE;
     private static final ZoneId BUSINESS_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final RoomRepository roomRepository;

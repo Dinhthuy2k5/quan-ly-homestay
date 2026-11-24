@@ -8,6 +8,10 @@ import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_SERVICE_NOTE_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_SERVICE_QUANTITY_MAX;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_SERVICE_QUANTITY_MIN;
+
 public record ManagerBookServiceRequest(
         @NotNull(message = "Mã phòng không được để trống")
         @Positive(message = "Mã phòng không hợp lệ")
@@ -18,12 +22,12 @@ public record ManagerBookServiceRequest(
         Long serviceId,
 
         @NotNull(message = "Số lượng không được để trống")
-        @Min(value = 1, message = "Số lượng dịch vụ tối thiểu là 1")
-        @Max(value = 100, message = "Số lượng dịch vụ tối đa là 100")
+        @Min(value = BOOKING_SERVICE_QUANTITY_MIN, message = "Số lượng dịch vụ tối thiểu là " + BOOKING_SERVICE_QUANTITY_MIN)
+        @Max(value = BOOKING_SERVICE_QUANTITY_MAX, message = "Số lượng dịch vụ tối đa là " + BOOKING_SERVICE_QUANTITY_MAX)
         Integer quantity,
 
         LocalDate serviceDate,
 
-        @Size(max = 255, message = "Ghi chú dịch vụ không vượt quá 255 ký tự")
+        @Size(max = BOOKING_SERVICE_NOTE_MAX_LENGTH, message = "Ghi chú dịch vụ không vượt quá " + BOOKING_SERVICE_NOTE_MAX_LENGTH + " ký tự")
         String note
 ) {}

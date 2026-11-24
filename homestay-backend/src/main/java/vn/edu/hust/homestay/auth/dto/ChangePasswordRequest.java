@@ -2,6 +2,7 @@ package vn.edu.hust.homestay.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.PASSWORD_MIN_LENGTH;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -25,6 +26,6 @@ public class ChangePasswordRequest {
     private String currentPassword;
 
     @NotBlank(message = "Mật khẩu mới không được để trống")
-    @Size(min = 8, message = "Mật khẩu mới phải chứa ít nhất 8 ký tự")
+    @Size(min = PASSWORD_MIN_LENGTH, message = "Mật khẩu mới phải chứa ít nhất " + PASSWORD_MIN_LENGTH + " ký tự")
     private String newPassword;
 }

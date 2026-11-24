@@ -7,9 +7,12 @@ import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_SERVICE_NOTE_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_SERVICE_QUANTITY_MIN;
+
 public record CustomerBookingServiceRequest(
         @NotNull @Positive Long serviceId,
-        @NotNull @Min(1) Integer quantity,
+        @NotNull @Min(BOOKING_SERVICE_QUANTITY_MIN) Integer quantity,
         LocalDate serviceDate,
-        @Size(max = 255) String note
+        @Size(max = BOOKING_SERVICE_NOTE_MAX_LENGTH) String note
 ) {}

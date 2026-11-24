@@ -3,6 +3,7 @@ package vn.edu.hust.homestay.auth.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.PASSWORD_MIN_LENGTH;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -30,7 +31,7 @@ public class RegisterRequest {
     private String email;
 
     @NotBlank(message = "Mật khẩu không được để trống")
-    @Size(min = 8, message = "Mật khẩu phải chứa ít nhất 8 ký tự")
+    @Size(min = PASSWORD_MIN_LENGTH, message = "Mật khẩu phải chứa ít nhất " + PASSWORD_MIN_LENGTH + " ký tự")
     private String password;
 
     @NotBlank(message = "Họ và tên không được để trống")

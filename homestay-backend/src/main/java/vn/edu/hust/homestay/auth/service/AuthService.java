@@ -16,6 +16,7 @@ import vn.edu.hust.homestay.auth.repository.UserRepository;
 import vn.edu.hust.homestay.auth.security.JwtService;
 import vn.edu.hust.homestay.auth.util.TokenHashUtil;
 import vn.edu.hust.homestay.common.exception.BusinessException;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.PASSWORD_MIN_LENGTH;
 
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -246,8 +247,10 @@ public class AuthService {
     }
 
     private void validatePasswordPolicy(String password) {
-        if (password == null || password.length() < 8) {
-            throw BusinessException.badRequest("PASSWORD_POLICY_VIOLATION", "Mật khẩu phải chứa ít nhất 8 ký tự.");
+        if (password == null || password.length() < PASSWORD_MIN_LENGTH) {
+            throw BusinessException.badRequest(
+                    "PASSWORD_POLICY_VIOLATION",
+                    "Mật khẩu phải chứa ít nhất " + PASSWORD_MIN_LENGTH + " ký tự.");
         }
     }
 }

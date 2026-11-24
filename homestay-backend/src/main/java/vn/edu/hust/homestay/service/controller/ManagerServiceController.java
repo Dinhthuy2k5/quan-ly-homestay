@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.common.response.ApiResponse;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MAX_PAGE_SIZE;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MIN_PAGE_SIZE;
 import vn.edu.hust.homestay.common.response.PageMeta;
 import vn.edu.hust.homestay.common.response.PagedResult;
 import vn.edu.hust.homestay.service.dto.CreateManagerServiceRequest;
@@ -59,7 +61,7 @@ public class ManagerServiceController {
             @RequestParam(defaultValue = "name,asc") String sort
     ) {
         int validPage = Math.max(0, page);
-        int boundedSize = Math.max(1, Math.min(100, size));
+        int boundedSize = Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, size));
         Pageable pageable = PageRequest.of(validPage, boundedSize, parseSort(sort));
 
         PagedResult<ManagerServiceSummaryResponse> result = managerServiceService.getServices(

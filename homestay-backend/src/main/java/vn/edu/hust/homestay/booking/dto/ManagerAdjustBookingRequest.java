@@ -3,6 +3,8 @@ package vn.edu.hust.homestay.booking.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_ADJUST_REASON_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_GUEST_COUNT_MIN;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -21,11 +23,11 @@ public record ManagerAdjustBookingRequest(
         @Schema(description = "Danh sách ID phòng mới (nếu muốn thay đổi phòng)", example = "[101]")
         List<Long> roomIds,
 
-        @Min(value = 1, message = "Số khách phải lớn hơn hoặc bằng 1")
+        @Min(value = BOOKING_GUEST_COUNT_MIN, message = "Số khách phải lớn hơn hoặc bằng " + BOOKING_GUEST_COUNT_MIN)
         @Schema(description = "Số lượng khách dự kiến", example = "2")
         Integer guestCount,
 
-        @Size(max = 500, message = "Lý do điều chỉnh tối đa 500 ký tự")
+        @Size(max = BOOKING_ADJUST_REASON_MAX_LENGTH, message = "Lý do điều chỉnh tối đa " + BOOKING_ADJUST_REASON_MAX_LENGTH + " ký tự")
         @Schema(description = "Lý do điều chỉnh booking", example = "Khách yêu cầu kéo dài thời gian lưu trú")
         String reason
 ) {

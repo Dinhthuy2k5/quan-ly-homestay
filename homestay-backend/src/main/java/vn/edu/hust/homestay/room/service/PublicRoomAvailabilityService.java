@@ -19,7 +19,7 @@ import java.time.ZoneId;
 public class PublicRoomAvailabilityService {
 
     private static final ZoneId BUSINESS_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
-    private static final long MAX_RANGE_DAYS = 367;
+    private static final long MAX_RANGE_DAYS = vn.edu.hust.homestay.common.constant.ValidationConstants.AVAILABILITY_MAX_RANGE_DAYS;
 
     private final RoomRepository roomRepository;
     private final HomestayRepository homestayRepository;

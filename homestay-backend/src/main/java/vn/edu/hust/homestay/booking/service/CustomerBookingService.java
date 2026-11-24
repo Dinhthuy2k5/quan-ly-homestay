@@ -36,6 +36,8 @@ import vn.edu.hust.homestay.booking.repository.BookingRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomNightRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomRepository;
 import vn.edu.hust.homestay.common.exception.BusinessException;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MAX_UPLOAD_FILE_SIZE_BYTES;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.PAYMENT_REFERENCE_CODE_MAX_LENGTH;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
 import vn.edu.hust.homestay.media.entity.Media;
@@ -157,13 +159,15 @@ public class CustomerBookingService {
             throw BusinessException.badRequest("VALIDATION_ERROR", "Phương thức đặt cọc phải là BANK_TRANSFER");
         }
         String normalizedReference = referenceCode == null ? "" : referenceCode.trim();
-        if (normalizedReference.isEmpty() || normalizedReference.length() > 100) {
-            throw BusinessException.badRequest("VALIDATION_ERROR", "Mã tham chiếu bắt buộc và không vượt quá 100 ký tự");
+        if (normalizedReference.isEmpty() || normalizedReference.length() > PAYMENT_REFERENCE_CODE_MAX_LENGTH) {
+            throw BusinessException.badRequest(
+                    "VALIDATION_ERROR",
+                    "Mã tham chiếu bắt buộc và không vượt quá " + PAYMENT_REFERENCE_CODE_MAX_LENGTH + " ký tự");
         }
         if (proofFile == null || proofFile.isEmpty()) {
             throw BusinessException.badRequest("UNSUPPORTED_MEDIA_TYPE", "Vui lòng tải lên chứng từ chuyển khoản");
         }
-        if (proofFile.getSize() > 5L * 1024 * 1024) {
+        if (proofFile.getSize() > MAX_UPLOAD_FILE_SIZE_BYTES) {
             throw new BusinessException("FILE_TOO_LARGE", "Tệp chứng từ không được vượt quá 5 MB", HttpStatus.PAYLOAD_TOO_LARGE);
         }
 

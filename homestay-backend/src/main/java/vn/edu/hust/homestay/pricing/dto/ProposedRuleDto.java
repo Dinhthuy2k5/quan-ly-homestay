@@ -2,6 +2,7 @@ package vn.edu.hust.homestay.pricing.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.Size;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.PRICE_RULE_NAME_MAX_LENGTH;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -30,7 +31,7 @@ public class ProposedRuleDto {
 
     private RuleType ruleType;
 
-    @Size(max = 100, message = "Tên quy tắc không được vượt quá 100 ký tự")
+    @Size(max = PRICE_RULE_NAME_MAX_LENGTH, message = "Tên quy tắc không được vượt quá " + PRICE_RULE_NAME_MAX_LENGTH + " ký tự")
     private String name;
 
     private Long basePrice;

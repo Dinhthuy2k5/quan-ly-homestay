@@ -51,15 +51,22 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.EXPENSE_CATEGORY_NAME_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.EXPENSE_DESCRIPTION_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.EXPENSE_DOCUMENT_NUMBER_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.EXPENSE_SUPPLIER_NAME_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.EXPENSE_TRANSACTION_REFERENCE_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MAX_UPLOAD_FILE_SIZE_BYTES;
+
 @Service
 public class ManagerExpenseService {
 
     private static final Logger log = LoggerFactory.getLogger(ManagerExpenseService.class);
-    private static final long MAX_PROOF_SIZE = 5L * 1024 * 1024;
-    private static final int MAX_DESCRIPTION_LENGTH = 255;
-    private static final int MAX_SUPPLIER_NAME_LENGTH = 150;
-    private static final int MAX_DOCUMENT_NUMBER_LENGTH = 100;
-    private static final int MAX_TRANSACTION_REFERENCE_LENGTH = 100;
+    private static final long MAX_PROOF_SIZE = MAX_UPLOAD_FILE_SIZE_BYTES;
+    private static final int MAX_DESCRIPTION_LENGTH = EXPENSE_DESCRIPTION_MAX_LENGTH;
+    private static final int MAX_SUPPLIER_NAME_LENGTH = EXPENSE_SUPPLIER_NAME_MAX_LENGTH;
+    private static final int MAX_DOCUMENT_NUMBER_LENGTH = EXPENSE_DOCUMENT_NUMBER_MAX_LENGTH;
+    private static final int MAX_TRANSACTION_REFERENCE_LENGTH = EXPENSE_TRANSACTION_REFERENCE_MAX_LENGTH;
 
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository categoryRepository;
@@ -148,7 +155,9 @@ public class ManagerExpenseService {
             throw validationError("Tên danh mục không được để trống");
         }
         String name = rawName.trim();
-        if (name.length() > 100) throw validationError("Tên danh mục tối đa 100 ký tự");
+        if (name.length() > EXPENSE_CATEGORY_NAME_MAX_LENGTH) {
+            throw validationError("Tên danh mục tối đa " + EXPENSE_CATEGORY_NAME_MAX_LENGTH + " ký tự");
+        }
         return name;
     }
 

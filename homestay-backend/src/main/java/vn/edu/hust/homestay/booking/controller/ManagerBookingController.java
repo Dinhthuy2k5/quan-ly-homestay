@@ -47,6 +47,8 @@ import vn.edu.hust.homestay.booking.service.ManagerBookingService;
 import vn.edu.hust.homestay.service.dto.ManagerBookServiceRequest;
 import vn.edu.hust.homestay.service.dto.ManagerBookingServiceResponse;
 import vn.edu.hust.homestay.common.exception.BusinessException;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MAX_PAGE_SIZE;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.MIN_PAGE_SIZE;
 import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.common.response.PageMeta;
 
@@ -86,7 +88,7 @@ public class ManagerBookingController {
             @RequestParam(defaultValue = "createdAt,desc") String sort
     ) {
         int validPage = Math.max(0, page);
-        int boundedSize = Math.max(1, Math.min(100, size));
+        int boundedSize = Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, size));
         Page<ManagerBookingSummaryResponse> result = managerBookingService.getHomestayBookings(
                 principal,
                 status,

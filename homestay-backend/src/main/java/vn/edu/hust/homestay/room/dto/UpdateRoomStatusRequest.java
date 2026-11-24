@@ -2,6 +2,7 @@ package vn.edu.hust.homestay.room.dto;
 
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.ROOM_STATUS_REASON_MAX_LENGTH;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,6 +25,6 @@ public class UpdateRoomStatusRequest {
     @NotNull(message = "Trạng thái mới không được để trống")
     private RoomStatus status;
 
-    @Size(max = 255, message = "Lý do không được vượt quá 255 ký tự")
+    @Size(max = ROOM_STATUS_REASON_MAX_LENGTH, message = "Lý do không được vượt quá " + ROOM_STATUS_REASON_MAX_LENGTH + " ký tự")
     private String reason;
 }

@@ -2,6 +2,7 @@ package vn.edu.hust.homestay.booking.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_GUEST_COUNT_MIN;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -26,7 +27,7 @@ public class CustomerAdjustBookingRequest {
     @Schema(description = "Ngày trả phòng mới (YYYY-MM-DD)", example = "2026-10-12")
     private LocalDate checkOutDate;
 
-    @Min(value = 1, message = "Số khách phải lớn hơn hoặc bằng 1")
+    @Min(value = BOOKING_GUEST_COUNT_MIN, message = "Số khách phải lớn hơn hoặc bằng " + BOOKING_GUEST_COUNT_MIN)
     @Schema(description = "Số lượng khách dự kiến", example = "2")
     private Integer guestCount;
 

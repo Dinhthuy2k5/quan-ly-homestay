@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.BOOKING_NOTE_MAX_LENGTH;
 import jakarta.validation.Valid;
 import vn.edu.hust.homestay.service.dto.CustomerBookingServiceSelectionRequest;
 import lombok.Getter;
@@ -33,7 +34,7 @@ public class CreateBookingRequest {
     @Positive
     private Integer guestCount;
 
-    @Size(max = 500)
+    @Size(max = BOOKING_NOTE_MAX_LENGTH)
     private String note;
 
     private List<@Valid CustomerBookingServiceSelectionRequest> services;
