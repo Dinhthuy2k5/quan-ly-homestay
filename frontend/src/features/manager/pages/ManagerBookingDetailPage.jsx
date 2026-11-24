@@ -299,6 +299,7 @@ export default function ManagerBookingDetailPage() {
   const checkInStartStr = booking?.checkInDate ? `${booking.checkInDate}T${CHECK_IN_TIME}` : null;
   const stayEndStr = booking?.checkOutDate ? `${booking.checkOutDate}T${CHECK_OUT_DEADLINE}` : null;
 
+  const isBeforeCheckInDate = Boolean(booking?.checkInDate && todayStr < booking.checkInDate);
   const isCheckInTooEarly = Boolean(checkInStartStr && currentDateTimeStr < checkInStartStr);
   const isCheckInExpired = Boolean(booking?.checkOutDate && todayStr >= booking.checkOutDate);
   const isLateCheckIn = Boolean(
@@ -605,10 +606,18 @@ export default function ManagerBookingDetailPage() {
             ) : isCheckInTooEarly ? (
               <div
                 className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800"
-                title={`Chưa đến giờ nhận phòng (từ ${CHECK_IN_TIME} ngày ${formatDate(booking.checkInDate)})`}
+                title={
+                  isBeforeCheckInDate
+                    ? `Chưa đến ngày nhận phòng (từ ${CHECK_IN_TIME} ngày ${formatDate(booking.checkInDate)})`
+                    : `Chưa đến giờ nhận phòng hôm nay (từ ${CHECK_IN_TIME})`
+                }
               >
                 <Clock className="h-4 w-4 text-sky-600" />
-                <span>Chờ giờ nhận phòng (từ {CHECK_IN_TIME})</span>
+                <span>
+                  {isBeforeCheckInDate
+                    ? `Nhận phòng từ ${CHECK_IN_TIME} · ${formatDate(booking.checkInDate)}`
+                    : `Chờ giờ nhận phòng (từ ${CHECK_IN_TIME} hôm nay)`}
+                </span>
               </div>
             ) : isCheckInExpired ? (
               <div
@@ -1236,10 +1245,22 @@ export default function ManagerBookingDetailPage() {
               <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-xs space-y-2">
                 <div className="flex items-center gap-2.5 text-sky-900 font-bold text-sm sm:text-base">
                   <Clock className="h-5 w-5 text-sky-600 shrink-0" />
-                  <span>Chưa đến ngày nhận phòng</span>
+                  <span>{isBeforeCheckInDate ? 'Chưa đến ngày nhận phòng' : 'Chưa đến giờ nhận phòng'}</span>
                 </div>
                 <p className="text-xs sm:text-sm text-sky-800 leading-relaxed">
-                  Ngày nhận phòng theo đơn là <strong>{formatDate(booking.checkInDate)}</strong>. Quản lý chỉ có thể ghi nhận Check-in khi đến ngày nhận phòng. Nếu khách muốn nhận phòng sớm hơn, vui lòng sử dụng chức năng <strong>Điều chỉnh đơn</strong> để bổ sung ngày trước khi check-in.
+                  {isBeforeCheckInDate ? (
+                    <>
+                      Ngày nhận phòng theo đơn là <strong>{formatDate(booking.checkInDate)}</strong> (từ{' '}
+                      <strong>{CHECK_IN_TIME}</strong>). Quản lý chỉ có thể ghi nhận Check-in khi đến thời điểm nhận
+                      phòng. Nếu khách muốn nhận phòng sớm hơn, vui lòng sử dụng chức năng{' '}
+                      <strong>Điều chỉnh đơn</strong> để bổ sung ngày trước khi check-in.
+                    </>
+                  ) : (
+                    <>
+                      Hôm nay là ngày nhận phòng (<strong>{formatDate(booking.checkInDate)}</strong>), tuy nhiên theo
+                      quy định chỉ có thể ghi nhận Check-in từ <strong>{CHECK_IN_TIME}</strong> trở đi.
+                    </>
+                  )}
                 </p>
               </div>
             ) : isCheckInExpired ? (

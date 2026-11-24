@@ -402,6 +402,23 @@ export async function getManagerReportOverviewApi({ fromDate, toDate, signal } =
   return res.data?.data || null;
 }
 
+/** API-REPORT-MGR-02: Báo cáo tài chính cơ sở (thực thu ròng, chi phí, lợi nhuận). */
+export async function getManagerReportFinanceApi({
+  fromDate,
+  toDate,
+  categoryId,
+  paymentMethod,
+  signal,
+} = {}) {
+  const params = {};
+  if (fromDate) params.fromDate = fromDate;
+  if (toDate) params.toDate = toDate;
+  if (categoryId) params.categoryId = Number(categoryId);
+  if (paymentMethod) params.paymentMethod = paymentMethod;
+  const res = await apiClient.get('/manager/reports/finance', { params, signal });
+  return res.data?.data || null;
+}
+
 /** API-EXP-05: CRUD danh mục chi phí của homestay đang quản lý. */
 export async function createManagerExpenseCategoryApi(name) {
   const res = await apiClient.post('/manager/expense-categories', { name });

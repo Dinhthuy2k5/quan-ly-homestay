@@ -30,13 +30,20 @@ const DEC_FORMAT = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 });
 
 // ─── Delta Badge (So sánh kỳ trước) ───────────────────────────────────────────
 
-export function DeltaBadge({ current, previous, mode = 'percent', label = 'so với kỳ trước' }) {
+export function DeltaBadge({
+  current,
+  previous,
+  mode = 'percent',
+  invertTone = false,
+  label = 'so với kỳ trước',
+}) {
   if (previous === null || previous === undefined || current === null || current === undefined) {
     return null;
   }
 
   let diffText = '';
   let direction = 'flat'; // 'up' | 'down' | 'flat'
+  let tooltip = '';
 
   if (mode === 'points') {
     const diff = current - previous;
@@ -47,6 +54,25 @@ export function DeltaBadge({ current, previous, mode = 'percent', label = 'so v�
       direction = diff > 0 ? 'up' : 'down';
       diffText = `${diff > 0 ? '+' : ''}${DEC_FORMAT.format(diff)} đ%`;
     }
+    tooltip = `${diffText} ${label}`;
+  } else if (mode === 'currency') {
+    const diff = current - previous;
+    if (diff === 0) {
+      direction = 'flat';
+      diffText = '0%';
+      tooltip = `Không đổi ${label}`;
+    } else if (previous <= 0) {
+      // Khi kỳ trước âm (lỗ) hoặc bằng 0, tính % theo mẫu số âm sẽ bị đảo dấu/sai lệch.
+      // Hiển thị trực tiếp mức chênh lệch VND thực tế để dễ hiểu và chính xác kế toán.
+      direction = diff > 0 ? 'up' : 'down';
+      diffText = `${diff > 0 ? '+' : '-'}${formatVnd(Math.abs(diff))}`;
+      tooltip = `Kỳ trước: ${previous < 0 ? '-' : ''}${formatVnd(Math.abs(previous))} · Chênh lệch: ${diffText}`;
+    } else {
+      const pct = (diff / previous) * 100;
+      direction = diff > 0 ? 'up' : 'down';
+      diffText = `${pct > 0 ? '+' : ''}${DEC_FORMAT.format(pct)}%`;
+      tooltip = `${diffText} ${label} (kỳ trước: ${formatVnd(previous)})`;
+    }
   } else {
     const diff = current - previous;
     if (diff === 0) {
@@ -56,16 +82,20 @@ export function DeltaBadge({ current, previous, mode = 'percent', label = 'so v�
       direction = diff > 0 ? 'up' : 'down';
       diffText = `${diff > 0 ? '+' : ''}${NUM_FORMAT.format(diff)}`;
     } else {
-      const pct = (diff / previous) * 100;
-      direction = pct > 0 ? 'up' : 'down';
+      // Dùng Math.abs(previous) làm mẫu số để không bao giờ bị đảo dấu khi kỳ trước < 0
+      const pct = (diff / Math.abs(previous)) * 100;
+      direction = diff > 0 ? 'up' : 'down';
       diffText = `${pct > 0 ? '+' : ''}${DEC_FORMAT.format(pct)}%`;
     }
+    tooltip = `${diffText} ${label}`;
   }
 
-  const toneClass =
-    direction === 'up'
-      ? 'bg-[var(--color-success-soft)] text-[var(--color-success)]'
-      : direction === 'down'
+  const isPositiveTone = invertTone ? direction === 'down' : direction === 'up';
+  const isNegativeTone = invertTone ? direction === 'up' : direction === 'down';
+
+  const toneClass = isPositiveTone
+    ? 'bg-[var(--color-success-soft)] text-[var(--color-success)]'
+    : isNegativeTone
       ? 'bg-[var(--color-danger-soft)] text-[var(--color-danger)]'
       : 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]';
 
@@ -73,8 +103,8 @@ export function DeltaBadge({ current, previous, mode = 'percent', label = 'so v�
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${toneClass}`}
-      title={`${diffText} ${label}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${toneClass}`}
+      title={tooltip}
     >
       <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
       <span>{diffText}</span>
@@ -103,8 +133,8 @@ export function OccupancyHeroCard({
     prevReport && prevCapacity > 0
       ? (prevReport.occupiedRoomNights / prevCapacity) * 100
       : prevReport
-      ? 0
-      : null;
+        ? 0
+        : null;
 
   const vacantRoomNights = Math.max(0, capacity - occupied);
   const avgNightsPerBooking = bookingCount > 0 ? occupied / bookingCount : null;
@@ -332,8 +362,8 @@ export function OperationalScheduleCard({
     activeTab === 'arrivals'
       ? `Không có đơn chờ nhận phòng ${scopeLabel}.`
       : activeTab === 'departures'
-      ? `Không có đoàn chờ trả phòng ${scopeLabel}.`
-      : 'Hiện chưa có đoàn khách nào đang lưu trú tại cơ sở.';
+        ? `Không có đơn chờ trả phòng ${scopeLabel}.`
+        : 'Hiện chưa có đoàn khách nào đang lưu trú tại cơ sở.';
 
   return (
     <section
@@ -370,20 +400,18 @@ export function OperationalScheduleCard({
                 role="tab"
                 aria-selected={isSelected}
                 onClick={() => onTabChange(key)}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  isSelected
-                    ? 'bg-white text-[var(--color-ink)] shadow-xs'
-                    : 'text-[var(--color-body)] hover:text-[var(--color-ink)]'
-                }`}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${isSelected
+                  ? 'bg-white text-[var(--color-ink)] shadow-xs'
+                  : 'text-[var(--color-body)] hover:text-[var(--color-ink)]'
+                  }`}
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span>{label}</span>
                 <span
-                  className={`rounded-full px-1.5 py-0.5 text-[11px] tabular-nums ${
-                    isSelected
-                      ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
-                      : 'bg-white/70 text-[var(--color-muted)]'
-                  }`}
+                  className={`rounded-full px-1.5 py-0.5 text-[11px] tabular-nums ${isSelected
+                    ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
+                    : 'bg-white/70 text-[var(--color-muted)]'
+                    }`}
                 >
                   {loading ? '·' : count}
                 </span>
@@ -554,10 +582,10 @@ export function OperationalScheduleCard({
           {!loading && activeList.length > visibleItems.length
             ? `Hiển thị ${visibleItems.length}/${activeList.length} đơn gần nhất`
             : activeTab === 'arrivals'
-            ? 'Đơn đã check-in sẽ tự động chuyển sang tab Đang lưu trú'
-            : activeTab === 'departures'
-            ? 'Chỉ hiển thị khách đang lưu trú có hạn trả phòng trong phạm vi chọn'
-            : 'Dữ liệu khách đang có mặt tại thời điểm hiện tại'}
+              ? 'Đơn đã check-in sẽ tự động chuyển sang tab Đang lưu trú'
+              : activeTab === 'departures'
+                ? 'Chỉ hiển thị khách đang lưu trú có hạn trả phòng trong phạm vi chọn'
+                : 'Dữ liệu khách đang có mặt tại thời điểm hiện tại'}
         </span>
         <Link
           to={viewAllHref}
@@ -605,11 +633,10 @@ export function ActionQueueAndRoomsPanel({
             </h2>
           </div>
           <span
-            className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${
-              approvalCount > 0
-                ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
-                : 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]'
-            }`}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${approvalCount > 0
+              ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
+              : 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]'
+              }`}
           >
             <BellRing className="h-4 w-4" aria-hidden="true" />
           </span>
@@ -636,17 +663,15 @@ export function ActionQueueAndRoomsPanel({
             {/* Urgent: Pending Approval */}
             <Link
               to="/manager/bookings?status=PENDING_APPROVAL"
-              className={`group flex items-center justify-between gap-3 rounded-xl border p-3 transition ${
-                approvalCount > 0
-                  ? 'border-[var(--color-primary-disabled)] bg-[var(--color-primary-soft)]/70 hover:bg-[var(--color-primary-soft)]'
-                  : 'border-[var(--color-border)] bg-white hover:bg-[var(--color-surface-soft)]'
-              }`}
+              className={`group flex items-center justify-between gap-3 rounded-xl border p-3 transition ${approvalCount > 0
+                ? 'border-[var(--color-primary-disabled)] bg-[var(--color-primary-soft)]/70 hover:bg-[var(--color-primary-soft)]'
+                : 'border-[var(--color-border)] bg-white hover:bg-[var(--color-surface-soft)]'
+                }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <AlertTriangle
-                  className={`h-4 w-4 shrink-0 ${
-                    approvalCount > 0 ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'
-                  }`}
+                  className={`h-4 w-4 shrink-0 ${approvalCount > 0 ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'
+                    }`}
                   aria-hidden="true"
                 />
                 <div className="min-w-0">
@@ -656,11 +681,10 @@ export function ActionQueueAndRoomsPanel({
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold tabular-nums ${
-                    approvalCount > 0
-                      ? 'bg-[var(--color-primary)] text-white'
-                      : 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]'
-                  }`}
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold tabular-nums ${approvalCount > 0
+                    ? 'bg-[var(--color-primary)] text-white'
+                    : 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]'
+                    }`}
                 >
                   {approvalCount}
                 </span>

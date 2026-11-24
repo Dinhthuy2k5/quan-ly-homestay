@@ -6,11 +6,23 @@ import org.springframework.data.repository.query.Param;
 import vn.edu.hust.homestay.booking.entity.Booking;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 
+/**
+ * Repository truy vấn tổng hợp cho các báo cáo của Manager (REPORT-MGR-01, REPORT-MGR-02...).
+ * Sử dụng native SQL để gom nhóm trực tiếp tại DB và tận dụng các index sẵn có.
+ */
 public interface ManagerReportRepository extends Repository<Booking, Long> {
 
-    /** One round trip for the overview metrics. Check-in/out counts represent scheduled dates. */
+    /**
+     * API-REPORT-MGR-01: Lấy 5 chỉ số tổng quan trong 1 lượt truy vấn.
+     * - bookingCount: đơn hợp lệ có đêm lưu trú giao với kỳ [fromDate, toDate]
+     * - checkIns / checkOuts: đếm theo ngày nhận/trả phòng dự kiến trên booking
+     * - activeRooms: số phòng đang mở bán (ACTIVE) tại thời điểm hiện tại
+     * - occupiedRoomNights: số đêm-phòng thực tế nằm trong kỳ báo cáo
+     */
     @Query(value = """
             SELECT
               (SELECT COUNT(*) FROM bookings b
@@ -40,5 +52,65 @@ public interface ManagerReportRepository extends Repository<Booking, Long> {
             @Param("toDate") LocalDate toDate,
             @Param("reportableStatuses") Collection<String> reportableStatuses,
             @Param("occupiedStatuses") Collection<String> occupiedStatuses
+    );
+
+    /**
+     * API-REPORT-MGR-02 (Phần 1 - Dòng thu & hoàn tiền theo phương thức thanh toán):
+     * Gom nhóm các giao dịch thanh toán ĐÃ XÁC NHẬN (status = 'CONFIRMED') theo phương thức thanh toán.
+     * - Loại bỏ giao dịch PENDING và REJECTED.
+     * - Lọc theo khoảng [confirmedFromUtc, confirmedToExclusiveUtc) đã quy đổi từ giờ VN (+07:00) sang UTC
+     *   để vừa chính xác ranh giới ngày vừa dùng được index idx_pay_finance(homestay_id, status, confirmed_at).
+     */
+    @Query(value = """
+            SELECT p.method AS paymentMethod,
+                   COALESCE(SUM(CASE WHEN p.type IN ('DEPOSIT', 'PAYMENT') THEN p.amount ELSE 0 END), 0) AS grossReceipts,
+                   COALESCE(SUM(CASE WHEN p.type = 'DEPOSIT' THEN p.amount ELSE 0 END), 0) AS depositReceipts,
+                   COALESCE(SUM(CASE WHEN p.type = 'PAYMENT' THEN p.amount ELSE 0 END), 0) AS settlementReceipts,
+                   COALESCE(SUM(CASE WHEN p.type = 'REFUND' THEN p.amount ELSE 0 END), 0) AS refunds,
+                   COALESCE(SUM(CASE WHEN p.type IN ('DEPOSIT', 'PAYMENT') THEN 1 ELSE 0 END), 0) AS receiptCount,
+                   COALESCE(SUM(CASE WHEN p.type = 'REFUND' THEN 1 ELSE 0 END), 0) AS refundCount
+            FROM payments p
+            WHERE p.homestay_id = :homestayId
+              AND p.status = 'CONFIRMED'
+              AND p.confirmed_at >= :confirmedFromUtc
+              AND p.confirmed_at < :confirmedToExclusiveUtc
+              AND (:paymentMethod IS NULL OR p.method = :paymentMethod)
+            GROUP BY p.method
+            ORDER BY FIELD(p.method, 'CASH', 'BANK_TRANSFER'), p.method ASC
+            """, nativeQuery = true)
+    List<ManagerFinancePaymentMethodProjection> getFinancePaymentsByMethod(
+            @Param("homestayId") Long homestayId,
+            @Param("confirmedFromUtc") LocalDateTime confirmedFromUtc,
+            @Param("confirmedToExclusiveUtc") LocalDateTime confirmedToExclusiveUtc,
+            @Param("paymentMethod") String paymentMethod
+    );
+
+    /**
+     * API-REPORT-MGR-02 (Phần 2 - Chi phí vận hành theo danh mục):
+     * Gom tổng chi phí vận hành theo từng danh mục, sắp xếp giảm dần theo số tiền chi.
+     * Chỉ tính khoản chi chưa bị hủy (cancelled_at IS NULL) và lọc theo ngày chi expense_date.
+     */
+    @Query(value = """
+            SELECT e.category_id AS categoryId,
+                   c.name AS categoryName,
+                   COALESCE(SUM(e.amount), 0) AS totalAmount,
+                   COUNT(*) AS expenseCount
+            FROM expenses e
+            JOIN expense_categories c
+              ON c.id = e.category_id AND c.homestay_id = e.homestay_id
+            WHERE e.homestay_id = :homestayId
+              AND e.cancelled_at IS NULL
+              AND e.expense_date BETWEEN :fromDate AND :toDate
+              AND (:categoryId IS NULL OR e.category_id = :categoryId)
+              AND (:paymentMethod IS NULL OR e.payment_method = :paymentMethod)
+            GROUP BY e.category_id, c.name
+            ORDER BY totalAmount DESC, c.name ASC
+            """, nativeQuery = true)
+    List<ManagerFinanceExpenseCategoryProjection> getFinanceExpensesByCategory(
+            @Param("homestayId") Long homestayId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("categoryId") Long categoryId,
+            @Param("paymentMethod") String paymentMethod
     );
 }

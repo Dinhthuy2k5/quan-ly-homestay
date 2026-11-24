@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowUpRight,
@@ -20,6 +20,7 @@ import {
   DeltaBadge,
   OccupancyHeroCard,
 } from '../components/OperationsWidgets';
+import FinanceReportView from '../components/FinanceReportView';
 import {
   displayPeriod,
   getPresetRange,
@@ -30,6 +31,7 @@ import { getErrorMessage } from '../../../lib/errors';
 
 const NUM_FORMAT = new Intl.NumberFormat('vi-VN');
 
+// Cấu hình 3 tab báo cáo của Manager theo đúng tài liệu thiết kế (MGR-01, MGR-02, MGR-03)
 const REPORT_TABS = [
   {
     key: 'overview',
@@ -44,10 +46,8 @@ const REPORT_TABS = [
     label: 'Tài chính cơ sở',
     apiCode: 'API-REPORT-MGR-02',
     endpoint: 'GET /api/v1/manager/reports/finance',
-    description:
-      'Tổng hợp doanh thu thực thu, chi phí vận hành (loại trừ khoản đã hủy), hoàn tiền và lợi nhuận ròng theo kỳ.',
     icon: Wallet,
-    ready: false,
+    ready: true,
   },
   {
     key: 'occupancy',
@@ -61,6 +61,10 @@ const REPORT_TABS = [
   },
 ];
 
+// Tập hợp các key tab hợp lệ dùng để kiểm tra tham số ?tab=... trên URL
+const VALID_TAB_KEYS = new Set(REPORT_TABS.map((t) => t.key));
+
+/** Khối hiển thị tạm cho các tab báo cáo chưa hoàn thiện API backend. */
 function UpcomingReportPlaceholder({ tab }) {
   const Icon = tab.icon;
   return (
@@ -88,27 +92,55 @@ function UpcomingReportPlaceholder({ tab }) {
   );
 }
 
+/**
+ * Trang Báo cáo cơ sở (/manager/reports).
+ * Gồm 3 tab: Tổng quan (MGR-01), Tài chính (MGR-02) và Công suất phòng (MGR-03).
+ */
 export default function ManagerReportOverviewPage() {
   const { homestay } = useOutletContext() || {};
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Khoảng ngày mặc định: từ đầu tháng hiện tại đến hôm nay
   const initialRange = useMemo(() => getPresetRange('month'), []);
 
-  const [activeReportTab, setActiveReportTab] = useState('overview');
-  const [filters, setFilters] = useState(initialRange);
-  const [appliedFilters, setAppliedFilters] = useState(initialRange);
-  const [preset, setPreset] = useState('month');
-  const [reload, setReload] = useState(0);
+  // Đọc tab hiện tại từ URL (?tab=finance), mặc định là 'overview'
+  const rawTab = searchParams.get('tab');
+  const activeReportTab = VALID_TAB_KEYS.has(rawTab) ? rawTab : 'overview';
 
-  const [report, setReport] = useState(null);
-  const [prevReport, setPrevReport] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // --- STATE BỘ LỌC & DỮ LIỆU CHO TAB TỔNG QUAN (API-REPORT-MGR-01) ---
+  const [filters, setFilters] = useState(initialRange);               // Ngày đang nhập trên form
+  const [appliedFilters, setAppliedFilters] = useState(initialRange); // Ngày đã áp dụng để gọi API
+  const [preset, setPreset] = useState('month');                      // Nút chọn nhanh đang active
+  const [reload, setReload] = useState(0);                            // Tăng giá trị khi bấm "Làm mới"
+
+  const [report, setReport] = useState(null);             // Dữ liệu tổng quan kỳ hiện tại
+  const [prevReport, setPrevReport] = useState(null);     // Dữ liệu kỳ liền trước để so sánh % tăng/giảm
+  const [loading, setLoading] = useState(true);           // Trạng thái tải của tab Tổng quan
+  const [financeLoading, setFinanceLoading] = useState(false); // Trạng thái tải báo lên từ tab Tài chính
   const [error, setError] = useState('');
 
+  /** Chuyển tab báo cáo và cập nhật query ?tab=... trên URL để F5 không bị mất tab đang xem. */
+  const handleTabChange = (nextTab) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextTab === 'overview') {
+      next.delete('tab');
+    } else {
+      next.set('tab', nextTab);
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  const handleFinanceLoadingChange = useCallback((isBusy) => {
+    setFinanceLoading(isBusy);
+  }, []);
+
+  // Kỳ liền trước cùng số ngày (dùng để so sánh tăng/giảm với kỳ đang xem)
   const prevRange = useMemo(
     () => getPreviousPeriod(appliedFilters.fromDate, appliedFilters.toDate),
     [appliedFilters.fromDate, appliedFilters.toDate]
   );
 
-  // Chỉ gọi API-REPORT-MGR-01 (kỳ hiện tại + kỳ liền trước để đối chiếu)
+  // Chỉ gọi API-REPORT-MGR-01 khi đang mở tab Tổng quan cơ sở
   useEffect(() => {
     if (activeReportTab !== 'overview') return undefined;
 
@@ -120,6 +152,7 @@ export default function ManagerReportOverviewPage() {
       setError('');
 
       try {
+        // Gọi song song báo cáo kỳ hiện tại và kỳ liền trước
         const currentPromise = getManagerReportOverviewApi({
           fromDate: appliedFilters.fromDate,
           toDate: appliedFilters.toDate,
@@ -153,6 +186,7 @@ export default function ManagerReportOverviewPage() {
     return () => controller.abort();
   }, [activeReportTab, appliedFilters, prevRange, reload]);
 
+  /** Chọn nhanh kỳ báo cáo và áp dụng luôn. */
   const choosePreset = (nextPreset) => {
     const nextRange = getPresetRange(nextPreset);
     setFilters(nextRange);
@@ -161,11 +195,13 @@ export default function ManagerReportOverviewPage() {
     setError('');
   };
 
+  /** Cập nhật ô ngày khi chọn thủ công. */
   const updateDate = (event) => {
     setFilters((current) => ({ ...current, [event.target.name]: event.target.value }));
     setPreset('custom');
   };
 
+  /** Kiểm tra khoảng ngày hợp lệ rồi áp dụng lọc. */
   const applyFilters = (event) => {
     event.preventDefault();
     if (!filters.fromDate || !filters.toDate) {
@@ -180,6 +216,7 @@ export default function ManagerReportOverviewPage() {
     setAppliedFilters({ ...filters });
   };
 
+  // --- BIẾN DẪN XUẤT HIỂN THỊ CHO TAB TỔNG QUAN ---
   const effectiveFrom = report?.fromDate || appliedFilters.fromDate;
   const effectiveTo = report?.toDate || appliedFilters.toDate;
   const periodLabel = displayPeriod(effectiveFrom, effectiveTo);
@@ -193,11 +230,15 @@ export default function ManagerReportOverviewPage() {
         report.occupiedRoomNights > 0)
   );
 
+  // Thông tin tab đang chọn và cờ khóa nút "Làm mới" khi tab hiện tại đang tải
   const selectedTabMeta = REPORT_TABS.find((t) => t.key === activeReportTab) || REPORT_TABS[0];
+  const isCurrentTabBusy =
+    (activeReportTab === 'overview' && loading) ||
+    (activeReportTab === 'finance' && financeLoading);
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5 pb-10">
-      {/* ── Header ── */}
+      {/* ── Header trang Báo cáo ── */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3.5 min-w-0">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
@@ -222,21 +263,21 @@ export default function ManagerReportOverviewPage() {
             <LayoutDashboard className="h-4 w-4 text-[var(--color-muted)]" aria-hidden="true" />
             <span>Trung tâm điều hành</span>
           </Link>
-          {activeReportTab === 'overview' && (
+          {selectedTabMeta.ready && (
             <button
               type="button"
               onClick={() => setReload((v) => v + 1)}
-              disabled={loading}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--color-border-strong)] bg-white px-4 text-sm font-semibold text-[var(--color-ink)] transition hover:bg-[var(--color-surface-soft)] disabled:opacity-50"
+              disabled={isCurrentTabBusy}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--color-border-strong)] bg-white px-4 text-sm font-semibold text-[var(--color-ink)] transition hover:bg-[var(--color-surface-soft)] disabled:opacity-50 cursor-pointer"
             >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+              <RefreshCw className={`h-4 w-4 ${isCurrentTabBusy ? 'animate-spin' : ''}`} aria-hidden="true" />
               <span>Làm mới</span>
             </button>
           )}
         </div>
       </header>
 
-      {/* ── 3-Tab Navigation for REPORT-MGR-01 / 02 / 03 ── */}
+      {/* ── Thanh 3 tab báo cáo (MGR-01 / MGR-02 / MGR-03) ── */}
       <nav
         aria-label="Danh mục báo cáo cơ sở"
         className="flex flex-wrap gap-2 border-b border-[var(--color-border)] pb-3"
@@ -248,9 +289,9 @@ export default function ManagerReportOverviewPage() {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActiveReportTab(tab.key)}
+              onClick={() => handleTabChange(tab.key)}
               aria-current={isActive ? 'page' : undefined}
-              className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition ${
+              className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition cursor-pointer ${
                 isActive
                   ? 'border-[var(--color-ink)] bg-[var(--color-ink)] text-white shadow-xs'
                   : 'border-[var(--color-border)] bg-white text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]'
@@ -274,12 +315,14 @@ export default function ManagerReportOverviewPage() {
         })}
       </nav>
 
-      {/* ── Tab Content ── */}
-      {activeReportTab !== 'overview' ? (
+      {/* ── Nội dung từng tab ── */}
+      {activeReportTab === 'finance' ? (
+        <FinanceReportView reloadKey={reload} onLoadingChange={handleFinanceLoadingChange} />
+      ) : activeReportTab !== 'overview' ? (
         <UpcomingReportPlaceholder tab={selectedTabMeta} />
       ) : (
         <>
-          {/* Compact Period Toolbar */}
+          {/* Thanh lọc kỳ cho tab Tổng quan */}
           <section className={`${CARD_CLASS} px-4 py-3.5 sm:px-5`} aria-label="Lọc kỳ báo cáo">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Chọn nhanh kỳ báo cáo">
@@ -295,7 +338,7 @@ export default function ManagerReportOverviewPage() {
                     onClick={() => choosePreset(value)}
                     disabled={loading}
                     aria-pressed={preset === value}
-                    className={`min-h-9 rounded-full border px-3.5 text-xs font-semibold transition disabled:opacity-60 ${
+                    className={`min-h-9 rounded-full border px-3.5 text-xs font-semibold transition disabled:opacity-60 cursor-pointer ${
                       preset === value
                         ? 'border-[var(--color-ink)] bg-[var(--color-ink)] text-white'
                         : 'border-[var(--color-border)] bg-white text-[var(--color-body)] hover:bg-[var(--color-surface-soft)]'
@@ -315,7 +358,7 @@ export default function ManagerReportOverviewPage() {
                     value={filters.fromDate}
                     onChange={updateDate}
                     disabled={loading}
-                    className="min-h-9 rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-medium text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-soft)] disabled:opacity-60"
+                    className="min-h-9 rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-medium text-[var(--color-ink)] outline-none focus:border-[var(--color-ink)] disabled:opacity-60"
                   />
                 </label>
                 <span className="text-xs text-[var(--color-muted)]" aria-hidden="true">→</span>
@@ -327,13 +370,13 @@ export default function ManagerReportOverviewPage() {
                     value={filters.toDate}
                     onChange={updateDate}
                     disabled={loading}
-                    className="min-h-9 rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-medium text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-soft)] disabled:opacity-60"
+                    className="min-h-9 rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-medium text-[var(--color-ink)] outline-none focus:border-[var(--color-ink)] disabled:opacity-60"
                   />
                 </label>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="min-h-9 rounded-xl bg-[var(--color-ink)] px-4 text-xs font-bold text-white transition hover:bg-black disabled:opacity-50"
+                  className="min-h-9 rounded-xl bg-[var(--color-ink)] px-4 text-xs font-bold text-white transition hover:bg-black disabled:opacity-50 cursor-pointer"
                 >
                   Áp dụng
                 </button>
@@ -356,11 +399,11 @@ export default function ManagerReportOverviewPage() {
             </div>
           </section>
 
-          {/* Error Banner */}
+          {/* Banner báo lỗi */}
           {error && (
             <div
               role="alert"
-              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-danger)]/25 bg-[var(--color-danger-soft)] p-4 text-sm text-[var(--color-danger)]"
             >
               <span className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -369,14 +412,14 @@ export default function ManagerReportOverviewPage() {
               <button
                 type="button"
                 onClick={() => setReload((v) => v + 1)}
-                className="font-semibold underline"
+                className="font-semibold underline cursor-pointer"
               >
                 Thử lại
               </button>
             </div>
           )}
 
-          {/* Bento Grid: Occupancy Hero (5 cols) + 2×2 KPI Cards (7 cols) */}
+          {/* Bố cục chính: Tỷ lệ lấp đầy (5 cột) + 4 thẻ KPI (7 cột) */}
           <div className="grid gap-5 xl:grid-cols-12">
             <div className="xl:col-span-5">
               <OccupancyHeroCard
@@ -518,7 +561,7 @@ export default function ManagerReportOverviewPage() {
             </section>
           </div>
 
-          {/* Empty State */}
+          {/* Trạng thái rỗng */}
           {!loading && report && !hasActivity && !error && (
             <p
               role="status"

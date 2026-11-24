@@ -22,6 +22,12 @@ import vn.edu.hust.homestay.booking.entity.BookingRoomNight;
 import vn.edu.hust.homestay.booking.repository.BookingRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomNightRepository;
 import vn.edu.hust.homestay.booking.repository.BookingRoomRepository;
+import vn.edu.hust.homestay.expense.entity.Expense;
+import vn.edu.hust.homestay.expense.entity.ExpenseCategory;
+import vn.edu.hust.homestay.expense.repository.ExpenseCategoryRepository;
+import vn.edu.hust.homestay.expense.repository.ExpenseRepository;
+import vn.edu.hust.homestay.payment.entity.Payment;
+import vn.edu.hust.homestay.payment.repository.PaymentRepository;
 import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
@@ -34,6 +40,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -51,6 +58,9 @@ class ManagerReportTests {
     @Autowired private BookingRepository bookingRepository;
     @Autowired private BookingRoomRepository bookingRoomRepository;
     @Autowired private BookingRoomNightRepository bookingRoomNightRepository;
+    @Autowired private PaymentRepository paymentRepository;
+    @Autowired private ExpenseRepository expenseRepository;
+    @Autowired private ExpenseCategoryRepository expenseCategoryRepository;
     @Autowired private JwtService jwtService;
 
     private MockMvc mockMvc;
@@ -176,6 +186,198 @@ class ManagerReportTests {
         mockMvc.perform(get("/api/v1/manager/reports/overview")
                         .header("Authorization", "Bearer " + customerToken))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("API-REPORT-MGR-02: tổng hợp thực thu ròng, chi phí, lợi nhuận và phân nhóm theo danh mục/phương thức")
+    void financeSummarizesConfirmedReceiptsRefundsActiveExpensesAndBreakdowns() throws Exception {
+        if (activeRooms.isEmpty()) throw new AssertionError("Test fixture cần phòng ACTIVE");
+        LocalDate fromDate = LocalDate.of(2044, 5, 10);
+        LocalDate toDate = LocalDate.of(2044, 5, 12);
+
+        Booking booking = createBookingWithNights(activeRooms.get(0), "FIN", BookingStatus.CHECKED_OUT, fromDate, toDate);
+
+        // Confirmed payments within Asia/Ho_Chi_Minh bounds (stored in UTC)
+        createPayment(booking, Payment.PaymentType.DEPOSIT, 500_000L, Payment.PaymentMethod.BANK_TRANSFER,
+                Payment.PaymentStatus.CONFIRMED, LocalDateTime.of(2044, 5, 10, 16, 30)); // 23:30 +07:00 on 10/05
+        createPayment(booking, Payment.PaymentType.PAYMENT, 1_000_000L, Payment.PaymentMethod.CASH,
+                Payment.PaymentStatus.CONFIRMED, LocalDateTime.of(2044, 5, 12, 16, 45)); // 23:45 +07:00 on 12/05
+        createPayment(booking, Payment.PaymentType.REFUND, 200_000L, Payment.PaymentMethod.BANK_TRANSFER,
+                Payment.PaymentStatus.CONFIRMED, LocalDateTime.of(2044, 5, 11, 5, 0));
+
+        // Excluded payments: PENDING, REJECTED, and out-of-range (+07:00 next day 00:15 = 17:15 UTC on 12/05)
+        createPayment(booking, Payment.PaymentType.DEPOSIT, 300_000L, Payment.PaymentMethod.CASH,
+                Payment.PaymentStatus.PENDING, null);
+        createPayment(booking, Payment.PaymentType.PAYMENT, 400_000L, Payment.PaymentMethod.BANK_TRANSFER,
+                Payment.PaymentStatus.REJECTED, null);
+        createPayment(booking, Payment.PaymentType.PAYMENT, 999_000L, Payment.PaymentMethod.CASH,
+                Payment.PaymentStatus.CONFIRMED, LocalDateTime.of(2044, 5, 12, 17, 15));
+
+        ExpenseCategory catElectricity = createExpenseCategory(manager.getHomestayId(), "Điện nước test " + UUID.randomUUID());
+        ExpenseCategory catMaintenance = createExpenseCategory(manager.getHomestayId(), "Bảo trì test " + UUID.randomUUID());
+
+        createExpense(catElectricity, 250_000L, fromDate, Expense.PaymentMethod.CASH, false);
+        createExpense(catElectricity, 150_000L, toDate, Expense.PaymentMethod.BANK_TRANSFER, false);
+        createExpense(catMaintenance, 100_000L, fromDate.plusDays(1), Expense.PaymentMethod.CARD, false);
+        // Excluded: cancelled expense & out-of-range expense
+        createExpense(catMaintenance, 700_000L, fromDate, Expense.PaymentMethod.CASH, true);
+        createExpense(catElectricity, 600_000L, toDate.plusDays(1), Expense.PaymentMethod.CASH, false);
+
+        mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.fromDate", is(fromDate.toString())))
+                .andExpect(jsonPath("$.data.toDate", is(toDate.toString())))
+                .andExpect(jsonPath("$.data.grossReceipts", is(1_500_000)))
+                .andExpect(jsonPath("$.data.depositReceipts", is(500_000)))
+                .andExpect(jsonPath("$.data.settlementReceipts", is(1_000_000)))
+                .andExpect(jsonPath("$.data.refunds", is(200_000)))
+                .andExpect(jsonPath("$.data.revenue", is(1_300_000)))
+                .andExpect(jsonPath("$.data.expense", is(500_000)))
+                .andExpect(jsonPath("$.data.profit", is(800_000)))
+                .andExpect(jsonPath("$.data.receiptCount", is(2)))
+                .andExpect(jsonPath("$.data.refundCount", is(1)))
+                .andExpect(jsonPath("$.data.expenseCount", is(3)))
+                .andExpect(jsonPath("$.data.expensesByCategory", hasSize(2)))
+                .andExpect(jsonPath("$.data.expensesByCategory[0].categoryId", is(catElectricity.getId().intValue())))
+                .andExpect(jsonPath("$.data.expensesByCategory[0].totalAmount", is(400_000)))
+                .andExpect(jsonPath("$.data.expensesByCategory[0].expenseCount", is(2)))
+                .andExpect(jsonPath("$.data.expensesByCategory[1].categoryId", is(catMaintenance.getId().intValue())))
+                .andExpect(jsonPath("$.data.expensesByCategory[1].totalAmount", is(100_000)))
+                .andExpect(jsonPath("$.data.byPaymentMethod", hasSize(2)))
+                .andExpect(jsonPath("$.data.byPaymentMethod[0].paymentMethod", is("CASH")))
+                .andExpect(jsonPath("$.data.byPaymentMethod[0].grossReceipts", is(1_000_000)))
+                .andExpect(jsonPath("$.data.byPaymentMethod[0].refunds", is(0)))
+                .andExpect(jsonPath("$.data.byPaymentMethod[0].netRevenue", is(1_000_000)))
+                .andExpect(jsonPath("$.data.byPaymentMethod[1].paymentMethod", is("BANK_TRANSFER")))
+                .andExpect(jsonPath("$.data.byPaymentMethod[1].grossReceipts", is(500_000)))
+                .andExpect(jsonPath("$.data.byPaymentMethod[1].refunds", is(200_000)))
+                .andExpect(jsonPath("$.data.byPaymentMethod[1].netRevenue", is(300_000)));
+
+        // Lọc theo phương thức CASH
+        mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString())
+                        .param("paymentMethod", "CASH"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.paymentMethod", is("CASH")))
+                .andExpect(jsonPath("$.data.revenue", is(1_000_000)))
+                .andExpect(jsonPath("$.data.expense", is(250_000)))
+                .andExpect(jsonPath("$.data.profit", is(750_000)))
+                .andExpect(jsonPath("$.data.byPaymentMethod", hasSize(1)));
+
+        // Lọc theo danh mục chi phí
+        mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString())
+                        .param("categoryId", catMaintenance.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.categoryId", is(catMaintenance.getId().intValue())))
+                .andExpect(jsonPath("$.data.revenue", is(1_300_000)))
+                .andExpect(jsonPath("$.data.expense", is(100_000)))
+                .andExpect(jsonPath("$.data.profit", is(1_200_000)))
+                .andExpect(jsonPath("$.data.expensesByCategory", hasSize(1)));
+
+        // Manager cơ sở khác không thấy dữ liệu cơ sở này
+        mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + otherManagerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.revenue", is(0)))
+                .andExpect(jsonPath("$.data.expense", is(0)))
+                .andExpect(jsonPath("$.data.profit", is(0)));
+    }
+
+    @Test
+    @DisplayName("API-REPORT-MGR-02: từ chối tham số không hợp lệ, danh mục khác cơ sở và quyền Customer")
+    void financeValidatesFiltersAndScope() throws Exception {
+        ExpenseCategory otherHomestayCategory = createExpenseCategory(
+                otherManager.getHomestayId(), "Danh mục cơ sở khác " + UUID.randomUUID());
+
+        mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("paymentMethod", "CRYPTO"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("INVALID_PAYMENT_METHOD")));
+
+        mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("categoryId", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("INVALID_CATEGORY_ID")));
+
+        mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("categoryId", otherHomestayCategory.getId().toString()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("EXPENSE_CATEGORY_NOT_FOUND")));
+
+        mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isForbidden());
+    }
+
+    private Payment createPayment(
+            Booking booking,
+            Payment.PaymentType type,
+            long amount,
+            Payment.PaymentMethod method,
+            Payment.PaymentStatus status,
+            LocalDateTime confirmedAtUtc
+    ) {
+        Payment payment = new Payment();
+        payment.setBookingId(booking.getId());
+        payment.setHomestayId(booking.getHomestayId());
+        payment.setType(type);
+        payment.setAmount(amount);
+        payment.setMethod(method);
+        payment.setStatus(status);
+        payment.setCreatedBy(manager.getId());
+        if (status == Payment.PaymentStatus.CONFIRMED) {
+            payment.setConfirmedBy(manager.getId());
+            payment.setConfirmedAt(confirmedAtUtc);
+        } else if (status == Payment.PaymentStatus.REJECTED) {
+            payment.setRejectionReason("Test rejected");
+        }
+        return paymentRepository.saveAndFlush(payment);
+    }
+
+    private ExpenseCategory createExpenseCategory(Long homestayId, String name) {
+        ExpenseCategory category = new ExpenseCategory();
+        category.setHomestayId(homestayId);
+        category.setName(name);
+        return expenseCategoryRepository.saveAndFlush(category);
+    }
+
+    private Expense createExpense(
+            ExpenseCategory category,
+            long amount,
+            LocalDate expenseDate,
+            Expense.PaymentMethod method,
+            boolean cancelled
+    ) {
+        Expense expense = new Expense();
+        expense.setHomestayId(category.getHomestayId());
+        expense.setCategoryId(category.getId());
+        expense.setAmount(amount);
+        expense.setExpenseDate(expenseDate);
+        expense.setDescription("Finance report test");
+        expense.setDocumentType(Expense.DocumentType.RECEIPT);
+        expense.setPaymentMethod(method);
+        expense.setProofUrl("/uploads/expenses/test-proof.jpg");
+        expense.setCreatedBy(manager.getId());
+        if (cancelled) {
+            expense.setCancelledAt(LocalDateTime.now(ZoneOffset.UTC));
+            expense.setCancelledBy(manager.getId());
+            expense.setCancellationReason("Cancelled in test");
+        }
+        return expenseRepository.saveAndFlush(expense);
     }
 
     private Booking createBookingWithNights(
