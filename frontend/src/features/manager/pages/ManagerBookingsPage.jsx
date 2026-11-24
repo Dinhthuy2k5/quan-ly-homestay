@@ -486,6 +486,20 @@ export default function ManagerBookingsPage() {
               currentDateTimeStr <= stayEndStr
             );
 
+            const daysUntilCheckIn = (() => {
+              if (!booking.checkInDate) return -Infinity;
+              const [sy, sm, sd] = todayStr.split('-').map(Number);
+              const [ey, em, ed] = booking.checkInDate.split('-').map(Number);
+              return Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / 86_400_000);
+            })();
+            const canAdjust = Boolean(
+              booking.source === 'MANAGER' &&
+              (booking.status === 'PENDING_APPROVAL' ||
+                (booking.status === 'PENDING_DEPOSIT' &&
+                  (!booking.holdExpiresAt || new Date(booking.holdExpiresAt).getTime() > now.getTime())) ||
+                (booking.status === 'CONFIRMED' && daysUntilCheckIn >= 3))
+            );
+
             return (
               <div
                 key={booking.id}
@@ -544,7 +558,7 @@ export default function ManagerBookingsPage() {
                         <span>Trả phòng</span>
                       </Link>
                     )}
-                    {booking.source === 'MANAGER' && (booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
+                    {canAdjust && (
                       <Link
                         to={`/manager/bookings/${booking.id}/adjust`}
                         state={{ booking: { ...booking, homestayId: booking.homestayId || homestay?.id, homestayName: booking.homestayName || homestay?.name } }}

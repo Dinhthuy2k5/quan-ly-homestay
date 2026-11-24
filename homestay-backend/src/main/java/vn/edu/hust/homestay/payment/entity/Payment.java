@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "payments")
@@ -77,12 +78,13 @@ public class Payment {
     @Column(name = "confirmed_at")
     private LocalDateTime confirmedAt;
 
-    @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @PrePersist
     protected void onCreate() {
         if (status == null) status = PaymentStatus.PENDING;
+        if (createdAt == null) createdAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public enum PaymentType { DEPOSIT, PAYMENT, REFUND }

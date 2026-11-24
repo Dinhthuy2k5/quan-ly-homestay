@@ -25,7 +25,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { bookManagerServiceApi, cancelManagerBookingApi, cancelManagerServiceApi, checkInManagerBookingApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, getManagerBookingBalanceApi, getManagerServicesApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
+import { bookManagerServiceApi, cancelManagerBookingApi, cancelManagerServiceApi, checkInManagerBookingApi, confirmManagerRefundApi, fetchManagerBookingDetailApi, fetchManagerDepositProofApi, getManagerBookingBalanceApi, getManagerHomestayPoliciesApi, getManagerServicesApi, recordManagerDirectDepositApi, reviewManagerDepositApi } from '../api';
 import OptionalNotePicker from '../../../components/ui/OptionalNotePicker';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import BankSelect from '../../../components/ui/BankSelect';
@@ -46,6 +46,45 @@ const HOMESTAY_CANCELLATION_REASONS = [
   'Sự cố bất khả kháng tại khu vực lưu trú',
 ];
 
+const FINAL_PAYMENT_TIMING_LABELS = {
+  AT_CHECK_OUT: 'Thanh toán khi trả phòng',
+  AT_CHECK_IN: 'Thanh toán khi nhận phòng',
+  BEFORE_CHECK_IN: 'Thanh toán trước khi nhận phòng',
+};
+
+function formatFinalPaymentTiming(value) {
+  if (!value) return 'Thanh toán khi trả phòng';
+  const key = String(value).trim().toUpperCase();
+  return FINAL_PAYMENT_TIMING_LABELS[key] || value;
+}
+
+function formatRefundRuleLine(rule, index, sortedRules) {
+  if (rule?.description) return rule.description;
+  const days = Number(rule?.daysBeforeCheckIn ?? rule?.days_before_checkin ?? 0);
+  const percent = Number(rule?.refundPercent ?? rule?.refund_percent ?? 0);
+  const refundText =
+    percent > 0 ? `Hoàn lại ${percent}% tiền đặt cọc` : 'Không hoàn lại tiền đặt cọc (0%)';
+
+  if (index === 0 && days > 0) {
+    return `Hủy trước ngày nhận phòng từ ${days} ngày trở lên: ${refundText}`;
+  }
+
+  const prevDays = index > 0
+    ? Number(sortedRules[index - 1]?.daysBeforeCheckIn ?? sortedRules[index - 1]?.days_before_checkin ?? 0)
+    : 0;
+
+  if (days > 0 && prevDays > days + 1) {
+    return `Hủy trước ngày nhận phòng từ ${days} đến ${prevDays - 1} ngày: ${refundText}`;
+  }
+  if (days > 0) {
+    return `Hủy trước ngày nhận phòng ${days} ngày: ${refundText}`;
+  }
+  if (prevDays > 0) {
+    return `Hủy trong vòng ${prevDays} ngày trước ngày nhận phòng: ${refundText}`;
+  }
+  return `Hủy sát ngày nhận phòng: ${refundText}`;
+}
+
 export default function ManagerBookingDetailPage() {
   const { bookingId } = useParams();
   const navigate = useNavigate();
@@ -53,6 +92,7 @@ export default function ManagerBookingDetailPage() {
 
   const [booking, setBooking] = useState(null);
   const [balance, setBalance] = useState(null);
+  const [homestayPolicies, setHomestayPolicies] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
@@ -146,11 +186,13 @@ export default function ManagerBookingDetailPage() {
     Promise.all([
       fetchManagerBookingDetailApi(bookingId),
       getManagerBookingBalanceApi(bookingId).catch(() => null),
+      getManagerHomestayPoliciesApi().catch(() => null),
     ])
-      .then(([bookingData, balanceData]) => {
+      .then(([bookingData, balanceData, policiesData]) => {
         if (!active) return;
         setBooking(bookingData);
         setBalance(balanceData);
+        setHomestayPolicies(policiesData);
         setError('');
       })
       .catch((err) => {
@@ -213,6 +255,42 @@ export default function ManagerBookingDetailPage() {
       parsedPolicy = null;
     }
   }
+
+  // Hợp nhất chính sách: ưu tiên snapshot lưu trên đơn, bổ sung các mục đầy đủ từ chính sách cơ sở
+  const effectivePolicy = (() => {
+    const stay = homestayPolicies?.stayPolicy;
+    const payment = homestayPolicies?.paymentPolicy;
+    const bookingPol = homestayPolicies?.bookingPolicy;
+    const cancellation = homestayPolicies?.cancellationPolicy;
+
+    const rawRefundRules = Array.isArray(parsedPolicy?.refundRules) && parsedPolicy.refundRules.length > 0
+      ? parsedPolicy.refundRules
+      : Array.isArray(cancellation?.refundRules)
+      ? cancellation.refundRules
+      : [];
+
+    const sortedRefundRules = [...rawRefundRules].sort(
+      (a, b) =>
+        Number(b?.daysBeforeCheckIn ?? b?.days_before_checkin ?? 0) -
+        Number(a?.daysBeforeCheckIn ?? a?.days_before_checkin ?? 0)
+    );
+
+    return {
+      checkInTime: parsedPolicy?.checkInTime || stay?.checkInTime || CHECK_IN_TIME,
+      checkOutDeadline: parsedPolicy?.checkOutDeadline || stay?.checkOutDeadline || CHECK_OUT_DEADLINE,
+      depositPercent: parsedPolicy?.depositPercent ?? payment?.depositPercent ?? 30,
+      holdHours: parsedPolicy?.holdHours ?? payment?.holdHours ?? 24,
+      finalPaymentTiming: formatFinalPaymentTiming(
+        parsedPolicy?.finalPaymentTiming || payment?.finalPaymentTiming
+      ),
+      minNights: parsedPolicy?.minNights ?? bookingPol?.minNights ?? 1,
+      maxNights: parsedPolicy?.maxNights ?? bookingPol?.maxNights ?? 30,
+      maxAdvanceDays: parsedPolicy?.maxAdvanceDays ?? bookingPol?.maxAdvanceDays ?? 365,
+      adjustMinDaysBefore: parsedPolicy?.adjustMinDaysBefore ?? bookingPol?.adjustMinDaysBefore ?? 3,
+      refundRules: sortedRefundRules,
+      houseRules: Array.isArray(stay?.houseRules) ? stay.houseRules.filter(Boolean) : [],
+    };
+  })();
 
   const handleCopy = (text, key) => {
     if (!navigator?.clipboard || !text) return;
@@ -310,6 +388,27 @@ export default function ManagerBookingDetailPage() {
     todayStr < booking.checkOutDate
   );
   const canCheckIn = Boolean(booking?.status === 'CONFIRMED' && !isCheckInTooEarly && !isCheckInExpired);
+
+  // Điều kiện được phép điều chỉnh đơn (khớp hoàn toàn ManagerBookingService.adjustBooking):
+  // • Chỉ áp dụng cho đơn Quản lý đặt hộ (source === 'MANAGER')
+  // • PENDING_DEPOSIT: còn hạn giữ chỗ
+  // • PENDING_APPROVAL: được phép điều chỉnh
+  // • CONFIRMED: còn ít nhất adjustMinDaysBefore ngày (mặc định 3 ngày) trước ngày check-in
+  const daysUntilCheckIn = (() => {
+    if (!booking?.checkInDate) return -Infinity;
+    const [sy, sm, sd] = todayStr.split('-').map(Number);
+    const [ey, em, ed] = booking.checkInDate.split('-').map(Number);
+    return Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / 86_400_000);
+  })();
+
+  const canAdjustBooking = Boolean(
+    booking?.source === 'MANAGER' &&
+      (booking.status === 'PENDING_APPROVAL' ||
+        (booking.status === 'PENDING_DEPOSIT' &&
+          (!booking.holdExpiresAt || new Date(booking.holdExpiresAt).getTime() > now.getTime())) ||
+        (booking.status === 'CONFIRMED' &&
+          daysUntilCheckIn >= (effectivePolicy.adjustMinDaysBefore ?? 3)))
+  );
 
   const isCheckOutExpired = Boolean(stayEndStr && currentDateTimeStr > stayEndStr);
   const isCheckOutTooEarly = Boolean(checkInStartStr && currentDateTimeStr < checkInStartStr);
@@ -667,7 +766,7 @@ export default function ManagerBookingDetailPage() {
               <span>Hủy booking</span>
             </button>
           )}
-          {booking.source === 'MANAGER' && (booking.status === 'PENDING_DEPOSIT' || booking.status === 'PENDING_APPROVAL' || booking.status === 'CONFIRMED') && (
+          {canAdjustBooking && (
             <Link
               to={`/manager/bookings/${booking.id}/adjust`}
               state={{ booking }}
@@ -1091,34 +1190,115 @@ export default function ManagerBookingDetailPage() {
             )}
           </div>
 
-          {/* Card: Chính sách áp dụng (Snapshot khi tạo đơn) */}
-          {parsedPolicy && (
-            <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-4">
-              <h3 className="text-base font-bold uppercase tracking-wider text-[var(--color-ink)] flex items-center gap-2 border-b border-[var(--color-border)] pb-4">
+          {/* Card: Chính sách áp dụng cho đơn */}
+          <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] pb-4">
+              <h3 className="text-base font-bold uppercase tracking-wider text-[var(--color-ink)] flex items-center gap-2">
                 <ShieldCheck className="h-5 w-5 text-[var(--color-primary)]" />
-                <span>Chính sách đã áp dụng cho đơn (Snapshot)</span>
+                <span>Chính sách áp dụng cho đơn</span>
               </h3>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-                <div className="rounded-xl border border-[var(--color-border)] p-3 bg-gray-50/50 space-y-1">
-                  <span className="text-[var(--color-muted)] block text-xs sm:text-sm font-medium">Tỷ lệ đặt cọc</span>
-                  <strong className="text-[var(--color-ink)] text-base sm:text-lg font-bold block">{parsedPolicy.depositPercent ?? 30}%</strong>
-                </div>
-                <div className="rounded-xl border border-[var(--color-border)] p-3 bg-gray-50/50 space-y-1">
-                  <span className="text-[var(--color-muted)] block text-xs sm:text-sm font-medium">Thời gian giữ cọc</span>
-                  <strong className="text-[var(--color-ink)] text-base sm:text-lg font-bold block">{parsedPolicy.holdHours ?? 24} giờ</strong>
-                </div>
-                <div className="rounded-xl border border-[var(--color-border)] p-3 bg-gray-50/50 space-y-1">
-                  <span className="text-[var(--color-muted)] block text-xs sm:text-sm font-medium">Số đêm lưu trú</span>
-                  <strong className="text-[var(--color-ink)] text-base sm:text-lg font-bold block">{parsedPolicy.minNights ?? 1} – {parsedPolicy.maxNights ?? 30} đêm</strong>
-                </div>
-                <div className="rounded-xl border border-[var(--color-border)] p-3 bg-gray-50/50 space-y-1">
-                  <span className="text-[var(--color-muted)] block text-xs sm:text-sm font-medium">Đặt trước tối đa</span>
-                  <strong className="text-[var(--color-ink)] text-base sm:text-lg font-bold block">{parsedPolicy.maxAdvanceDays ?? 90} ngày</strong>
-                </div>
-              </div>
+              <span className="text-xs text-[var(--color-muted)]">Đơn #{booking.code}</span>
             </div>
-          )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs sm:text-sm">
+              {/* 1. Giờ nhận & trả phòng */}
+              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 space-y-2">
+                <div className="font-semibold text-[var(--color-ink)] flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-[var(--color-primary)] shrink-0" />
+                  <span>Giờ nhận & trả phòng</span>
+                </div>
+                <ul className="space-y-1.5 pl-4 list-disc text-[var(--color-body)]">
+                  <li>
+                    Nhận phòng từ <strong className="text-[var(--color-ink)]">{effectivePolicy.checkInTime}</strong>{' '}
+                    ngày <strong className="text-[var(--color-ink)]">{formatDate(booking.checkInDate)}</strong>
+                  </li>
+                  <li>
+                    Trả phòng trước <strong className="text-[var(--color-ink)]">{effectivePolicy.checkOutDeadline}</strong>{' '}
+                    ngày <strong className="text-[var(--color-ink)]">{formatDate(booking.checkOutDate)}</strong>
+                  </li>
+                </ul>
+              </div>
+
+              {/* 2. Đặt cọc & Thanh toán */}
+              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 space-y-2">
+                <div className="font-semibold text-[var(--color-ink)] flex items-center gap-1.5">
+                  <CreditCard className="h-4 w-4 text-[var(--color-body)] shrink-0" />
+                  <span>Đặt cọc & Thanh toán</span>
+                </div>
+                <ul className="space-y-1.5 pl-4 list-disc text-[var(--color-body)]">
+                  <li>
+                    Tiền đặt cọc: <strong className="text-[var(--color-ink)]">{effectivePolicy.depositPercent}%</strong> tổng tiền phòng
+                  </li>
+                  <li>
+                    Thời hạn giữ phòng / gửi cọc: trong vòng{' '}
+                    <strong className="text-[var(--color-ink)]">{effectivePolicy.holdHours} giờ</strong>
+                  </li>
+                  <li>
+                    Thanh toán còn lại:{' '}
+                    <strong className="text-[var(--color-ink)]">{effectivePolicy.finalPaymentTiming}</strong>
+                  </li>
+                </ul>
+              </div>
+
+              {/* 3. Chính sách hủy & hoàn tiền */}
+              {effectivePolicy.refundRules.length > 0 && (
+                <div className="md:col-span-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 space-y-2">
+                  <div className="font-semibold text-[var(--color-ink)] flex items-center gap-1.5">
+                    <RefreshCw className="h-4 w-4 text-[var(--color-body)] shrink-0" />
+                    <span>Chính sách hủy & hoàn tiền</span>
+                  </div>
+                  <ul className="space-y-1.5 pl-4 list-disc text-[var(--color-body)]">
+                    {effectivePolicy.refundRules.map((rule, idx) => (
+                      <li key={rule.daysBeforeCheckIn ?? rule.days_before_checkin ?? idx}>
+                        {formatRefundRuleLine(rule, idx, effectivePolicy.refundRules)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* 4. Quy định đặt phòng */}
+              <div className="md:col-span-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 space-y-2">
+                <div className="font-semibold text-[var(--color-ink)] flex items-center gap-1.5">
+                  <FileText className="h-4 w-4 text-[var(--color-body)] shrink-0" />
+                  <span>Quy định đặt & điều chỉnh phòng</span>
+                </div>
+                <ul className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[var(--color-body)]">
+                  <li>
+                    Số đêm lưu trú:{' '}
+                    <strong className="text-[var(--color-ink)]">
+                      {effectivePolicy.minNights} – {effectivePolicy.maxNights} đêm
+                    </strong>
+                  </li>
+                  <li>
+                    Đặt trước tối đa:{' '}
+                    <strong className="text-[var(--color-ink)]">{effectivePolicy.maxAdvanceDays} ngày</strong>
+                  </li>
+                  <li>
+                    Điều chỉnh đơn:{' '}
+                    <strong className="text-[var(--color-ink)]">
+                      trước ≥ {effectivePolicy.adjustMinDaysBefore} ngày
+                    </strong>
+                  </li>
+                </ul>
+              </div>
+
+              {/* 5. Nội quy lưu trú (nếu cơ sở có thiết lập) */}
+              {effectivePolicy.houseRules.length > 0 && (
+                <div className="md:col-span-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 space-y-2">
+                  <div className="font-semibold text-[var(--color-ink)] flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4 text-[var(--color-body)] shrink-0" />
+                    <span>Nội quy lưu trú ({effectivePolicy.houseRules.length})</span>
+                  </div>
+                  <ul className="space-y-1 pl-4 list-disc text-[var(--color-body)]">
+                    {effectivePolicy.houseRules.map((rule, idx) => (
+                      <li key={idx}>{rule}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Right Column (4 cols): Financial Balance, Deposit Payment Instruction, Audit Trail */}
@@ -1252,8 +1432,13 @@ export default function ManagerBookingDetailPage() {
                     <>
                       Ngày nhận phòng theo đơn là <strong>{formatDate(booking.checkInDate)}</strong> (từ{' '}
                       <strong>{CHECK_IN_TIME}</strong>). Quản lý chỉ có thể ghi nhận Check-in khi đến thời điểm nhận
-                      phòng. Nếu khách muốn nhận phòng sớm hơn, vui lòng sử dụng chức năng{' '}
-                      <strong>Điều chỉnh đơn</strong> để bổ sung ngày trước khi check-in.
+                      phòng.
+                      {canAdjustBooking && (
+                        <>
+                          {' '}Nếu khách muốn nhận phòng sớm hơn, vui lòng sử dụng chức năng{' '}
+                          <strong>Điều chỉnh đơn</strong> để bổ sung ngày trước khi check-in.
+                        </>
+                      )}
                     </>
                   ) : (
                     <>
