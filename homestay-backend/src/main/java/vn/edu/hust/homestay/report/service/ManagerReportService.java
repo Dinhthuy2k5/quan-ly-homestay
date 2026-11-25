@@ -10,19 +10,31 @@ import vn.edu.hust.homestay.expense.repository.ExpenseCategoryRepository;
 import vn.edu.hust.homestay.report.dto.ManagerReportFinanceResponse;
 import vn.edu.hust.homestay.report.dto.ManagerReportFinanceResponse.ExpenseCategoryBreakdown;
 import vn.edu.hust.homestay.report.dto.ManagerReportFinanceResponse.PaymentMethodBreakdown;
+import vn.edu.hust.homestay.report.dto.ManagerReportOccupancyResponse;
+import vn.edu.hust.homestay.report.dto.ManagerReportOccupancyResponse.DailyOccupancyItem;
+import vn.edu.hust.homestay.report.dto.ManagerReportOccupancyResponse.RoomOccupancyItem;
 import vn.edu.hust.homestay.report.dto.ManagerReportOverviewResponse;
 import vn.edu.hust.homestay.report.repository.ManagerFinanceExpenseCategoryProjection;
 import vn.edu.hust.homestay.report.repository.ManagerFinancePaymentMethodProjection;
+import vn.edu.hust.homestay.report.repository.ManagerOccupancyDateProjection;
+import vn.edu.hust.homestay.report.repository.ManagerOccupancyRoomProjection;
 import vn.edu.hust.homestay.report.repository.ManagerReportRepository;
 import vn.edu.hust.homestay.report.repository.ManagerReportSummaryProjection;
+import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
+import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.REPORT_MAX_RANGE_DAYS;
 
 @Service
 public class ManagerReportService {
@@ -37,13 +49,16 @@ public class ManagerReportService {
 
     private final ManagerReportRepository reportRepository;
     private final ExpenseCategoryRepository expenseCategoryRepository;
+    private final RoomTypeRepository roomTypeRepository;
 
     public ManagerReportService(
             ManagerReportRepository reportRepository,
-            ExpenseCategoryRepository expenseCategoryRepository
+            ExpenseCategoryRepository expenseCategoryRepository,
+            RoomTypeRepository roomTypeRepository
     ) {
         this.reportRepository = reportRepository;
         this.expenseCategoryRepository = expenseCategoryRepository;
+        this.roomTypeRepository = roomTypeRepository;
     }
 
     /** API-REPORT-MGR-01: Tổng hợp số đơn, lượt nhận/trả phòng, phòng mở bán và đêm-phòng khai thác. */
@@ -194,6 +209,113 @@ public class ManagerReportService {
         );
     }
 
+    /**
+     * API-REPORT-MGR-03: Báo cáo công suất phòng cơ sở theo kỳ.
+     * - Công suất khả dụng = số phòng ACTIVE × số ngày trong kỳ.
+     * - Trả chi tiết từng phòng (byRoom) và xu hướng từng ngày trong kỳ (byDate).
+     */
+    @Transactional(readOnly = true)
+    public ManagerReportOccupancyResponse getOccupancyReport(
+            UserPrincipal principal,
+            LocalDate requestedFromDate,
+            LocalDate requestedToDate,
+            Long roomTypeId
+    ) {
+        // Bước 1: Kiểm tra homestay và chuẩn hóa kỳ [fromDate, toDate] (tối đa 366 ngày)
+        long homestayId = requireHomestayId(principal);
+        DateRange range = resolveDateRange(requestedFromDate, requestedToDate);
+        long periodDays = ChronoUnit.DAYS.between(range.fromDate(), range.toDate()) + 1;
+        if (periodDays > REPORT_MAX_RANGE_DAYS) {
+            throw BusinessException.badRequest(
+                    "INVALID_DATE_RANGE",
+                    "Khoảng thời gian báo cáo công suất tối đa là " + REPORT_MAX_RANGE_DAYS + " ngày");
+        }
+
+        // Bước 2: Nếu có lọc theo loại phòng thì xác nhận loại phòng thuộc đúng homestay của Manager
+        if (roomTypeId != null) {
+            if (roomTypeId <= 0) {
+                throw BusinessException.badRequest("INVALID_ROOM_TYPE_ID", "roomTypeId phải lớn hơn 0");
+            }
+            roomTypeRepository.findByIdAndHomestayId(roomTypeId, homestayId)
+                    .orElseThrow(() -> BusinessException.notFound(
+                            "ROOM_TYPE_NOT_FOUND",
+                            "Không tìm thấy loại phòng thuộc homestay đang quản lý"));
+        }
+
+        // Bước 3: Chạy 2 truy vấn: công suất theo từng phòng & công suất theo từng ngày
+        List<ManagerOccupancyRoomProjection> roomRows = reportRepository.getOccupancyByRoom(
+                homestayId, range.fromDate(), range.toDate(), roomTypeId, OCCUPIED_STATUSES);
+        List<ManagerOccupancyDateProjection> dateRows = reportRepository.getOccupancyByDate(
+                homestayId, range.fromDate(), range.toDate(), roomTypeId, OCCUPIED_STATUSES);
+
+        // Bước 4: Tính tổng số phòng ACTIVE, tổng đêm khai thác và dựng danh sách chi tiết từng phòng
+        long activeRooms = 0L;
+        long totalOccupiedRoomNights = 0L;
+        List<RoomOccupancyItem> byRoom = new ArrayList<>(roomRows.size());
+        for (ManagerOccupancyRoomProjection row : roomRows) {
+            boolean isActive = RoomStatus.ACTIVE.name().equals(row.getRoomStatus());
+            if (isActive) {
+                activeRooms++;
+            }
+            long occupied = valueOrZero(row.getOccupiedNights());
+            long roomCapacity = isActive ? periodDays : 0L;
+            long roomVacant = Math.max(0L, roomCapacity - occupied);
+            double roomRate = roundPercent(occupied, roomCapacity);
+
+            totalOccupiedRoomNights += occupied;
+            byRoom.add(new RoomOccupancyItem(
+                    row.getRoomId(),
+                    row.getRoomName(),
+                    row.getRoomTypeId(),
+                    row.getRoomTypeName(),
+                    row.getRoomStatus(),
+                    occupied,
+                    roomCapacity,
+                    roomVacant,
+                    roomRate,
+                    valueOrZero(row.getBookedRoomValue())
+            ));
+        }
+
+        // Bước 5: Dựng chuỗi đủ từng ngày trong kỳ [fromDate..toDate] (ngày không có khách gán 0)
+        Map<LocalDate, Long> occupiedByDateMap = new HashMap<>(dateRows.size());
+        for (ManagerOccupancyDateProjection row : dateRows) {
+            if (row.getStayDate() != null) {
+                occupiedByDateMap.put(row.getStayDate(), valueOrZero(row.getOccupiedRooms()));
+            }
+        }
+
+        List<DailyOccupancyItem> byDate = new ArrayList<>((int) periodDays);
+        for (LocalDate day = range.fromDate(); !day.isAfter(range.toDate()); day = day.plusDays(1)) {
+            long occupiedToday = occupiedByDateMap.getOrDefault(day, 0L);
+            byDate.add(new DailyOccupancyItem(
+                    day,
+                    occupiedToday,
+                    activeRooms,
+                    roundPercent(occupiedToday, activeRooms)
+            ));
+        }
+
+        // Bước 6: Tính tổng công suất khả dụng, số đêm trống và tỷ lệ lấp đầy toàn kỳ
+        long capacityRoomNights = activeRooms * periodDays;
+        long vacantRoomNights = Math.max(0L, capacityRoomNights - totalOccupiedRoomNights);
+        double occupancyRate = roundPercent(totalOccupiedRoomNights, capacityRoomNights);
+
+        return new ManagerReportOccupancyResponse(
+                range.fromDate(),
+                range.toDate(),
+                roomTypeId,
+                periodDays,
+                activeRooms,
+                capacityRoomNights,
+                totalOccupiedRoomNights,
+                vacantRoomNights,
+                occupancyRate,
+                byRoom,
+                byDate
+        );
+    }
+
     /** Lấy homestayId được phân công của Manager; báo lỗi nếu tài khoản chưa được gán cơ sở. */
     private long requireHomestayId(UserPrincipal principal) {
         if (principal == null || principal.getId() == null || principal.getHomestayId() == null) {
@@ -226,6 +348,14 @@ public class ManagerReportService {
                     "INVALID_PAYMENT_METHOD",
                     "Phương thức thanh toán chỉ hỗ trợ: CASH, BANK_TRANSFER, CARD, OTHER");
         }
+    }
+
+    /** Tính tỷ lệ phần trăm làm tròn 1 chữ số thập phân (trả 0.0 nếu mẫu số <= 0). */
+    private double roundPercent(long numerator, long denominator) {
+        if (denominator <= 0L) {
+            return 0.0;
+        }
+        return Math.round(((double) numerator * 1000.0) / (double) denominator) / 10.0;
     }
 
     private long valueOrZero(Long value) {

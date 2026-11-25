@@ -61,6 +61,10 @@ export default function CustomerBookingsPage() {
   useEffect(() => {
     let active = true;
 
+    // Đặt loading bên trong effect để tránh kẹt loading nếu người dùng bấm lại đúng tab đang chọn
+    setLoading(true);
+    setError('');
+
     fetchCustomerBookingsApi({
       status: currentStatus || undefined,
       page: currentPage,
@@ -86,8 +90,6 @@ export default function CustomerBookingsPage() {
   }, [currentStatus, currentPage, refreshKey]);
 
   const updateParam = (key, value) => {
-    setLoading(true);
-    setError('');
     const next = new URLSearchParams(searchParams);
     if (value) {
       next.set(key, value);
@@ -97,7 +99,9 @@ export default function CustomerBookingsPage() {
     if (key !== 'page') {
       next.delete('page');
     }
-    setSearchParams(next);
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next);
+    }
   };
 
   const handleSelectTab = (key) => {

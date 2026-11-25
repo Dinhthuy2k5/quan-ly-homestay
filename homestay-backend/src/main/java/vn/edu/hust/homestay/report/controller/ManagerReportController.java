@@ -13,6 +13,7 @@ import vn.edu.hust.homestay.auth.security.UserPrincipal;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.report.dto.ManagerReportFinanceResponse;
+import vn.edu.hust.homestay.report.dto.ManagerReportOccupancyResponse;
 import vn.edu.hust.homestay.report.dto.ManagerReportOverviewResponse;
 import vn.edu.hust.homestay.report.service.ManagerReportService;
 
@@ -64,8 +65,28 @@ public class ManagerReportController {
                 principal,
                 parseDate(fromDate),
                 parseDate(toDate),
-                parseOptionalId(categoryId),
+                parseOptionalId(categoryId, "INVALID_CATEGORY_ID", "categoryId phải là số nguyên hợp lệ"),
                 paymentMethod
+        )));
+    }
+
+    /**
+     * API-REPORT-MGR-03: Báo cáo công suất phòng cơ sở theo kỳ.
+     * Hỗ trợ lọc tùy chọn theo ngày (fromDate, toDate) và loại phòng (roomTypeId).
+     */
+    @GetMapping("/occupancy")
+    @Operation(summary = "API-REPORT-MGR-03: Báo cáo công suất phòng cơ sở homestay")
+    public ResponseEntity<ApiResponse<ManagerReportOccupancyResponse>> getOccupancy(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate,
+            @RequestParam(required = false) String roomTypeId
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(reportService.getOccupancyReport(
+                principal,
+                parseDate(fromDate),
+                parseDate(toDate),
+                parseOptionalId(roomTypeId, "INVALID_ROOM_TYPE_ID", "roomTypeId phải là số nguyên hợp lệ")
         )));
     }
 
@@ -79,13 +100,13 @@ public class ManagerReportController {
         }
     }
 
-    /** Chuyển chuỗi categoryId sang Long; trả mã lỗi INVALID_CATEGORY_ID nếu không phải số nguyên. */
-    private Long parseOptionalId(String value) {
+    /** Chuyển chuỗi ID tùy chọn sang Long; báo lỗi theo mã chỉ định nếu không phải số nguyên. */
+    private Long parseOptionalId(String value, String errorCode, String errorMessage) {
         if (value == null || value.isBlank()) return null;
         try {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException exception) {
-            throw BusinessException.badRequest("INVALID_CATEGORY_ID", "categoryId phải là số nguyên hợp lệ");
+            throw BusinessException.badRequest(errorCode, errorMessage);
         }
     }
 }

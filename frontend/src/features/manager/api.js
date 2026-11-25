@@ -419,6 +419,21 @@ export async function getManagerReportFinanceApi({
   return res.data?.data || null;
 }
 
+/** API-REPORT-MGR-03: Báo cáo công suất phòng cơ sở theo kỳ (chi tiết từng phòng & theo ngày). */
+export async function getManagerReportOccupancyApi({
+  fromDate,
+  toDate,
+  roomTypeId,
+  signal,
+} = {}) {
+  const params = {};
+  if (fromDate) params.fromDate = fromDate;
+  if (toDate) params.toDate = toDate;
+  if (roomTypeId) params.roomTypeId = Number(roomTypeId);
+  const res = await apiClient.get('/manager/reports/occupancy', { params, signal });
+  return res.data?.data || null;
+}
+
 /** API-EXP-05: CRUD danh mục chi phí của homestay đang quản lý. */
 export async function createManagerExpenseCategoryApi(name) {
   const res = await apiClient.post('/manager/expense-categories', { name });

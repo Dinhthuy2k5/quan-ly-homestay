@@ -95,8 +95,20 @@ export default function ManagerBookingsPage() {
     }
   }, [location.state]);
 
+  // Đồng bộ các ô nhập bộ lọc khi URL query thay đổi (ví dụ bấm Back/Forward hoặc đi từ link ngoài)
+  useEffect(() => {
+    setKeywordInput(currentKeyword);
+    setFromDateInput(currentFromDate);
+    setToDateInput(currentToDate);
+  }, [currentKeyword, currentFromDate, currentToDate]);
+
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+
+    // Chỉ bật trạng thái loading ngay trong effect gọi API để tránh kẹt loading khi URL query không đổi
+    setLoading(true);
+    setError('');
 
     getManagerBookingsApi({
       status: currentStatus || undefined,
@@ -106,6 +118,7 @@ export default function ManagerBookingsPage() {
       page: currentPage,
       size: 10,
       sort: 'createdAt,desc',
+      signal: controller.signal,
     })
       .then((res) => {
         if (!active) return;
@@ -114,7 +127,7 @@ export default function ManagerBookingsPage() {
         setError('');
       })
       .catch((err) => {
-        if (!active) return;
+        if (!active || err.code === 'ERR_CANCELED' || err.name === 'CanceledError') return;
         const code = err.response?.data?.error?.code;
         if (code === 'HOMESTAY_NOT_ASSIGNED') {
           setError('Tài khoản chưa được phân công cơ sở homestay nào.');
@@ -131,12 +144,11 @@ export default function ManagerBookingsPage() {
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [currentStatus, currentPage, currentKeyword, currentFromDate, currentToDate, reloadKey]);
 
   const updateParam = (key, value) => {
-    setLoading(true);
-    setError('');
     const next = new URLSearchParams(searchParams);
     if (value) {
       next.set(key, value);
@@ -146,13 +158,13 @@ export default function ManagerBookingsPage() {
     if (key !== 'page') {
       next.delete('page');
     }
-    setSearchParams(next);
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next);
+    }
   };
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
     const next = new URLSearchParams(searchParams);
     if (keywordInput.trim()) {
       next.set('keyword', keywordInput.trim());
@@ -170,20 +182,26 @@ export default function ManagerBookingsPage() {
       next.delete('toDate');
     }
     next.delete('page');
-    setSearchParams(next);
+
+    // Nếu người dùng bấm kính lúp lại với cùng bộ lọc, chủ động gọi lại API để làm mới dữ liệu
+    if (next.toString() === searchParams.toString()) {
+      setReloadKey((k) => k + 1);
+    } else {
+      setSearchParams(next);
+    }
   };
 
   const handleResetFilters = () => {
     setKeywordInput('');
     setFromDateInput('');
     setToDateInput('');
-    setLoading(true);
-    setError('');
     const next = new URLSearchParams();
     if (currentStatus) {
       next.set('status', currentStatus);
     }
-    setSearchParams(next);
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next);
+    }
   };
 
   const hasActiveFilters = Boolean(currentKeyword || currentFromDate || currentToDate);

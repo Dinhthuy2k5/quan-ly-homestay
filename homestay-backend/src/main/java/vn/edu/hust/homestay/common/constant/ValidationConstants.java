@@ -76,8 +76,9 @@ public final class ValidationConstants {
     public static final int MEDIA_MAX_ROOM_FILES = 12;
     public static final int MEDIA_MAX_SERVICE_FILES = 10;
 
-    // --- PHÂN TRANG & TRA CỨU PHÒNG TRỐNG ---
+    // --- PHÂN TRANG, TRA CỨU PHÒNG TRỐNG & BÁO CÁO ---
     public static final int MIN_PAGE_SIZE = 1;
     public static final int MAX_PAGE_SIZE = 100;
     public static final long AVAILABILITY_MAX_RANGE_DAYS = 367L;
+    public static final long REPORT_MAX_RANGE_DAYS = 366L;
 }

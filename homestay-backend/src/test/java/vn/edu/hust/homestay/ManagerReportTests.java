@@ -30,7 +30,9 @@ import vn.edu.hust.homestay.payment.entity.Payment;
 import vn.edu.hust.homestay.payment.repository.PaymentRepository;
 import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
+import vn.edu.hust.homestay.room.entity.RoomType;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
+import vn.edu.hust.homestay.room.repository.RoomTypeRepository;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -55,6 +57,7 @@ class ManagerReportTests {
     @Autowired private WebApplicationContext context;
     @Autowired private UserRepository userRepository;
     @Autowired private RoomRepository roomRepository;
+    @Autowired private RoomTypeRepository roomTypeRepository;
     @Autowired private BookingRepository bookingRepository;
     @Autowired private BookingRoomRepository bookingRoomRepository;
     @Autowired private BookingRoomNightRepository bookingRoomNightRepository;
@@ -319,6 +322,102 @@ class ManagerReportTests {
                 .andExpect(jsonPath("$.error.code", is("EXPENSE_CATEGORY_NOT_FOUND")));
 
         mockMvc.perform(get("/api/v1/manager/reports/finance")
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("API-REPORT-MGR-03: tính công suất phòng theo kỳ, theo từng phòng, theo từng ngày và lọc loại phòng")
+    void occupancyCalculatesRatesByRoomAndByDate() throws Exception {
+        if (activeRooms.size() < 2) throw new AssertionError("Test fixture cần ít nhất 2 phòng ACTIVE");
+        LocalDate fromDate = LocalDate.of(2045, 6, 10);
+        LocalDate toDate = LocalDate.of(2045, 6, 12); // 3 ngày (10, 11, 12)
+
+        Room firstRoom = activeRooms.get(0);
+        Room secondRoom = activeRooms.get(1);
+
+        // Phòng 1: 2 đêm (10, 11) CONFIRMED; Phòng 2: 1 đêm (11) PENDING_APPROVAL (không được tính)
+        createBookingWithNights(firstRoom, "OCC-1", BookingStatus.CONFIRMED, fromDate, fromDate.plusDays(2));
+        createBookingWithNights(secondRoom, "OCC-PENDING", BookingStatus.PENDING_APPROVAL, fromDate.plusDays(1), fromDate.plusDays(2));
+
+        long activeRoomCount = activeRooms.size();
+        long expectedCapacity = activeRoomCount * 3L;
+        double expectedRate = Math.round((2.0 * 1000.0) / expectedCapacity) / 10.0;
+
+        mockMvc.perform(get("/api/v1/manager/reports/occupancy")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.fromDate", is(fromDate.toString())))
+                .andExpect(jsonPath("$.data.toDate", is(toDate.toString())))
+                .andExpect(jsonPath("$.data.periodDays", is(3)))
+                .andExpect(jsonPath("$.data.activeRooms", is((int) activeRoomCount)))
+                .andExpect(jsonPath("$.data.capacityRoomNights", is((int) expectedCapacity)))
+                .andExpect(jsonPath("$.data.occupiedRoomNights", is(2)))
+                .andExpect(jsonPath("$.data.vacantRoomNights", is((int) (expectedCapacity - 2))))
+                .andExpect(jsonPath("$.data.occupancyRate", is(expectedRate)))
+                .andExpect(jsonPath("$.data.byRoom", hasSize((int) activeRoomCount)))
+                .andExpect(jsonPath("$.data.byRoom[0].roomId", is(firstRoom.getId().intValue())))
+                .andExpect(jsonPath("$.data.byRoom[0].occupiedNights", is(2)))
+                .andExpect(jsonPath("$.data.byRoom[0].vacantNights", is(1)))
+                .andExpect(jsonPath("$.data.byRoom[0].bookedRoomValue", is(200_000)))
+                .andExpect(jsonPath("$.data.byDate", hasSize(3)))
+                .andExpect(jsonPath("$.data.byDate[0].stayDate", is(fromDate.toString())))
+                .andExpect(jsonPath("$.data.byDate[0].occupiedRooms", is(1)))
+                .andExpect(jsonPath("$.data.byDate[1].stayDate", is(fromDate.plusDays(1).toString())))
+                .andExpect(jsonPath("$.data.byDate[1].occupiedRooms", is(1)))
+                .andExpect(jsonPath("$.data.byDate[2].stayDate", is(toDate.toString())))
+                .andExpect(jsonPath("$.data.byDate[2].occupiedRooms", is(0)));
+
+        // Lọc theo roomTypeId của phòng 1
+        mockMvc.perform(get("/api/v1/manager/reports/occupancy")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString())
+                        .param("roomTypeId", firstRoom.getRoomTypeId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.roomTypeId", is(firstRoom.getRoomTypeId().intValue())))
+                .andExpect(jsonPath("$.data.occupiedRoomNights", is(2)));
+
+        // Manager cơ sở khác không thấy dữ liệu cơ sở này
+        mockMvc.perform(get("/api/v1/manager/reports/occupancy")
+                        .header("Authorization", "Bearer " + otherManagerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.occupiedRoomNights", is(0)));
+    }
+
+    @Test
+    @DisplayName("API-REPORT-MGR-03: từ chối roomTypeId không thuộc cơ sở, khoảng ngày > 366 ngày và quyền Customer")
+    void occupancyValidatesFiltersAndScope() throws Exception {
+        RoomType otherRoomType = roomTypeRepository.findByHomestayIdOrderByNameAsc(otherManager.getHomestayId())
+                .stream()
+                .findFirst()
+                .orElseThrow();
+
+        mockMvc.perform(get("/api/v1/manager/reports/occupancy")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("roomTypeId", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("INVALID_ROOM_TYPE_ID")));
+
+        mockMvc.perform(get("/api/v1/manager/reports/occupancy")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("roomTypeId", otherRoomType.getId().toString()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("ROOM_TYPE_NOT_FOUND")));
+
+        mockMvc.perform(get("/api/v1/manager/reports/occupancy")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("fromDate", "2045-01-01")
+                        .param("toDate", "2046-12-31"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("INVALID_DATE_RANGE")));
+
+        mockMvc.perform(get("/api/v1/manager/reports/occupancy")
                         .header("Authorization", "Bearer " + customerToken))
                 .andExpect(status().isForbidden());
     }

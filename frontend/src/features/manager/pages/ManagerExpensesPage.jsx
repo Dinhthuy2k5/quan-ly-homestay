@@ -3,12 +3,20 @@ import { Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, FileText, Receipt, Upload, X } from 'lucide-react';
 import { createManagerExpenseApi, getManagerExpenseCategoriesApi } from '../api';
 import { fileUrl } from '../../../lib/api/client';
-import { formatVnd } from '../../../lib/format';
+import { formatDate, formatVnd } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
+
+// Nhãn tiếng Việt tương ứng với các enum loại chứng từ từ backend
+const DOCUMENT_LABELS = {
+  INVOICE: 'Hóa đơn',
+  RECEIPT: 'Biên nhận',
+  BANK_TRANSFER_CONFIRMATION: 'Xác nhận chuyển khoản',
+  OTHER: 'Khác',
+};
 
 function todayLocalDate() {
   const now = new Date();
@@ -22,11 +30,13 @@ function initialForm(categoryId = '') {
     expenseDate: todayLocalDate(),
     description: '',
     supplierName: '',
-    documentType: '',
+    // Mặc định chọn loại chứng từ đầu tiên ("Hóa đơn") để đồng bộ với dropdown bắt buộc
+    documentType: 'INVOICE',
     documentNumber: '',
     documentDate: '',
     transactionReference: '',
-    paymentMethod: '',
+    // Mặc định chọn phương thức đầu tiên ("Tiền mặt") để đồng bộ với dropdown
+    paymentMethod: 'CASH',
   };
 }
 
@@ -162,20 +172,21 @@ export default function ManagerExpensesPage() {
           <dl className="grid gap-4 sm:grid-cols-2">
             <div><dt className="text-xs text-[var(--color-muted)]">Danh mục</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{createdExpense.categoryName || 'Chưa phân loại'}</dd></div>
             <div><dt className="text-xs text-[var(--color-muted)]">Số tiền</dt><dd className="mt-1 font-bold text-[var(--color-ink)]">{formatVnd(createdExpense.amount)}</dd></div>
-            <div><dt className="text-xs text-[var(--color-muted)]">Ngày phát sinh</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{createdExpense.expenseDate}</dd></div>
+            <div><dt className="text-xs text-[var(--color-muted)]">Ngày phát sinh</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{formatDate(createdExpense.expenseDate)}</dd></div>
             <div><dt className="text-xs text-[var(--color-muted)]">Nhà cung cấp</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{createdExpense.supplierName || 'Chưa cung cấp'}</dd></div>
-            <div><dt className="text-xs text-[var(--color-muted)]">Chứng từ</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{createdExpense.documentNumber || 'Chưa cung cấp'}</dd></div>
+            <div><dt className="text-xs text-[var(--color-muted)]">Loại chứng từ</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{DOCUMENT_LABELS[createdExpense.documentType] || createdExpense.documentType || 'Chưa xác định'}</dd></div>
+            <div><dt className="text-xs text-[var(--color-muted)]">Số chứng từ</dt><dd className="mt-1 font-semibold text-[var(--color-ink)]">{createdExpense.documentNumber || 'Chưa cung cấp'}</dd></div>
           </dl>
           {createdExpense.proofUrl && (
             <a href={fileUrl(createdExpense.proofUrl)} target="_blank" rel="noreferrer" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]">
               <FileText className="h-4 w-4" /> Xem chứng từ đã tải lên
             </a>
           )}
-        <div className="mt-5 flex flex-wrap gap-3 border-t border-[var(--color-border)] pt-4">
-          <Link to="/manager/expenses" className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-border)] px-5 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]">Danh sách chi phí</Link>
-          <button type="button" onClick={() => setCreatedExpense(null)} className="min-h-11 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white hover:bg-[var(--color-primary-hover)]">
-            Ghi nhận khoản chi khác
-          </button>
+          <div className="mt-5 flex flex-wrap gap-3 border-t border-[var(--color-border)] pt-4">
+            <Link to="/manager/expenses" className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-border)] px-5 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)]">Danh sách chi phí</Link>
+            <button type="button" onClick={() => setCreatedExpense(null)} className="min-h-11 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white hover:bg-[var(--color-primary-hover)]">
+              Ghi nhận khoản chi khác
+            </button>
           </div>
         </div>
       </section>
@@ -215,8 +226,14 @@ export default function ManagerExpensesPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Danh mục chi phí" required error={errors.categoryId}>
               <select name="categoryId" value={form.categoryId} onChange={updateField} disabled={categoriesLoading || !categories.length} className={inputClass}>
-                <option value="">{categoriesLoading ? 'Đang tải danh mục…' : 'Chọn danh mục'}</option>
-                {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                {/* Chỉ hiển thị option trạng thái khi đang tải hoặc chưa có danh mục trong DB */}
+                {categoriesLoading ? (
+                  <option value="">Đang tải danh mục…</option>
+                ) : categories.length === 0 ? (
+                  <option value="">Chưa có danh mục</option>
+                ) : (
+                  categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)
+                )}
               </select>
             </Field>
             <Field label="Số tiền (₫)" required error={errors.amount}>
@@ -233,7 +250,7 @@ export default function ManagerExpensesPage() {
 
         <section className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-1)] sm:p-6">
           <div className="mb-5 border-b border-[var(--color-border)] pb-3">
-            <h2 className="text-base font-bold text-[var(--color-ink)]">Chứng từ và giao dịch <span className="font-normal text-rose-700">(bắt buộc)</span></h2>
+            <h2 className="text-base font-bold text-[var(--color-ink)]">Chứng từ và giao dịch <span className="font-normal text-rose-700"></span></h2>
             <p className="mt-1 text-xs text-[var(--color-muted)]">Mỗi khoản chi mới phải có loại chứng từ và tệp hóa đơn, biên nhận hoặc xác nhận giao dịch (tối đa 5 MB).</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -242,7 +259,6 @@ export default function ManagerExpensesPage() {
             </Field>
             <Field label="Loại chứng từ" required error={errors.documentType}>
               <select name="documentType" value={form.documentType} onChange={updateField} className={inputClass}>
-                <option value="">Chưa xác định</option>
                 <option value="INVOICE">Hóa đơn</option>
                 <option value="RECEIPT">Biên nhận</option>
                 <option value="BANK_TRANSFER_CONFIRMATION">Xác nhận chuyển khoản</option>
@@ -260,7 +276,6 @@ export default function ManagerExpensesPage() {
             </Field>
             <Field label="Phương thức thanh toán">
               <select name="paymentMethod" value={form.paymentMethod} onChange={updateField} className={inputClass}>
-                <option value="">Chưa xác định</option>
                 <option value="CASH">Tiền mặt</option>
                 <option value="BANK_TRANSFER">Chuyển khoản</option>
                 <option value="CARD">Thẻ</option>

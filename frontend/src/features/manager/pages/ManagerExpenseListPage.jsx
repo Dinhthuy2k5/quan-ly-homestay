@@ -82,11 +82,16 @@ function FilterField({ label, children }) {
   );
 }
 
+// Bộ lọc mặc định khi vào trang: lọc theo khoảng thời gian "Tháng này"
+function getDefaultFilters() {
+  return { ...EMPTY_FILTERS, ...getPresetRange('thisMonth') };
+}
+
 export default function ManagerExpenseListPage() {
   const [categories, setCategories] = useState([]);
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
-  const [selectedPreset, setSelectedPreset] = useState('all');
+  const [filters, setFilters] = useState(getDefaultFilters);
+  const [appliedFilters, setAppliedFilters] = useState(getDefaultFilters);
+  const [selectedPreset, setSelectedPreset] = useState('thisMonth');
   const [page, setPage] = useState(0);
   const [result, setResult] = useState({ items: [], meta: { page: 0, size: 20, totalElements: 0, totalPages: 0 } });
   const [selectedExpense, setSelectedExpense] = useState(null);
@@ -156,7 +161,11 @@ export default function ManagerExpenseListPage() {
       applyFilterValues({ ...appliedFilters, ...getPresetRange(preset) }, preset);
   };
 
-  const activeFilterCount = useMemo(() => Object.values(appliedFilters).filter(Boolean).length, [appliedFilters]);
+  // Đếm số bộ lọc bổ sung ngoài khoảng ngày (danh mục, phương thức, nhà cung cấp)
+  const extraFilterCount = useMemo(
+    () => [appliedFilters.categoryId, appliedFilters.paymentMethod, appliedFilters.supplierName].filter(Boolean).length,
+    [appliedFilters],
+  );
   const meta = result.meta || { page, size: 20, totalElements: 0, totalPages: 0 };
   const firstResult = meta.totalElements === 0 ? 0 : page * (meta.size || 20) + 1;
   const lastResult = Math.min((page + 1) * (meta.size || 20), meta.totalElements);
@@ -251,7 +260,7 @@ export default function ManagerExpenseListPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4 sm:px-5">
           <div>
             <h2 id="expense-list-title" className="text-base font-bold text-[var(--color-ink)]">Sổ chi phí</h2>
-            <p className="mt-1 text-xs text-[var(--color-muted)]">{displayPeriod(appliedFilters)}{activeFilterCount > 2 ? ` · ${activeFilterCount - 2} bộ lọc khác` : ''}</p>
+            <p className="mt-1 text-xs text-[var(--color-muted)]">{displayPeriod(appliedFilters)}{extraFilterCount > 0 ? ` · ${extraFilterCount} bộ lọc khác` : ''}</p>
           </div>
           <div className="text-right">
             <p className="text-sm font-bold text-[var(--color-ink)]">{loading ? 'Đang tải…' : `${meta.totalElements} khoản chi`}</p>

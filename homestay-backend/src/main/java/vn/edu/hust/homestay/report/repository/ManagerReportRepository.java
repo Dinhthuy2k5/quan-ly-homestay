@@ -113,4 +113,66 @@ public interface ManagerReportRepository extends Repository<Booking, Long> {
             @Param("categoryId") Long categoryId,
             @Param("paymentMethod") String paymentMethod
     );
+
+    /**
+     * API-REPORT-MGR-03 (Phần 1 - Công suất chi tiết từng phòng):
+     * Lấy tất cả phòng ACTIVE (kể cả phòng có 0 đêm khai thác) và các phòng không còn ACTIVE nhưng từng phát sinh đêm ở trong kỳ.
+     * Chỉ tính booking ở trạng thái CONFIRMED, CHECKED_IN, CHECKED_OUT.
+     */
+    @Query(value = """
+            SELECT r.id AS roomId,
+                   r.name AS roomName,
+                   r.room_type_id AS roomTypeId,
+                   rt.name AS roomTypeName,
+                   r.status AS roomStatus,
+                   COUNT(occ.stay_date) AS occupiedNights,
+                   COALESCE(SUM(occ.nightly_price), 0) AS bookedRoomValue
+            FROM rooms r
+            JOIN room_types rt ON rt.id = r.room_type_id
+            LEFT JOIN (
+                SELECT n.room_id, n.stay_date, n.nightly_price
+                FROM booking_room_nights n
+                JOIN bookings b ON b.id = n.booking_id
+                WHERE b.homestay_id = :homestayId
+                  AND b.status IN (:occupiedStatuses)
+                  AND n.stay_date BETWEEN :fromDate AND :toDate
+            ) occ ON occ.room_id = r.id
+            WHERE r.homestay_id = :homestayId
+              AND (:roomTypeId IS NULL OR r.room_type_id = :roomTypeId)
+              AND (r.status = 'ACTIVE' OR occ.stay_date IS NOT NULL)
+            GROUP BY r.id, r.name, r.room_type_id, rt.name, r.status
+            ORDER BY occupiedNights DESC, r.name ASC
+            """, nativeQuery = true)
+    List<ManagerOccupancyRoomProjection> getOccupancyByRoom(
+            @Param("homestayId") Long homestayId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("roomTypeId") Long roomTypeId,
+            @Param("occupiedStatuses") Collection<String> occupiedStatuses
+    );
+
+    /**
+     * API-REPORT-MGR-03 (Phần 2 - Số phòng được khai thác theo từng ngày lưu trú):
+     * Trả các ngày có ít nhất 1 phòng được đặt; tầng Service sẽ điền đủ 0 cho các ngày còn lại trong kỳ.
+     */
+    @Query(value = """
+            SELECT n.stay_date AS stayDate,
+                   COUNT(*) AS occupiedRooms
+            FROM booking_room_nights n
+            JOIN bookings b ON b.id = n.booking_id
+            JOIN rooms r ON r.id = n.room_id
+            WHERE b.homestay_id = :homestayId
+              AND b.status IN (:occupiedStatuses)
+              AND n.stay_date BETWEEN :fromDate AND :toDate
+              AND (:roomTypeId IS NULL OR r.room_type_id = :roomTypeId)
+            GROUP BY n.stay_date
+            ORDER BY n.stay_date ASC
+            """, nativeQuery = true)
+    List<ManagerOccupancyDateProjection> getOccupancyByDate(
+            @Param("homestayId") Long homestayId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("roomTypeId") Long roomTypeId,
+            @Param("occupiedStatuses") Collection<String> occupiedStatuses
+    );
 }

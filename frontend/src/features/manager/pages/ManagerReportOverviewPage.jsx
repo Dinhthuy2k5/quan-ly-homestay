@@ -6,7 +6,6 @@ import {
   BarChart3,
   BedDouble,
   ClipboardList,
-  Clock,
   LayoutDashboard,
   LogIn,
   LogOut,
@@ -21,6 +20,7 @@ import {
   OccupancyHeroCard,
 } from '../components/OperationsWidgets';
 import FinanceReportView from '../components/FinanceReportView';
+import OccupancyReportView from '../components/OccupancyReportView';
 import {
   displayPeriod,
   getPresetRange,
@@ -54,43 +54,13 @@ const REPORT_TABS = [
     label: 'Công suất phòng',
     apiCode: 'API-REPORT-MGR-03',
     endpoint: 'GET /api/v1/manager/reports/occupancy',
-    description:
-      'Phân tích chi tiết tỷ lệ lấp đầy, số đêm-phòng khai thác theo từng phòng hoặc theo chu kỳ ngày/tháng.',
     icon: PieChart,
-    ready: false,
+    ready: true,
   },
 ];
 
 // Tập hợp các key tab hợp lệ dùng để kiểm tra tham số ?tab=... trên URL
 const VALID_TAB_KEYS = new Set(REPORT_TABS.map((t) => t.key));
-
-/** Khối hiển thị tạm cho các tab báo cáo chưa hoàn thiện API backend. */
-function UpcomingReportPlaceholder({ tab }) {
-  const Icon = tab.icon;
-  return (
-    <section
-      aria-labelledby="upcoming-report-heading"
-      className={`${CARD_CLASS} flex flex-col items-center justify-center px-6 py-14 text-center`}
-    >
-      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--color-surface-soft)] text-[var(--color-muted)]">
-        <Icon className="h-6 w-6" aria-hidden="true" />
-      </div>
-      <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-warning-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-warning)]">
-        <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-        <span>Đang phát triển · {tab.apiCode}</span>
-      </span>
-      <h2 id="upcoming-report-heading" className="mt-3 text-xl font-bold text-[var(--color-ink)]">
-        {tab.label}
-      </h2>
-      <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--color-body)]">
-        {tab.description}
-      </p>
-      <p className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3.5 py-2 font-mono text-xs text-[var(--color-muted)]">
-        {tab.endpoint}
-      </p>
-    </section>
-  );
-}
 
 /**
  * Trang Báo cáo cơ sở (/manager/reports).
@@ -115,8 +85,9 @@ export default function ManagerReportOverviewPage() {
 
   const [report, setReport] = useState(null);             // Dữ liệu tổng quan kỳ hiện tại
   const [prevReport, setPrevReport] = useState(null);     // Dữ liệu kỳ liền trước để so sánh % tăng/giảm
-  const [loading, setLoading] = useState(true);           // Trạng thái tải của tab Tổng quan
+  const [loading, setLoading] = useState(true);              // Trạng thái tải của tab Tổng quan
   const [financeLoading, setFinanceLoading] = useState(false); // Trạng thái tải báo lên từ tab Tài chính
+  const [occupancyLoading, setOccupancyLoading] = useState(false); // Trạng thái tải báo lên từ tab Công suất
   const [error, setError] = useState('');
 
   /** Chuyển tab báo cáo và cập nhật query ?tab=... trên URL để F5 không bị mất tab đang xem. */
@@ -132,6 +103,10 @@ export default function ManagerReportOverviewPage() {
 
   const handleFinanceLoadingChange = useCallback((isBusy) => {
     setFinanceLoading(isBusy);
+  }, []);
+
+  const handleOccupancyLoadingChange = useCallback((isBusy) => {
+    setOccupancyLoading(isBusy);
   }, []);
 
   // Kỳ liền trước cùng số ngày (dùng để so sánh tăng/giảm với kỳ đang xem)
@@ -161,10 +136,10 @@ export default function ManagerReportOverviewPage() {
 
         const prevPromise = prevRange
           ? getManagerReportOverviewApi({
-              fromDate: prevRange.fromDate,
-              toDate: prevRange.toDate,
-              signal,
-            }).catch(() => null)
+            fromDate: prevRange.fromDate,
+            toDate: prevRange.toDate,
+            signal,
+          }).catch(() => null)
           : Promise.resolve(null);
 
         const [currentData, prevData] = await Promise.all([currentPromise, prevPromise]);
@@ -224,17 +199,18 @@ export default function ManagerReportOverviewPage() {
   const days = inclusiveDays(effectiveFrom, effectiveTo);
   const hasActivity = Boolean(
     report &&
-      (report.bookingCount > 0 ||
-        report.checkIns > 0 ||
-        report.checkOuts > 0 ||
-        report.occupiedRoomNights > 0)
+    (report.bookingCount > 0 ||
+      report.checkIns > 0 ||
+      report.checkOuts > 0 ||
+      report.occupiedRoomNights > 0)
   );
 
   // Thông tin tab đang chọn và cờ khóa nút "Làm mới" khi tab hiện tại đang tải
   const selectedTabMeta = REPORT_TABS.find((t) => t.key === activeReportTab) || REPORT_TABS[0];
   const isCurrentTabBusy =
     (activeReportTab === 'overview' && loading) ||
-    (activeReportTab === 'finance' && financeLoading);
+    (activeReportTab === 'finance' && financeLoading) ||
+    (activeReportTab === 'occupancy' && occupancyLoading);
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5 pb-10">
@@ -291,21 +267,19 @@ export default function ManagerReportOverviewPage() {
               type="button"
               onClick={() => handleTabChange(tab.key)}
               aria-current={isActive ? 'page' : undefined}
-              className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition cursor-pointer ${
-                isActive
+              className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition cursor-pointer ${isActive
                   ? 'border-[var(--color-ink)] bg-[var(--color-ink)] text-white shadow-xs'
                   : 'border-[var(--color-border)] bg-white text-[var(--color-body)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]'
-              }`}
+                }`}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>{tab.label}</span>
               {!tab.ready && (
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                    isActive
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${isActive
                       ? 'bg-white/20 text-white'
                       : 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]'
-                  }`}
+                    }`}
                 >
                   Sắp có
                 </span>
@@ -318,8 +292,8 @@ export default function ManagerReportOverviewPage() {
       {/* ── Nội dung từng tab ── */}
       {activeReportTab === 'finance' ? (
         <FinanceReportView reloadKey={reload} onLoadingChange={handleFinanceLoadingChange} />
-      ) : activeReportTab !== 'overview' ? (
-        <UpcomingReportPlaceholder tab={selectedTabMeta} />
+      ) : activeReportTab === 'occupancy' ? (
+        <OccupancyReportView reloadKey={reload} onLoadingChange={handleOccupancyLoadingChange} />
       ) : (
         <>
           {/* Thanh lọc kỳ cho tab Tổng quan */}
@@ -338,11 +312,10 @@ export default function ManagerReportOverviewPage() {
                     onClick={() => choosePreset(value)}
                     disabled={loading}
                     aria-pressed={preset === value}
-                    className={`min-h-9 rounded-full border px-3.5 text-xs font-semibold transition disabled:opacity-60 cursor-pointer ${
-                      preset === value
+                    className={`min-h-9 rounded-full border px-3.5 text-xs font-semibold transition disabled:opacity-60 cursor-pointer ${preset === value
                         ? 'border-[var(--color-ink)] bg-[var(--color-ink)] text-white'
                         : 'border-[var(--color-border)] bg-white text-[var(--color-body)] hover:bg-[var(--color-surface-soft)]'
-                    }`}
+                      }`}
                   >
                     {label}
                   </button>
