@@ -13,7 +13,7 @@ import {
   RotateCcw,
   Wallet,
 } from 'lucide-react';
-import { getManagerExpenseCategoriesApi, getManagerReportFinanceApi } from '../api';
+import { getManagerReportFinanceApi } from '../api';
 import { CARD_CLASS, DeltaBadge } from './OperationsWidgets';
 import {
   displayPeriod,
@@ -67,20 +67,17 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
   // filters: giá trị đang hiển thị trên các ô nhập liệu (có thể chưa bấm "Áp dụng")
   const [filters, setFilters] = useState({
     ...initialRange,
-    categoryId: '',
     paymentMethod: '',
   });
   // appliedFilters: bộ lọc thực tế đang được dùng để gọi API
   const [appliedFilters, setAppliedFilters] = useState({
     ...initialRange,
-    categoryId: '',
     paymentMethod: '',
   });
   // preset: nút chọn nhanh đang active ('today' | 'week' | 'month' | 'lastMonth' | 'custom')
   const [preset, setPreset] = useState('month');
 
   // --- NHÓM STATE DỮ LIỆU API ---
-  const [categories, setCategories] = useState([]); // Danh sách danh mục chi phí cho dropdown
   const [report, setReport] = useState(null);       // Dữ liệu tài chính kỳ đang xem
   const [prevReport, setPrevReport] = useState(null); // Dữ liệu kỳ liền trước cùng số ngày (để hiện % tăng/giảm)
   const [loading, setLoading] = useState(true);     // Đang gọi API hay không
@@ -98,20 +95,7 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
     onLoadingChange?.(loading);
   }, [loading, onLoadingChange]);
 
-  // 1. Tải danh sách danh mục chi phí của homestay (chạy 1 lần khi mở tab)
-  useEffect(() => {
-    let active = true;
-    getManagerExpenseCategoriesApi()
-      .then((list) => {
-        if (active) setCategories(Array.isArray(list) ? list : []);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // 2. Gọi API-REPORT-MGR-02 song song cho kỳ hiện tại và kỳ liền trước
+  // Gọi API-REPORT-MGR-02 song song cho kỳ hiện tại và kỳ liền trước
   useEffect(() => {
     // AbortController giúp hủy request cũ nếu người dùng đổi bộ lọc liên tục
     const controller = new AbortController();
@@ -126,7 +110,6 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
         const currentPromise = getManagerReportFinanceApi({
           fromDate: appliedFilters.fromDate,
           toDate: appliedFilters.toDate,
-          categoryId: appliedFilters.categoryId || undefined,
           paymentMethod: appliedFilters.paymentMethod || undefined,
           signal,
         });
@@ -136,7 +119,6 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
           ? getManagerReportFinanceApi({
               fromDate: prevRange.fromDate,
               toDate: prevRange.toDate,
-              categoryId: appliedFilters.categoryId || undefined,
               paymentMethod: appliedFilters.paymentMethod || undefined,
               signal,
             }).catch(() => null)
@@ -171,7 +153,7 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
     setError('');
   };
 
-  /** Cập nhật ô ngày hoặc dropdown danh mục/phương thức thanh toán. */
+  /** Cập nhật ô ngày hoặc dropdown phương thức thanh toán. */
   const updateField = (event) => {
     const { name, value } = event.target;
     setFilters((prev) => ({ ...prev, [name]: value }));
@@ -199,10 +181,10 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
     setAppliedFilters({ ...filters });
   };
 
-  /** Xóa nhanh 2 bộ lọc phụ (danh mục chi phí & phương thức thanh toán), giữ nguyên khoảng ngày. */
+  /** Xóa bộ lọc phương thức thanh toán, giữ nguyên khoảng ngày. */
   const resetSecondaryFilters = () => {
-    setFilters((prev) => ({ ...prev, categoryId: '', paymentMethod: '' }));
-    setAppliedFilters((prev) => ({ ...prev, categoryId: '', paymentMethod: '' }));
+    setFilters((prev) => ({ ...prev, paymentMethod: '' }));
+    setAppliedFilters((prev) => ({ ...prev, paymentMethod: '' }));
   };
 
   /** Bấm vào 1 dòng phương thức trong bảng để bật/tắt lọc theo phương thức đó. */
@@ -211,14 +193,6 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
     const nextValue = appliedFilters.paymentMethod === method ? '' : method;
     setFilters((prev) => ({ ...prev, paymentMethod: nextValue }));
     setAppliedFilters((prev) => ({ ...prev, paymentMethod: nextValue }));
-  };
-
-  /** Bấm vào 1 danh mục chi phí để bật/tắt lọc theo danh mục đó. */
-  const toggleCategoryFilter = (catId) => {
-    const idStr = String(catId);
-    const nextValue = String(appliedFilters.categoryId) === idStr ? '' : idStr;
-    setFilters((prev) => ({ ...prev, categoryId: nextValue }));
-    setAppliedFilters((prev) => ({ ...prev, categoryId: nextValue }));
   };
 
   // --- CÁC BIẾN DẪN XUẤT TỪ DỮ LIỆU BÁO CÁO (để hiển thị gọn trong JSX) ---
@@ -244,17 +218,14 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
   // Danh sách chi tiết và cờ kiểm tra bộ lọc phụ / trạng thái rỗng
   const expensesByCategory = report?.expensesByCategory || [];
   const byPaymentMethod = report?.byPaymentMethod || [];
-  const hasSecondaryFilter = Boolean(appliedFilters.categoryId || appliedFilters.paymentMethod);
-  const selectedCategoryName = categories.find(
-    (c) => String(c.id) === String(appliedFilters.categoryId)
-  )?.name;
+  const hasSecondaryFilter = Boolean(appliedFilters.paymentMethod);
   const hasAnyActivity = Boolean(
     report && (report.receiptCount > 0 || report.refundCount > 0 || report.expenseCount > 0)
   );
 
   return (
     <div className="space-y-5">
-      {/* ── Thanh bộ lọc kỳ báo cáo, danh mục chi phí và phương thức thanh toán ── */}
+      {/* ── Thanh bộ lọc kỳ báo cáo và phương thức thanh toán ── */}
       <section className={`${CARD_CLASS} px-4 py-3.5 sm:px-5`} aria-label="Bộ lọc báo cáo tài chính">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Chọn nhanh kỳ báo cáo">
@@ -315,32 +286,13 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
           </form>
         </div>
 
-        {/* Hàng lọc phụ: Danh mục chi phí & Phương thức thanh toán */}
+        {/* Hàng lọc phụ: Phương thức thanh toán */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-muted)]">
               <Filter className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Lọc chi tiết:</span>
+              <span>Lọc theo phương thức:</span>
             </span>
-
-            <label className="inline-flex items-center">
-              <span className="sr-only">Danh mục chi phí</span>
-              <select
-                name="categoryId"
-                value={filters.categoryId}
-                onChange={updateField}
-                disabled={loading}
-                className="min-h-9 rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-medium text-[var(--color-ink)] outline-none focus:border-[var(--color-ink)] disabled:opacity-60"
-              >
-                <option value="">Tất cả danh mục chi phí</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
             <label className="inline-flex items-center">
               <span className="sr-only">Phương thức thanh toán</span>
               <select
@@ -440,7 +392,6 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
             <div className="min-w-0">
               <p className="truncate text-xs font-semibold text-[var(--color-muted)]">
                 Chi phí vận hành
-                {selectedCategoryName ? ` · ${selectedCategoryName}` : ''}
               </p>
               {loading ? (
                 <div className="mt-2 h-8 w-36 animate-pulse rounded-lg bg-[var(--color-surface-soft)]" />
@@ -679,19 +630,10 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
                 {expensesByCategory.map((item) => {
                   // Tỷ lệ phần trăm của danh mục này trên tổng chi phí kỳ báo cáo
                   const pct = expense > 0 ? (item.totalAmount / expense) * 100 : 0;
-                  const isSelected = String(appliedFilters.categoryId) === String(item.categoryId);
 
                   return (
                     <li key={item.categoryId}>
-                      <button
-                        type="button"
-                        onClick={() => toggleCategoryFilter(item.categoryId)}
-                        className={`w-full rounded-xl border p-3 text-left transition cursor-pointer ${
-                          isSelected
-                            ? 'border-[var(--color-ink)] bg-[var(--color-surface-soft)]'
-                            : 'border-[var(--color-border)] bg-white hover:bg-[var(--color-surface-soft)]/70'
-                        }`}
-                      >
+                      <div className="w-full rounded-xl border border-[var(--color-border)] bg-white p-3 text-left">
                         <div className="flex items-baseline justify-between gap-2 text-xs">
                           <span className="truncate font-semibold text-[var(--color-ink)]">
                             {item.categoryName}
@@ -710,7 +652,7 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
                           <span>{NUM_FORMAT.format(item.expenseCount)} khoản chi</span>
                           <span>{DEC_FORMAT.format(pct)}%</span>
                         </div>
-                      </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -720,7 +662,7 @@ export default function FinanceReportView({ reloadKey = 0, onLoadingChange }) {
 
           <div className="mt-4 flex items-center justify-between border-t border-[var(--color-border)] pt-3 text-xs">
             <span className="text-[var(--color-muted)]">
-              {appliedFilters.categoryId ? 'Bấm lại danh mục để bỏ lọc' : 'Sắp xếp giảm dần theo chi phí'}
+              Sắp xếp giảm dần theo chi phí
             </span>
             <Link
               to="/manager/expenses"
