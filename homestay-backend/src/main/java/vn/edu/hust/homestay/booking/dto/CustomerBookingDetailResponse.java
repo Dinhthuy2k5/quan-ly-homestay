@@ -58,6 +58,8 @@ public record CustomerBookingDetailResponse(
             String status,
             String paymentMethod,
             String referenceCode,
+            String providerOrderId,
+            String providerTransId,
             String rejectionReason,
             Instant createdAt,
             Instant confirmedAt,

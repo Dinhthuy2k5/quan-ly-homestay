@@ -60,6 +60,14 @@ public class Payment {
     @Column(name = "reference_code", length = 100)
     private String referenceCode;
 
+    /** Mã đơn duy nhất gửi sang cổng thanh toán (VNPay vnp_TxnRef) để chống gửi trùng và đối soát. */
+    @Column(name = "provider_order_id", length = 100, unique = true)
+    private String providerOrderId;
+
+    /** Mã giao dịch do cổng thanh toán (VNPay vnp_TransactionNo) cấp khi thu/hoàn thành công; dùng để gọi API hoàn tiền. */
+    @Column(name = "provider_trans_id", length = 100)
+    private String providerTransId;
+
     @Column(name = "proof_url", length = 500)
     private String proofUrl;
 
@@ -88,6 +96,13 @@ public class Payment {
     }
 
     public enum PaymentType { DEPOSIT, PAYMENT, REFUND }
-    public enum PaymentMethod { CASH, BANK_TRANSFER }
+    public enum PaymentMethod {
+        CASH, BANK_TRANSFER, VNPAY;
+
+        /** Xác định đây có phải phương thức thanh toán qua cổng trực tuyến tự động (VNPay) hay không. */
+        public boolean isOnlineGateway() {
+            return this == VNPAY;
+        }
+    }
     public enum PaymentStatus { PENDING, CONFIRMED, REJECTED }
 }

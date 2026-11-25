@@ -55,6 +55,8 @@ public final class ValidationConstants {
     // --- THANH TOÁN, ĐẶT CỌC & HOÀN TIỀN ---
     public static final long PAYMENT_AMOUNT_MIN = 1L;
     public static final int PAYMENT_REFERENCE_CODE_MAX_LENGTH = 100;
+    public static final int PAYMENT_PROVIDER_ORDER_ID_MAX_LENGTH = 100;
+    public static final int PAYMENT_PROVIDER_TRANS_ID_MAX_LENGTH = 100;
     public static final int PAYMENT_NOTE_MAX_LENGTH = 255;
     public static final int DEPOSIT_REVIEW_REASON_MAX_LENGTH = 255;
     public static final int BANK_NAME_MAX_LENGTH = 100;
