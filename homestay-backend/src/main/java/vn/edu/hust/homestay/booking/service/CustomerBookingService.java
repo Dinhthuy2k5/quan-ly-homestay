@@ -73,6 +73,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -272,10 +273,22 @@ public class CustomerBookingService {
                 .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
                 .longValueExact();
 
+        // Kiểm tra xem đơn ban đầu có đặt cọc online qua VNPay hay không:
+        // Nếu có, tiền hoàn sẽ trả thẳng về nguồn thanh toán gốc nên không bắt buộc khách nhập tài khoản ngân hàng.
+        Optional<Payment> onlineDeposit = refundAmount > 0
+                ? paymentRepository.findTopByBookingIdAndTypeAndStatusAndMethodInAndProviderTransIdIsNotNullOrderByConfirmedAtDesc(
+                        booking.getId(),
+                        Payment.PaymentType.DEPOSIT,
+                        Payment.PaymentStatus.CONFIRMED,
+                        List.of(Payment.PaymentMethod.VNPAY)
+                )
+                : Optional.empty();
+        boolean paidOnline = onlineDeposit.isPresent();
+
         String bankName = null;
         String bankAccountNumber = null;
         String bankAccountHolder = null;
-        if (refundAmount > 0) {
+        if (refundAmount > 0 && !paidOnline) {
             bankName = request != null ? normalize(request.bankName()) : null;
             bankAccountNumber = request != null ? normalize(request.bankAccountNumber()) : null;
             bankAccountHolder = request != null ? normalize(request.bankAccountHolder()) : null;
@@ -308,17 +321,23 @@ public class CustomerBookingService {
         bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
 
         if (refundAmount > 0) {
+            Payment.PaymentMethod refundMethod = paidOnline
+                    ? Payment.PaymentMethod.VNPAY
+                    : Payment.PaymentMethod.BANK_TRANSFER;
+
             Payment refund = new Payment();
             refund.setBookingId(booking.getId());
             refund.setHomestayId(booking.getHomestayId());
             refund.setType(Payment.PaymentType.REFUND);
             refund.setAmount(refundAmount);
-            refund.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+            refund.setMethod(refundMethod);
             refund.setStatus(Payment.PaymentStatus.PENDING);
             refund.setBankName(bankName);
             refund.setBankAccountNumber(bankAccountNumber);
             refund.setBankAccountHolder(bankAccountHolder);
-            refund.setNote("Hoàn tiền theo chính sách hủy booking");
+            refund.setNote(paidOnline
+                    ? "Hoàn tiền trực tuyến về VNPay theo chính sách hủy booking"
+                    : "Hoàn tiền theo chính sách hủy booking");
             refund.setCreatedBy(principal.getId());
             paymentRepository.save(refund);
         }
@@ -482,6 +501,8 @@ public class CustomerBookingService {
                         payment.getStatus().name(),
                         payment.getMethod().name(),
                         payment.getReferenceCode(),
+                        payment.getProviderOrderId(),
+                        payment.getProviderTransId(),
                         payment.getRejectionReason(),
                         payment.getCreatedAt() == null ? null : payment.getCreatedAt().toInstant(ZoneOffset.UTC),
                         payment.getConfirmedAt() == null ? null : payment.getConfirmedAt().toInstant(ZoneOffset.UTC),

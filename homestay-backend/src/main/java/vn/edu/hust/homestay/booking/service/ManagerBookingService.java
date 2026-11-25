@@ -88,6 +88,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -604,7 +605,8 @@ public class ManagerBookingService {
                         .stream()
                         .map(payment -> new ManagerBookingDetailResponse.PaymentSummary(
                                 payment.getId(), payment.getType().name(), payment.getAmount(), payment.getStatus().name(),
-                                payment.getMethod().name(), payment.getReferenceCode(), payment.getRejectionReason(),
+                                payment.getMethod().name(), payment.getReferenceCode(),
+                                payment.getProviderOrderId(), payment.getProviderTransId(), payment.getRejectionReason(),
                                 payment.getCreatedAt() == null ? null : payment.getCreatedAt().toInstant(ZoneOffset.UTC),
                                 payment.getConfirmedAt() == null ? null : payment.getConfirmedAt().toInstant(ZoneOffset.UTC),
                                 payment.getProofUrl() != null, managerProofMimeType(payment.getProofUrl()), payment.getNote(),
@@ -805,14 +807,27 @@ public class ManagerBookingService {
         bookingRoomNightRepository.deleteAllByBookingIdIn(List.of(booking.getId()));
 
         if (refundAmount > 0) {
+            // Nếu đơn ban đầu cọc trực tuyến qua VNPay thì tạo REFUND method = VNPAY (hoàn thẳng về nguồn gốc)
+            Optional<Payment> onlineDeposit = paymentRepository
+                    .findTopByBookingIdAndTypeAndStatusAndMethodInAndProviderTransIdIsNotNullOrderByConfirmedAtDesc(
+                            booking.getId(),
+                            Payment.PaymentType.DEPOSIT,
+                            Payment.PaymentStatus.CONFIRMED,
+                            List.of(Payment.PaymentMethod.VNPAY)
+                    );
+            boolean paidOnline = onlineDeposit.isPresent();
+            Payment.PaymentMethod refundMethod = paidOnline
+                    ? Payment.PaymentMethod.VNPAY
+                    : Payment.PaymentMethod.BANK_TRANSFER;
+
             Payment refund = new Payment();
             refund.setBookingId(booking.getId());
             refund.setHomestayId(homestayId);
             refund.setType(Payment.PaymentType.REFUND);
             refund.setAmount(refundAmount);
-            refund.setMethod(Payment.PaymentMethod.BANK_TRANSFER);
+            refund.setMethod(refundMethod);
             refund.setStatus(Payment.PaymentStatus.PENDING);
-            if (request != null) {
+            if (!paidOnline && request != null) {
                 if (request.bankName() != null && !request.bankName().isBlank()) {
                     refund.setBankName(request.bankName().trim());
                 }
@@ -835,7 +850,9 @@ public class ManagerBookingService {
                     refund.setBankAccountHolder(normalizeAccountHolder(holder));
                 }
             }
-            refund.setNote("Hoàn tiền theo chính sách hủy booking");
+            refund.setNote(paidOnline
+                    ? "Hoàn tiền trực tuyến về VNPay theo chính sách hủy booking"
+                    : "Hoàn tiền theo chính sách hủy booking");
             refund.setCreatedBy(principal.getId());
             paymentRepository.save(refund);
         }
@@ -1509,6 +1526,11 @@ public class ManagerBookingService {
             }
             if (paymentReq.method() == null) {
                 throw BusinessException.badRequest("VALIDATION_ERROR", "Phương thức thanh toán không được để trống");
+            }
+            if (paymentReq.method() != Payment.PaymentMethod.CASH && paymentReq.method() != Payment.PaymentMethod.BANK_TRANSFER) {
+                throw BusinessException.badRequest(
+                        "PAYMENT_METHOD_NOT_ALLOWED",
+                        "Thanh toán phần còn lại khi check-out chỉ hỗ trợ tiền mặt (CASH) hoặc chuyển khoản (BANK_TRANSFER)");
             }
 
             Instant paymentInstant = Instant.now();
