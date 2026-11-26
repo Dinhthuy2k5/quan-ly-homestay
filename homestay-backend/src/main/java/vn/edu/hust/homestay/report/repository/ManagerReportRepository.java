@@ -17,10 +17,11 @@ import java.util.List;
 public interface ManagerReportRepository extends Repository<Booking, Long> {
 
     /**
-     * API-REPORT-MGR-01: Lấy 5 chỉ số tổng quan trong 1 lượt truy vấn.
+     * API-REPORT-MGR-01: Lấy 6 chỉ số tổng quan trong 1 lượt truy vấn.
      * - bookingCount: đơn hợp lệ có đêm lưu trú giao với kỳ [fromDate, toDate]
      * - checkIns / checkOuts: đếm theo ngày nhận/trả phòng dự kiến trên booking
      * - activeRooms: số phòng đang mở bán (ACTIVE) tại thời điểm hiện tại
+     * - totalRooms: tổng số phòng mọi trạng thái của cơ sở (mẫu số công suất đồng nhất với API-REPORT-MGR-03)
      * - occupiedRoomNights: số đêm-phòng thực tế nằm trong kỳ báo cáo
      */
     @Query(value = """
@@ -40,6 +41,8 @@ public interface ManagerReportRepository extends Repository<Booking, Long> {
                   AND b.check_out_date BETWEEN :fromDate AND :toDate) AS checkOuts,
               (SELECT COUNT(*) FROM rooms r
                 WHERE r.homestay_id = :homestayId AND r.status = 'ACTIVE') AS activeRooms,
+              (SELECT COUNT(*) FROM rooms r
+                WHERE r.homestay_id = :homestayId) AS totalRooms,
               (SELECT COUNT(*) FROM booking_room_nights night
                 JOIN bookings b ON b.id = night.booking_id
                 WHERE b.homestay_id = :homestayId
@@ -116,7 +119,7 @@ public interface ManagerReportRepository extends Repository<Booking, Long> {
 
     /**
      * API-REPORT-MGR-03 (Phần 1 - Công suất chi tiết từng phòng):
-     * Lấy tất cả phòng ACTIVE (kể cả phòng có 0 đêm khai thác) và các phòng không còn ACTIVE nhưng từng phát sinh đêm ở trong kỳ.
+     * Lấy toàn bộ phòng thuộc phạm vi báo cáo (mọi trạng thái) để công suất lịch sử có mẫu số nhất quán.
      * Chỉ tính booking ở trạng thái CONFIRMED, CHECKED_IN, CHECKED_OUT.
      */
     @Query(value = """
@@ -139,7 +142,6 @@ public interface ManagerReportRepository extends Repository<Booking, Long> {
             ) occ ON occ.room_id = r.id
             WHERE r.homestay_id = :homestayId
               AND (:roomTypeId IS NULL OR r.room_type_id = :roomTypeId)
-              AND (r.status = 'ACTIVE' OR occ.stay_date IS NOT NULL)
             GROUP BY r.id, r.name, r.room_type_id, rt.name, r.status
             ORDER BY occupiedNights DESC, r.name ASC
             """, nativeQuery = true)

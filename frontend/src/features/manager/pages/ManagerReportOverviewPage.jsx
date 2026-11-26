@@ -527,7 +527,9 @@ export default function ManagerReportOverviewPage() {
                     </p>
                   )}
                   <p className="mt-1.5 text-xs text-[var(--color-muted)]">
-                    Số phòng trạng thái ACTIVE hiện tại · Quản lý phòng
+                    {!loading && report
+                      ? `ACTIVE trên tổng ${NUM_FORMAT.format(report.totalRooms ?? report.activeRooms ?? 0)} phòng · Quản lý phòng`
+                      : 'Số phòng trạng thái ACTIVE hiện tại · Quản lý phòng'}
                   </p>
                 </div>
               </Link>

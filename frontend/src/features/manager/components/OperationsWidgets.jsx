@@ -123,15 +123,18 @@ export function OccupancyHeroCard({
   periodLabel,
 }) {
   const activeRooms = report?.activeRooms ?? 0;
+  const totalRooms = report?.totalRooms ?? activeRooms;
   const occupied = report?.occupiedRoomNights ?? 0;
   const bookingCount = report?.bookingCount ?? 0;
-  const capacity = activeRooms * days;
-  const occupancyRate = report && capacity > 0 ? (occupied / capacity) * 100 : 0;
+  const capacity = totalRooms * days;
+  const occupancyRate =
+    report && capacity > 0 ? Math.round((occupied * 1000) / capacity) / 10 : 0;
 
-  const prevCapacity = (prevReport?.activeRooms ?? 0) * (prevDays || 0);
+  const prevTotalRooms = prevReport?.totalRooms ?? prevReport?.activeRooms ?? 0;
+  const prevCapacity = prevTotalRooms * (prevDays || 0);
   const prevRate =
     prevReport && prevCapacity > 0
-      ? (prevReport.occupiedRoomNights / prevCapacity) * 100
+      ? Math.round((prevReport.occupiedRoomNights * 1000) / prevCapacity) / 10
       : prevReport
         ? 0
         : null;
@@ -139,7 +142,7 @@ export function OccupancyHeroCard({
   const vacantRoomNights = Math.max(0, capacity - occupied);
   const avgNightsPerBooking = bookingCount > 0 ? occupied / bookingCount : null;
   const avgRoomsPerDay = days > 0 ? occupied / days : 0;
-  const noActiveRooms = Boolean(report && activeRooms === 0);
+  const noRooms = Boolean(report && totalRooms === 0);
 
   // Health classification
   let health = {
@@ -148,12 +151,12 @@ export function OccupancyHeroCard({
     strokeColor: 'var(--color-teal)',
     hint: 'Mức khai thác cân bằng trong kỳ.',
   };
-  if (noActiveRooms) {
+  if (noRooms) {
     health = {
-      label: 'Chưa mở bán',
+      label: 'Chưa có phòng',
       badgeClass: 'bg-[var(--color-warning-soft)] text-[var(--color-warning)]',
       strokeColor: 'var(--color-border-strong)',
-      hint: 'Chưa có phòng ở trạng thái ACTIVE.',
+      hint: 'Cơ sở chưa có phòng nào để tính tỷ lệ khai thác.',
     };
   } else if (occupancyRate >= 70) {
     health = {
@@ -238,7 +241,7 @@ export function OccupancyHeroCard({
             ) : (
               <>
                 <span className="text-2xl font-extrabold tracking-tight tabular-nums text-[var(--color-ink)]">
-                  {noActiveRooms ? '—' : `${DEC_FORMAT.format(occupancyRate)}%`}
+                  {noRooms ? '—' : `${DEC_FORMAT.format(occupancyRate)}%`}
                 </span>
                 <span className="mt-0.5 text-[11px] font-medium text-[var(--color-muted)]">
                   {days} ngày
@@ -251,7 +254,7 @@ export function OccupancyHeroCard({
         <div className="min-w-0 flex-1 space-y-2.5 text-center sm:text-left">
           <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
             <span className="text-xs font-medium text-[var(--color-muted)]">Đêm-phòng bán được</span>
-            {!loading && !noActiveRooms && prevRate !== null && (
+            {!loading && !noRooms && prevRate !== null && (
               <DeltaBadge current={occupancyRate} previous={prevRate} mode="points" />
             )}
           </div>
@@ -271,9 +274,9 @@ export function OccupancyHeroCard({
         </div>
       </div>
 
-      {noActiveRooms ? (
+      {noRooms ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-medium text-amber-800">
-          Chưa có phòng nào ở trạng thái ACTIVE. Hãy mở bán phòng để bắt đầu tính tỷ lệ khai thác.
+          Cơ sở chưa có phòng nào. Hãy thêm phòng để bắt đầu tính tỷ lệ khai thác.
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2.5 border-t border-[var(--color-border)] pt-4">
@@ -303,7 +306,7 @@ export function OccupancyHeroCard({
 
       {periodLabel && (
         <p className="mt-3 text-[11px] text-[var(--color-muted)]">
-          Công suất tính theo {NUM_FORMAT.format(activeRooms)} phòng ACTIVE hiện tại · {periodLabel}
+          Công suất tính theo {NUM_FORMAT.format(totalRooms)} phòng (trong đó {NUM_FORMAT.format(activeRooms)} đang mở bán) · {periodLabel}
         </p>
       )}
     </section>

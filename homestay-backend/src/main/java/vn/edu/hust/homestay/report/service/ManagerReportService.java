@@ -78,6 +78,7 @@ public class ManagerReportService {
                 valueOrZero(summary.getCheckIns()),
                 valueOrZero(summary.getCheckOuts()),
                 valueOrZero(summary.getActiveRooms()),
+                valueOrZero(summary.getTotalRooms()),
                 valueOrZero(summary.getOccupiedRoomNights())
         );
     }
@@ -211,7 +212,7 @@ public class ManagerReportService {
 
     /**
      * API-REPORT-MGR-03: Báo cáo công suất phòng cơ sở theo kỳ.
-     * - Công suất khả dụng = số phòng ACTIVE × số ngày trong kỳ.
+     * - Công suất khả dụng = toàn bộ số phòng thuộc phạm vi lọc × số ngày trong kỳ.
      * - Trả chi tiết từng phòng (byRoom) và xu hướng từng ngày trong kỳ (byDate).
      */
     @Transactional(readOnly = true)
@@ -248,8 +249,9 @@ public class ManagerReportService {
         List<ManagerOccupancyDateProjection> dateRows = reportRepository.getOccupancyByDate(
                 homestayId, range.fromDate(), range.toDate(), roomTypeId, OCCUPIED_STATUSES);
 
-        // Bước 4: Tính tổng số phòng ACTIVE, tổng đêm khai thác và dựng danh sách chi tiết từng phòng
+        // Bước 4: Đếm phòng ACTIVE để báo cáo riêng, đồng thời tính công suất theo toàn bộ phòng trong phạm vi.
         long activeRooms = 0L;
+        long totalRooms = roomRows.size();
         long totalOccupiedRoomNights = 0L;
         List<RoomOccupancyItem> byRoom = new ArrayList<>(roomRows.size());
         for (ManagerOccupancyRoomProjection row : roomRows) {
@@ -258,7 +260,7 @@ public class ManagerReportService {
                 activeRooms++;
             }
             long occupied = valueOrZero(row.getOccupiedNights());
-            long roomCapacity = isActive ? periodDays : 0L;
+            long roomCapacity = periodDays;
             long roomVacant = Math.max(0L, roomCapacity - occupied);
             double roomRate = roundPercent(occupied, roomCapacity);
 
@@ -292,12 +294,13 @@ public class ManagerReportService {
                     day,
                     occupiedToday,
                     activeRooms,
-                    roundPercent(occupiedToday, activeRooms)
+                    totalRooms,
+                    roundPercent(occupiedToday, totalRooms)
             ));
         }
 
-        // Bước 6: Tính tổng công suất khả dụng, số đêm trống và tỷ lệ lấp đầy toàn kỳ
-        long capacityRoomNights = activeRooms * periodDays;
+        // Bước 6: Tính công suất theo toàn bộ phòng (mọi trạng thái) để số liệu lịch sử không vượt 100%.
+        long capacityRoomNights = totalRooms * periodDays;
         long vacantRoomNights = Math.max(0L, capacityRoomNights - totalOccupiedRoomNights);
         double occupancyRate = roundPercent(totalOccupiedRoomNights, capacityRoomNights);
 
@@ -307,6 +310,7 @@ public class ManagerReportService {
                 roomTypeId,
                 periodDays,
                 activeRooms,
+                totalRooms,
                 capacityRoomNights,
                 totalOccupiedRoomNights,
                 vacantRoomNights,

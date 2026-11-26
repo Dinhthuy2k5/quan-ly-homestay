@@ -9,5 +9,6 @@ public record ManagerReportOverviewResponse(
         long checkIns,
         long checkOuts,
         long activeRooms,
+        long totalRooms,
         long occupiedRoomNights
 ) {}

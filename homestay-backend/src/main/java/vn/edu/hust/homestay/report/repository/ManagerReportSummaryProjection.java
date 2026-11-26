@@ -5,5 +5,6 @@ public interface ManagerReportSummaryProjection {
     Long getCheckIns();
     Long getCheckOuts();
     Long getActiveRooms();
+    Long getTotalRooms();
     Long getOccupiedRoomNights();
 }

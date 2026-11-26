@@ -173,6 +173,7 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
   const days = report?.periodDays ?? inclusiveDays(effectiveFrom, effectiveTo);
 
   const activeRooms = report?.activeRooms ?? 0;
+  const totalRooms = report?.totalRooms ?? 0;
   const capacityRoomNights = report?.capacityRoomNights ?? 0;
   const occupiedRoomNights = report?.occupiedRoomNights ?? 0;
   const vacantRoomNights = report?.vacantRoomNights ?? 0;
@@ -346,7 +347,7 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
                 <div className="mt-2 h-8 w-24 animate-pulse rounded-lg bg-[var(--color-surface-soft)]" />
               ) : (
                 <p className="mt-1.5 text-2xl xl:text-3xl font-extrabold tracking-tight tabular-nums text-[var(--color-ink)]">
-                  {activeRooms > 0 ? `${DEC_FORMAT.format(occupancyRate)}%` : '—'}
+                  {totalRooms > 0 ? `${DEC_FORMAT.format(occupancyRate)}%` : '—'}
                 </p>
               )}
             </div>
@@ -356,7 +357,7 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
           </div>
           <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3 text-xs">
             <span className="text-[var(--color-muted)]">So với kỳ trước</span>
-            {!loading && activeRooms > 0 && prevReport && (
+            {!loading && totalRooms > 0 && prevReport && (
               <DeltaBadge current={occupancyRate} previous={prevReport.occupancyRate} mode="points" />
             )}
           </div>
@@ -413,7 +414,7 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
           </div>
         </article>
 
-        {/* Thẻ 4: Quỹ phòng mở bán */}
+        {/* Thẻ 4: Quỹ phòng tính công suất */}
         <article className={`${CARD_CLASS} flex flex-col justify-between p-5`}>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -421,9 +422,17 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
               {loading ? (
                 <div className="mt-2 h-8 w-24 animate-pulse rounded-lg bg-[var(--color-surface-soft)]" />
               ) : (
-                <p className="mt-1.5 text-2xl xl:text-3xl font-extrabold tracking-tight tabular-nums text-[var(--color-ink)]">
-                  {NUM_FORMAT.format(activeRooms)}
-                </p>
+                <>
+                  <p className="mt-1.5 text-2xl xl:text-3xl font-extrabold tracking-tight tabular-nums text-[var(--color-ink)]">
+                    {NUM_FORMAT.format(totalRooms)}
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--color-muted)] tabular-nums">
+                    Đang mở bán (ACTIVE):{' '}
+                    <span className="font-semibold text-[var(--color-body)]">
+                      {NUM_FORMAT.format(activeRooms)}
+                    </span>
+                  </p>
+                </>
               )}
             </div>
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-700">
@@ -431,7 +440,7 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
             </span>
           </div>
           <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-muted)]">
-            <span>Phòng ACTIVE × {days} ngày</span>
+            <span>Tất cả phòng × {days} ngày</span>
           </div>
         </article>
       </section>
@@ -451,7 +460,7 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-ink)]">
               <Sparkles className="h-3.5 w-3.5 text-[var(--color-primary)]" aria-hidden="true" />
               <span>
-                Cao điểm: {formatDate(peakDay.stayDate)} ({peakDay.occupiedRooms}/{peakDay.activeRooms} phòng · {DEC_FORMAT.format(peakDay.occupancyRate)}%)
+                Cao điểm: {formatDate(peakDay.stayDate)} ({peakDay.occupiedRooms}/{peakDay.totalRooms} phòng · {DEC_FORMAT.format(peakDay.occupancyRate)}%)
               </span>
             </span>
           )}
@@ -460,9 +469,9 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
         <div className="mt-5">
           {loading ? (
             <div className="h-44 animate-pulse rounded-xl bg-[var(--color-surface-soft)]" />
-          ) : activeRooms === 0 ? (
+          ) : totalRooms === 0 ? (
             <p className="rounded-xl bg-[var(--color-warning-soft)] px-4 py-6 text-center text-xs font-medium text-[var(--color-warning)]">
-              Chưa có phòng nào ở trạng thái ACTIVE thuộc bộ lọc hiện tại để tính công suất theo ngày.
+              Chưa có phòng thuộc bộ lọc hiện tại để tính công suất theo ngày.
             </p>
           ) : byDate.length === 0 ? (
             <p className="rounded-xl bg-[var(--color-surface-soft)] px-4 py-8 text-center text-xs text-[var(--color-muted)]">
@@ -486,7 +495,7 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
                     <div
                       key={item.stayDate}
                       className="group relative flex h-full flex-1 flex-col items-center justify-end"
-                      title={`${formatDate(item.stayDate)}: ${item.occupiedRooms}/${item.activeRooms} phòng (${DEC_FORMAT.format(item.occupancyRate)}%)`}
+                      title={`${formatDate(item.stayDate)}: ${item.occupiedRooms}/${item.totalRooms} phòng (${DEC_FORMAT.format(item.occupancyRate)}%)`}
                     >
                       {/* Nhãn phần trăm gọn khi di chuột vào cột */}
                       <span className="pointer-events-none mb-1 text-[10px] font-bold tabular-nums text-[var(--color-ink)] opacity-0 transition-opacity group-hover:opacity-100">
@@ -627,7 +636,7 @@ export default function OccupancyReportView({ reloadKey = 0, onLoadingChange }) 
                     {NUM_FORMAT.format(vacantRoomNights)} đêm
                   </td>
                   <td className="pt-3 px-3 text-right tabular-nums">
-                    {activeRooms > 0 ? `${DEC_FORMAT.format(occupancyRate)}%` : '—'}
+                    {totalRooms > 0 ? `${DEC_FORMAT.format(occupancyRate)}%` : '—'}
                   </td>
                   <td className="pt-3 pl-2 text-right tabular-nums">
                     {formatVnd(totalBookedRoomValue)}

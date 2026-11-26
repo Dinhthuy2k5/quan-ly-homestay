@@ -42,8 +42,10 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -109,6 +111,7 @@ class ManagerReportTests {
                 fromDate.minusDays(2), fromDate);
 
         long activeRoomCount = roomRepository.countByHomestayIdAndStatus(manager.getHomestayId(), RoomStatus.ACTIVE);
+        long totalRoomCount = roomRepository.countByHomestayId(manager.getHomestayId());
         mockMvc.perform(get("/api/v1/manager/reports/overview")
                         .header("Authorization", "Bearer " + managerToken)
                         .param("fromDate", fromDate.toString())
@@ -121,6 +124,7 @@ class ManagerReportTests {
                 .andExpect(jsonPath("$.data.checkIns", is(2)))
                 .andExpect(jsonPath("$.data.checkOuts", is(2)))
                 .andExpect(jsonPath("$.data.activeRooms", is((int) activeRoomCount)))
+                .andExpect(jsonPath("$.data.totalRooms", is((int) totalRoomCount)))
                 .andExpect(jsonPath("$.data.occupiedRoomNights", is(4)));
     }
 
@@ -341,7 +345,8 @@ class ManagerReportTests {
         createBookingWithNights(secondRoom, "OCC-PENDING", BookingStatus.PENDING_APPROVAL, fromDate.plusDays(1), fromDate.plusDays(2));
 
         long activeRoomCount = activeRooms.size();
-        long expectedCapacity = activeRoomCount * 3L;
+        long totalRoomCount = roomRepository.countByHomestayId(manager.getHomestayId());
+        long expectedCapacity = totalRoomCount * 3L;
         double expectedRate = Math.round((2.0 * 1000.0) / expectedCapacity) / 10.0;
 
         mockMvc.perform(get("/api/v1/manager/reports/occupancy")
@@ -354,11 +359,12 @@ class ManagerReportTests {
                 .andExpect(jsonPath("$.data.toDate", is(toDate.toString())))
                 .andExpect(jsonPath("$.data.periodDays", is(3)))
                 .andExpect(jsonPath("$.data.activeRooms", is((int) activeRoomCount)))
+                .andExpect(jsonPath("$.data.totalRooms", is((int) totalRoomCount)))
                 .andExpect(jsonPath("$.data.capacityRoomNights", is((int) expectedCapacity)))
                 .andExpect(jsonPath("$.data.occupiedRoomNights", is(2)))
                 .andExpect(jsonPath("$.data.vacantRoomNights", is((int) (expectedCapacity - 2))))
                 .andExpect(jsonPath("$.data.occupancyRate", is(expectedRate)))
-                .andExpect(jsonPath("$.data.byRoom", hasSize((int) activeRoomCount)))
+                .andExpect(jsonPath("$.data.byRoom", hasSize((int) totalRoomCount)))
                 .andExpect(jsonPath("$.data.byRoom[0].roomId", is(firstRoom.getId().intValue())))
                 .andExpect(jsonPath("$.data.byRoom[0].occupiedNights", is(2)))
                 .andExpect(jsonPath("$.data.byRoom[0].vacantNights", is(1)))
@@ -366,6 +372,7 @@ class ManagerReportTests {
                 .andExpect(jsonPath("$.data.byDate", hasSize(3)))
                 .andExpect(jsonPath("$.data.byDate[0].stayDate", is(fromDate.toString())))
                 .andExpect(jsonPath("$.data.byDate[0].occupiedRooms", is(1)))
+                .andExpect(jsonPath("$.data.byDate[0].totalRooms", is((int) totalRoomCount)))
                 .andExpect(jsonPath("$.data.byDate[1].stayDate", is(fromDate.plusDays(1).toString())))
                 .andExpect(jsonPath("$.data.byDate[1].occupiedRooms", is(1)))
                 .andExpect(jsonPath("$.data.byDate[2].stayDate", is(toDate.toString())))
@@ -379,7 +386,11 @@ class ManagerReportTests {
                         .param("roomTypeId", firstRoom.getRoomTypeId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.roomTypeId", is(firstRoom.getRoomTypeId().intValue())))
-                .andExpect(jsonPath("$.data.occupiedRoomNights", is(2)));
+                .andExpect(jsonPath("$.data.occupiedRoomNights", is(2)))
+                .andExpect(jsonPath("$.data.totalRooms", is((int) roomRepository.findAll().stream()
+                        .filter(room -> manager.getHomestayId().equals(room.getHomestayId()))
+                        .filter(room -> firstRoom.getRoomTypeId().equals(room.getRoomTypeId()))
+                        .count())));
 
         // Manager cơ sở khác không thấy dữ liệu cơ sở này
         mockMvc.perform(get("/api/v1/manager/reports/occupancy")
@@ -388,6 +399,71 @@ class ManagerReportTests {
                         .param("toDate", toDate.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.occupiedRoomNights", is(0)));
+    }
+
+    @Test
+    @DisplayName("API-REPORT-MGR-01 & 03: phòng LOCKED/INACTIVE sau kỳ lịch sử không làm công suất vượt 100% hay bị 0%")
+    void historicalBookingsOnNonActiveRoomsStayConsistentAcrossOverviewAndOccupancy() throws Exception {
+        if (activeRooms.size() < 3) throw new AssertionError("Test fixture cần ít nhất 3 phòng ACTIVE");
+        LocalDate fromDate = LocalDate.of(2046, 7, 10);
+        LocalDate toDate = LocalDate.of(2046, 7, 11); // 2 ngày
+
+        Room keptActiveRoom = activeRooms.get(0);
+        Room lockedRoom = activeRooms.get(1);
+        Room inactiveRoom = activeRooms.get(2);
+
+        // Cả 3 phòng đều có lịch sử lưu trú đủ 2 đêm trong kỳ
+        createBookingWithNights(keptActiveRoom, "HIST-ACT", BookingStatus.CHECKED_OUT, fromDate, toDate.plusDays(1));
+        createBookingWithNights(lockedRoom, "HIST-LCK", BookingStatus.CHECKED_OUT, fromDate, toDate.plusDays(1));
+        createBookingWithNights(inactiveRoom, "HIST-INA", BookingStatus.CHECKED_OUT, fromDate, toDate.plusDays(1));
+
+        // Sau kỳ báo cáo, chỉ giữ lại 1 phòng ACTIVE; các phòng còn lại chuyển sang LOCKED / INACTIVE
+        lockedRoom.setStatus(RoomStatus.LOCKED);
+        inactiveRoom.setStatus(RoomStatus.INACTIVE);
+        for (int i = 3; i < activeRooms.size(); i++) {
+            activeRooms.get(i).setStatus(RoomStatus.LOCKED);
+        }
+        roomRepository.saveAllAndFlush(activeRooms);
+
+        long totalRoomCount = roomRepository.countByHomestayId(manager.getHomestayId());
+        long expectedCapacity = totalRoomCount * 2L;
+        double expectedRate = Math.round((6.0 * 1000.0) / expectedCapacity) / 10.0;
+        double expectedDailyRate = Math.round((3.0 * 1000.0) / totalRoomCount) / 10.0;
+
+        // API-REPORT-MGR-01 trả đồng nhất totalRooms và activeRooms
+        mockMvc.perform(get("/api/v1/manager/reports/overview")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeRooms", is(1)))
+                .andExpect(jsonPath("$.data.totalRooms", is((int) totalRoomCount)))
+                .andExpect(jsonPath("$.data.occupiedRoomNights", is(6)));
+
+        // API-REPORT-MGR-03: công suất tổng, theo ngày <= 100%, phòng LOCKED/INACTIVE không bị 0%
+        mockMvc.perform(get("/api/v1/manager/reports/occupancy")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeRooms", is(1)))
+                .andExpect(jsonPath("$.data.totalRooms", is((int) totalRoomCount)))
+                .andExpect(jsonPath("$.data.capacityRoomNights", is((int) expectedCapacity)))
+                .andExpect(jsonPath("$.data.occupiedRoomNights", is(6)))
+                .andExpect(jsonPath("$.data.occupancyRate", is(expectedRate)))
+                .andExpect(jsonPath("$.data.occupancyRate", lessThanOrEqualTo(100.0)))
+                .andExpect(jsonPath("$.data.byDate[0].occupiedRooms", is(3)))
+                .andExpect(jsonPath("$.data.byDate[0].activeRooms", is(1)))
+                .andExpect(jsonPath("$.data.byDate[0].totalRooms", is((int) totalRoomCount)))
+                .andExpect(jsonPath("$.data.byDate[0].occupancyRate", is(expectedDailyRate)))
+                .andExpect(jsonPath("$.data.byDate[0].occupancyRate", lessThanOrEqualTo(100.0)))
+                .andExpect(jsonPath("$.data.byRoom[?(@.roomId == " + lockedRoom.getId() + ")].roomStatus", contains("LOCKED")))
+                .andExpect(jsonPath("$.data.byRoom[?(@.roomId == " + lockedRoom.getId() + ")].capacityNights", contains(2)))
+                .andExpect(jsonPath("$.data.byRoom[?(@.roomId == " + lockedRoom.getId() + ")].vacantNights", contains(0)))
+                .andExpect(jsonPath("$.data.byRoom[?(@.roomId == " + lockedRoom.getId() + ")].occupancyRate", contains(100.0)))
+                .andExpect(jsonPath("$.data.byRoom[?(@.roomId == " + inactiveRoom.getId() + ")].roomStatus", contains("INACTIVE")))
+                .andExpect(jsonPath("$.data.byRoom[?(@.roomId == " + inactiveRoom.getId() + ")].capacityNights", contains(2)))
+                .andExpect(jsonPath("$.data.byRoom[?(@.roomId == " + inactiveRoom.getId() + ")].occupancyRate", contains(100.0)));
     }
 
     @Test
