@@ -33,6 +33,7 @@ const PAYMENT_METHOD_OPTIONS = [
   { value: '', label: 'Tất cả phương thức' },
   { value: 'CASH', label: 'Tiền mặt' },
   { value: 'BANK_TRANSFER', label: 'Chuyển khoản' },
+  { value: 'VNPAY', label: 'VNPay' },
   { value: 'CARD', label: 'Thẻ' },
   { value: 'OTHER', label: 'Khác' },
 ];
@@ -41,6 +42,7 @@ const PAYMENT_METHOD_OPTIONS = [
 const PAYMENT_METHOD_META = {
   CASH: { label: 'Tiền mặt', icon: Banknote },
   BANK_TRANSFER: { label: 'Chuyển khoản', icon: Landmark },
+  VNPAY: { label: 'VNPay', icon: CreditCard },
   CARD: { label: 'Thẻ', icon: CreditCard },
   OTHER: { label: 'Khác', icon: Wallet },
   UNSPECIFIED: { label: 'Chưa phân loại', icon: Wallet },

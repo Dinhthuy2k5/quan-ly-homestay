@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -16,6 +16,7 @@ import {
   CreditCard,
   DoorOpen,
   Edit3,
+  ExternalLink,
   FileText,
   MapPin,
   LoaderCircle,
@@ -28,9 +29,21 @@ import {
   Trash2,
   Upload,
   Users,
+  Wallet,
   X,
 } from 'lucide-react';
-import { cancelCustomerBookingApi, cancelCustomerBookingServiceApi, fetchCustomerBookingDetailApi, fetchCustomerBookingServicesApi, fetchCustomerDepositProofApi, registerCustomerBookingServiceApi, submitCustomerDepositApi } from '../api';
+import {
+  cancelCustomerBookingApi,
+  cancelCustomerBookingServiceApi,
+  fetchCustomerBookingDetailApi,
+  fetchCustomerBookingServicesApi,
+  fetchCustomerDepositProofApi,
+  initiateOnlineDepositApi,
+  registerCustomerBookingServiceApi,
+  submitCustomerDepositApi,
+  verifyOnlineDepositApi,
+  verifyOnlineDepositByOrderApi,
+} from '../api';
 import { fetchHomestayServices } from '../../homestays/api';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import BankSelect from '../../../components/ui/BankSelect';
@@ -48,9 +61,23 @@ function previousDateKey(value) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+// Ánh xạ mã phương thức thanh toán từ backend sang nhãn tiếng Việt
+function formatPaymentMethodLabel(method) {
+  if (method === 'VNPAY') return 'VNPay';
+  if (method === 'BANK_TRANSFER') return 'Chuyển khoản';
+  if (method === 'CASH') return 'Tiền mặt';
+  return method || 'Khác';
+}
+
+function isOnlinePaymentMethod(method) {
+  return method === 'VNPAY';
+}
+
 export default function CustomerBookingDetailPage() {
   const { bookingId } = useParams();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoVerifiedPaymentRef = useRef('');
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -58,6 +85,13 @@ export default function CustomerBookingDetailPage() {
   const [copiedKey, setCopiedKey] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [adjustSuccessMsg, setAdjustSuccessMsg] = useState(() => location.state?.adjustSuccessToast || '');
+  // State cho luồng đặt cọc trực tuyến qua cổng VNPay Sandbox (API-PAY-05 & API-PAY-06)
+  const [depositTab, setDepositTab] = useState('ONLINE');
+  const [onlineSubmitting, setOnlineSubmitting] = useState(false);
+  const [onlineError, setOnlineError] = useState('');
+  const [verifyingKey, setVerifyingKey] = useState(null);
+  const [verifyingProviderLabel, setVerifyingProviderLabel] = useState('VNPay');
+  const [onlineVerifyBanner, setOnlineVerifyBanner] = useState(null);
 
   useEffect(() => {
     if (location.state?.adjustSuccessToast) {
@@ -251,16 +285,138 @@ export default function CustomerBookingDetailPage() {
     setRefreshKey((k) => k + 1);
   };
 
+  // Ánh xạ kết quả API-PAY-06 sang banner thông báo trực quan theo đúng tên cổng thanh toán
+  const applyVerifyResultBanner = useCallback((result, fallbackProviderLabel) => {
+    const providerLabel = result?.method ? formatPaymentMethodLabel(result.method) : fallbackProviderLabel;
+    if (result?.paymentStatus === 'CONFIRMED') {
+      setOnlineVerifyBanner({
+        tone: result.latePaymentRefundCreated ? 'pending' : 'success',
+        title: result.latePaymentRefundCreated
+          ? `Đã ghi nhận thanh toán ${providerLabel} (đơn đã hết hạn trước đó)`
+          : `Đặt cọc ${providerLabel} thành công!`,
+        message: result.gatewayMessage || 'Đơn đặt phòng của bạn đã được xác nhận tự động.',
+      });
+    } else if (result?.paymentStatus === 'PENDING') {
+      setOnlineVerifyBanner({
+        tone: 'pending',
+        title: `Giao dịch ${providerLabel} đang chờ hoàn tất`,
+        message:
+          result.gatewayMessage ||
+          `Bạn chưa hoàn tất thanh toán trên cổng ${providerLabel}. Bạn có thể kiểm tra lại hoặc tạo phiên thanh toán mới.`,
+      });
+    } else {
+      setOnlineVerifyBanner({
+        tone: 'error',
+        title: `Giao dịch ${providerLabel} chưa thành công`,
+        message:
+          result?.gatewayMessage ||
+          `Giao dịch đã bị hủy hoặc thất bại trên cổng ${providerLabel}. Bạn có thể thử thanh toán lại.`,
+      });
+    }
+  }, []);
+
+  // Gọi API-PAY-06 theo paymentId để Backend đối soát giao dịch đặt cọc VNPay
+  const handleVerifyOnlinePayment = useCallback(async (paymentId, providerMethod) => {
+    if (!bookingId || !paymentId) return;
+    const providerLabel = providerMethod ? formatPaymentMethodLabel(providerMethod) : 'VNPay';
+    setVerifyingKey(Number(paymentId));
+    setVerifyingProviderLabel(providerLabel);
+    setOnlineError('');
+    try {
+      const result = await verifyOnlineDepositApi(bookingId, paymentId);
+      applyVerifyResultBanner(result, providerLabel);
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setOnlineVerifyBanner({
+        tone: 'error',
+        title: `Chưa thể đối soát giao dịch ${providerLabel}`,
+        message: getErrorMessage(err) || 'Không thể kiểm tra trạng thái thanh toán lúc này. Vui lòng thử lại.',
+      });
+    } finally {
+      setVerifyingKey(null);
+    }
+  }, [bookingId, applyVerifyResultBanner]);
+
+  // Gọi API-PAY-06 theo vnp_TxnRef khi VNPay redirect trình duyệt về kèm chữ ký vnp_SecureHash
+  const handleVerifyVnPayReturn = useCallback(async (txnRef, vnpParams) => {
+    if (!bookingId || !txnRef) return;
+    setVerifyingKey(`VNPAY:${txnRef}`);
+    setVerifyingProviderLabel('VNPay');
+    setOnlineError('');
+    try {
+      const result = await verifyOnlineDepositByOrderApi(bookingId, txnRef, vnpParams);
+      applyVerifyResultBanner(result, 'VNPay');
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setOnlineVerifyBanner({
+        tone: 'error',
+        title: 'Chưa thể đối soát giao dịch VNPay',
+        message: getErrorMessage(err) || 'Không thể kiểm tra trạng thái thanh toán VNPay lúc này. Vui lòng thử lại.',
+      });
+    } finally {
+      setVerifyingKey(null);
+    }
+  }, [bookingId, applyVerifyResultBanner]);
+
+  // Tự động đối soát khi cổng VNPay (?vnp_TxnRef=...) redirect trình duyệt quay về trang chi tiết đơn
+  useEffect(() => {
+    const vnpTxnRef = searchParams.get('vnp_TxnRef');
+    if (!vnpTxnRef) return;
+    const refKey = `VNPAY:${bookingId}:${vnpTxnRef}`;
+    if (autoVerifiedPaymentRef.current === refKey) return;
+    autoVerifiedPaymentRef.current = refKey;
+
+    const vnpParams = {};
+    for (const [key, value] of searchParams.entries()) {
+      if (key.startsWith('vnp_')) {
+        vnpParams[key] = value;
+      }
+    }
+    // Xóa tham số callback khỏi URL để F5 không tự gọi verify lặp lại
+    setSearchParams({}, { replace: true });
+    handleVerifyVnPayReturn(vnpTxnRef, vnpParams);
+  }, [bookingId, searchParams, setSearchParams, handleVerifyVnPayReturn]);
+
+  // Gọi API-PAY-05 khởi tạo phiên thanh toán trực tuyến qua VNPay và chuyển hướng sang payUrl
+  const handleStartOnlineDeposit = async () => {
+    if (!booking?.id) return;
+    setOnlineSubmitting(true);
+    setOnlineError('');
+    setOnlineVerifyBanner(null);
+    try {
+      const result = await initiateOnlineDepositApi(booking.id, 'VNPAY');
+      if (!result?.payUrl) {
+        throw new Error('Không nhận được đường dẫn thanh toán từ cổng VNPay.');
+      }
+      window.location.href = result.payUrl;
+    } catch (err) {
+      setOnlineError(getErrorMessage(err) || 'Không thể khởi tạo phiên thanh toán VNPay. Vui lòng thử lại.');
+      setOnlineSubmitting(false);
+    }
+  };
+
   const confirmedDepositAmount = (booking?.payments || [])
     .filter((p) => p.paymentType === 'DEPOSIT' && p.status === 'CONFIRMED')
     .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  // Kiểm tra đơn có cọc gốc trực tuyến qua VNPay hay không để bỏ qua form STK ngân hàng khi hủy
+  const onlineDepositPayment = (booking?.payments || []).find(
+    (p) => p.paymentType === 'DEPOSIT' && p.status === 'CONFIRMED' && isOnlinePaymentMethod(p.paymentMethod) && p.providerTransId,
+  );
+  const onlineDepositMethod = onlineDepositPayment?.paymentMethod || null;
+  const paidOnline = Boolean(onlineDepositMethod);
+
+  // Giao dịch trực tuyến đang chờ xác nhận gần nhất (nếu khách đóng tab trước khi redirect về)
+  const latestPendingOnlineDeposit = (booking?.payments || []).find(
+    (p) => p.paymentType === 'DEPOSIT' && p.status === 'PENDING' && isOnlinePaymentMethod(p.paymentMethod),
+  );
 
   const handleCancelBooking = async (event) => {
     event.preventDefault();
     setCancelSubmitting(true);
     setCancelError('');
 
-    if (confirmedDepositAmount > 0) {
+    if (confirmedDepositAmount > 0 && !paidOnline) {
       if (!cancelBankName.trim()) {
         setCancelError('Vui lòng chọn hoặc nhập tên ngân hàng nhận tiền hoàn.');
         setCancelSubmitting(false);
@@ -283,9 +439,13 @@ export default function CustomerBookingDetailPage() {
     try {
       const result = await cancelCustomerBookingApi(booking.id, {
         reason: cancelReason.trim(),
-        bankName: cancelBankName.trim(),
-        bankAccountNumber: cancelBankAccountNumber.trim(),
-        bankAccountHolder: cancelBankAccountHolder.trim().toUpperCase(),
+        ...(paidOnline
+          ? {}
+          : {
+              bankName: cancelBankName.trim(),
+              bankAccountNumber: cancelBankAccountNumber.trim(),
+              bankAccountHolder: cancelBankAccountHolder.trim().toUpperCase(),
+            }),
       });
       setCancelResult(result);
       setCancelModalOpen(false);
@@ -518,6 +678,48 @@ export default function CustomerBookingDetailPage() {
           Đơn đặt phòng đã được hủy. {cancelResult.refundAmount > 0
             ? `Số tiền yêu cầu hoàn: ${formatVnd(cancelResult.refundAmount)}. Homestay sẽ xử lý khoản hoàn.`
             : 'Theo chính sách, đơn này không có khoản hoàn tiền.'}
+        </div>
+      )}
+
+      {verifyingKey && (
+        <div role="status" className="flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3.5 text-sm text-sky-950">
+          <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-sky-700" />
+          <div>
+            <strong>Đang xác thực kết quả thanh toán với cổng {verifyingProviderLabel}…</strong> Vui lòng chờ trong giây lát.
+          </div>
+        </div>
+      )}
+
+      {onlineVerifyBanner && (
+        <div
+          role="status"
+          className={`flex items-start justify-between gap-3 rounded-2xl border p-4 text-sm ${
+            onlineVerifyBanner.tone === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+              : onlineVerifyBanner.tone === 'pending'
+                ? 'border-amber-200 bg-amber-50 text-amber-950'
+                : 'border-rose-200 bg-rose-50 text-rose-900'
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            {onlineVerifyBanner.tone === 'success' ? (
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+            ) : (
+              <AlertCircle className={`mt-0.5 h-5 w-5 shrink-0 ${onlineVerifyBanner.tone === 'pending' ? 'text-amber-700' : 'text-rose-700'}`} />
+            )}
+            <div>
+              <p className="font-bold">{onlineVerifyBanner.title}</p>
+              <p className="mt-0.5">{onlineVerifyBanner.message}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOnlineVerifyBanner(null)}
+            aria-label="Đóng thông báo"
+            className="shrink-0 rounded-lg p-1 opacity-70 hover:opacity-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
@@ -817,167 +1019,276 @@ export default function CustomerBookingDetailPage() {
             )}
           </section>
 
-          {/* Hướng dẫn chuyển khoản ngân hàng nếu PENDING_DEPOSIT */}
-          {isPendingDeposit && instruction && (
-            <div className="rounded-2xl border border-[var(--color-primary)]/30 bg-white p-5 sm:p-6 shadow-[var(--shadow-1)] space-y-4">
-              <div className="flex items-center gap-2.5 border-b border-[var(--color-border)] pb-3">
-                <div className="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
-                  <CreditCard className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-[var(--color-ink)]">
-                    Thông tin thanh toán chuyển khoản cọc
-                  </h3>
-                  <p className="text-xs text-[var(--color-muted)]">
-                    Chuyển khoản chính xác số tiền và nội dung để hệ thống đối soát nhanh chóng
-                  </p>
+          {/* Đặt cọc giữ phòng: 2 lựa chọn song song (Thanh toán trực tuyến VNPay & Chuyển khoản thủ công) */}
+          {isPendingDeposit && (
+            <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 sm:p-6 shadow-[var(--shadow-1)] space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                    <CreditCard className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-[var(--color-ink)]">
+                      Đặt cọc giữ phòng ({formatVnd(booking.depositAmount)})
+                    </h3>
+                    <p className="text-xs text-[var(--color-muted)]">
+                      Chọn thanh toán trực tuyến qua VNPay để xác nhận ngay hoặc chuyển khoản thủ công
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm">
-                <div className="flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
-                  <span className="text-xs text-[var(--color-muted)]">Ngân hàng</span>
-                  <span className="font-bold text-[var(--color-ink)]">{instruction.bankName}</span>
-                </div>
-
-                <div className="flex items-center justify-between py-1">
-                  <div>
-                    <span className="text-xs text-[var(--color-muted)]">Số tài khoản</span>
-                    <p className="text-base font-mono font-bold tracking-wider text-[var(--color-ink)]">
-                      {instruction.bankAccountNumber}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(instruction.bankAccountNumber, 'bank-acc')}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] shadow-xs transition-colors"
-                  >
-                    {copiedKey === 'bank-acc' ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                        <span className="text-emerald-700">Đã chép</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5 text-[var(--color-muted)]" />
-                        <span>Sao chép</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between py-1 border-t border-[var(--color-border)] pt-2.5">
-                  <span className="text-xs text-[var(--color-muted)]">Chủ tài khoản</span>
-                  <span className="font-semibold uppercase text-[var(--color-ink)]">
-                    {instruction.bankAccountHolder}
+              {/* Thanh chuyển đổi 2 phương thức đặt cọc song song */}
+              <div className="grid grid-cols-1 gap-2 rounded-xl bg-[var(--color-surface-soft)] p-1.5 sm:grid-cols-2" role="tablist" aria-label="Phương thức đặt cọc">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={depositTab === 'ONLINE'}
+                  onClick={() => setDepositTab('ONLINE')}
+                  className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
+                    depositTab === 'ONLINE'
+                      ? 'bg-white text-[var(--color-ink)] shadow-xs'
+                      : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
+                  }`}
+                >
+                  <Wallet className="h-4 w-4 text-[var(--color-primary)]" />
+                  <span>Thanh toán VNPay</span>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                    Xác nhận ngay
                   </span>
-                </div>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={depositTab === 'BANK_TRANSFER'}
+                  onClick={() => setDepositTab('BANK_TRANSFER')}
+                  className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
+                    depositTab === 'BANK_TRANSFER'
+                      ? 'bg-white text-[var(--color-ink)] shadow-xs'
+                      : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
+                  }`}
+                >
+                  <CreditCard className="h-4 w-4" />
+                  <span>Chuyển khoản thủ công</span>
+                </button>
+              </div>
 
-                <div className="flex items-center justify-between py-1 border-t border-[var(--color-border)] pt-2.5">
-                  <div>
-                    <span className="text-xs text-[var(--color-muted)]">Số tiền cọc cần chuyển</span>
-                    <p className="text-base font-bold text-[var(--color-primary)]">
-                      {formatVnd(booking.depositAmount)}
+              {depositTab === 'ONLINE' ? (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 space-y-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs text-[var(--color-muted)]">Số tiền đặt cọc</span>
+                      <span className="text-lg font-bold text-[var(--color-ink)]">{formatVnd(booking.depositAmount)}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-2.5">
+                      <span className="text-xs text-[var(--color-muted)]">Cổng thanh toán</span>
+                      <span className="text-xs font-semibold text-[var(--color-ink)]">
+                        VNPay Sandbox (Thẻ ATM nội địa / QR VNPay / Thẻ quốc tế)
+                      </span>
+                    </div>
+                    <p className="border-t border-[var(--color-border)] pt-2.5 text-xs leading-relaxed text-[var(--color-body)]">
+                      Sau khi thanh toán thành công trên cổng VNPay, hệ thống sẽ tự động đối soát và chuyển đơn sang trạng thái <strong>Đã xác nhận</strong> ngay lập tức mà không cần chờ quản lý duyệt thủ công.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(booking.depositAmount, 'deposit-amount')}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] shadow-xs transition-colors"
-                  >
-                    {copiedKey === 'deposit-amount' ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                        <span className="text-emerald-700">Đã chép</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5 text-[var(--color-muted)]" />
-                        <span>Sao chép</span>
-                      </>
-                    )}
-                  </button>
-                </div>
 
-                <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 mt-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-emerald-900">
-                        Nội dung chuyển khoản (bắt buộc):
-                      </p>
-                      <p className="font-mono font-bold text-emerald-950 text-sm mt-0.5 truncate">
-                        {instruction.transferContent}
-                      </p>
-                    </div>
+                  {onlineError && (
+                    <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-800">
+                      {onlineError}
+                    </p>
+                  )}
+
+                  <div className="flex flex-col gap-2.5 sm:flex-row">
                     <button
                       type="button"
-                      onClick={() => copyToClipboard(instruction.transferContent, 'transfer-content')}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 transition-colors shadow-xs"
+                      disabled={onlineSubmitting || Boolean(verifyingKey)}
+                      onClick={handleStartOnlineDeposit}
+                      className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white shadow-xs transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {copiedKey === 'transfer-content' ? (
+                      {onlineSubmitting ? (
                         <>
-                          <Check className="h-3.5 w-3.5" />
-                          <span>Đã chép</span>
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                          <span>Đang chuyển sang cổng VNPay…</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="h-3.5 w-3.5" />
-                          <span>Sao chép</span>
+                          <ExternalLink className="h-4 w-4" />
+                          <span>Thanh toán cọc {formatVnd(booking.depositAmount)} qua VNPay</span>
                         </>
                       )}
                     </button>
+
+                    {latestPendingOnlineDeposit && (
+                      <button
+                        type="button"
+                        disabled={Boolean(verifyingKey) || onlineSubmitting}
+                        onClick={() => handleVerifyOnlinePayment(latestPendingOnlineDeposit.id, latestPendingOnlineDeposit.paymentMethod)}
+                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] disabled:opacity-50"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${verifyingKey === latestPendingOnlineDeposit.id ? 'animate-spin' : ''}`} />
+                        <span>Kiểm tra giao dịch VNPay gần nhất</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+                    <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <span>
+                      Nếu hủy đơn hợp lệ theo chính sách, homestay sẽ đối soát và xử lý hoàn tiền cho bạn.
+                    </span>
                   </div>
                 </div>
-              </div>
+              ) : instruction ? (
+                <div className="space-y-4">
+                  <div className="space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm">
+                    <div className="flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
+                      <span className="text-xs text-[var(--color-muted)]">Ngân hàng</span>
+                      <span className="font-bold text-[var(--color-ink)]">{instruction.bankName}</span>
+                    </div>
 
-              <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-                <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
-                <span>
-                  Sau khi bạn chuyển khoản, ban quản lý cơ sở sẽ kiểm tra và xác nhận đơn đặt phòng.
-                </span>
-              </div>
+                    <div className="flex items-center justify-between py-1">
+                      <div>
+                        <span className="text-xs text-[var(--color-muted)]">Số tài khoản</span>
+                        <p className="text-base font-mono font-bold tracking-wider text-[var(--color-ink)]">
+                          {instruction.bankAccountNumber}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(instruction.bankAccountNumber, 'bank-acc')}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] shadow-xs transition-colors"
+                      >
+                        {copiedKey === 'bank-acc' ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">Đã chép</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5 text-[var(--color-muted)]" />
+                            <span>Sao chép</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
 
-              <form onSubmit={handleSubmitProof} className="space-y-4 border-t border-[var(--color-border)] pt-4">
-                <div>
-                  <h4 className="text-sm font-bold text-[var(--color-ink)]">Gửi chứng từ chuyển khoản</h4>
-                  <p className="mt-1 text-xs text-[var(--color-muted)]">Quản lý sẽ đối chiếu giao dịch trước khi xác nhận đặt phòng.</p>
+                    <div className="flex items-center justify-between py-1 border-t border-[var(--color-border)] pt-2.5">
+                      <span className="text-xs text-[var(--color-muted)]">Chủ tài khoản</span>
+                      <span className="font-semibold uppercase text-[var(--color-ink)]">
+                        {instruction.bankAccountHolder}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1 border-t border-[var(--color-border)] pt-2.5">
+                      <div>
+                        <span className="text-xs text-[var(--color-muted)]">Số tiền cọc cần chuyển</span>
+                        <p className="text-base font-bold text-[var(--color-primary)]">
+                          {formatVnd(booking.depositAmount)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(booking.depositAmount, 'deposit-amount')}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] shadow-xs transition-colors"
+                      >
+                        {copiedKey === 'deposit-amount' ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">Đã chép</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5 text-[var(--color-muted)]" />
+                            <span>Sao chép</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 mt-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-emerald-900">
+                            Nội dung chuyển khoản (bắt buộc):
+                          </p>
+                          <p className="font-mono font-bold text-emerald-950 text-sm mt-0.5 truncate">
+                            {instruction.transferContent}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(instruction.transferContent, 'transfer-content')}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 transition-colors shadow-xs"
+                        >
+                          {copiedKey === 'transfer-content' ? (
+                            <>
+                              <Check className="h-3.5 w-3.5" />
+                              <span>Đã chép</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3.5 w-3.5" />
+                              <span>Sao chép</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+                    <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <span>
+                      Sau khi bạn chuyển khoản, ban quản lý cơ sở sẽ kiểm tra và xác nhận đơn đặt phòng.
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleSubmitProof} className="space-y-4 border-t border-[var(--color-border)] pt-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-[var(--color-ink)]">Gửi chứng từ chuyển khoản</h4>
+                      <p className="mt-1 text-xs text-[var(--color-muted)]">Quản lý sẽ đối chiếu giao dịch trước khi xác nhận đặt phòng.</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-1 text-xs font-semibold text-[var(--color-body)]">
+                        <span>Số tiền đã chuyển (₫)</span>
+                        <input
+                          type="number" min="1" step="1" inputMode="numeric"
+                          value={depositAmountInput || booking.depositAmount}
+                          onChange={(event) => setDepositAmountInput(event.target.value)}
+                          className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]"
+                          required
+                        />
+                      </label>
+                      <label className="space-y-1 text-xs font-semibold text-[var(--color-body)]">
+                        <span>Nội dung chuyển khoản</span>
+                        <input
+                          value={referenceCodeInput || instruction.transferContent || booking.code}
+                          maxLength={100}
+                          onChange={(event) => setReferenceCodeInput(event.target.value)}
+                          className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]"
+                          required
+                        />
+                      </label>
+                    </div>
+                    <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-5 text-center hover:border-[var(--color-primary)]">
+                      <Upload className="h-5 w-5 text-[var(--color-muted)]" />
+                      <span className="text-sm font-semibold text-[var(--color-ink)]">{proofFile ? proofFile.name : 'Chọn ảnh hoặc PDF chứng từ'}</span>
+                      <span className="text-xs text-[var(--color-muted)]">JPG, PNG, WEBP hoặc PDF · tối đa 5 MB</span>
+                      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="sr-only" onChange={handleProofFileChange} />
+                    </label>
+                    {proofPreviewUrl && <img src={proofPreviewUrl} alt="Xem trước chứng từ" className="max-h-56 rounded-xl border border-[var(--color-border)] object-contain" />}
+                    {proofFile?.type === 'application/pdf' && <p className="text-xs text-[var(--color-muted)]">Đã chọn PDF: {proofFile.name}</p>}
+                    {proofError && <p role="alert" className="text-sm text-rose-700">{proofError}</p>}
+                    <button type="submit" disabled={proofSubmitting || !proofFile} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+                      <Send className="h-4 w-4" />
+                      {proofSubmitting ? 'Đang gửi chứng từ…' : 'Gửi chứng từ'}
+                    </button>
+                  </form>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs font-semibold text-[var(--color-body)]">
-                    <span>Số tiền đã chuyển (₫)</span>
-                    <input
-                      type="number" min="1" step="1" inputMode="numeric"
-                      value={depositAmountInput || booking.depositAmount}
-                      onChange={(event) => setDepositAmountInput(event.target.value)}
-                      className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]"
-                      required
-                    />
-                  </label>
-                  <label className="space-y-1 text-xs font-semibold text-[var(--color-body)]">
-                    <span>Nội dung chuyển khoản</span>
-                    <input
-                      value={referenceCodeInput || instruction.transferContent || booking.code}
-                      maxLength={100}
-                      onChange={(event) => setReferenceCodeInput(event.target.value)}
-                      className="min-h-11 w-full rounded-xl border border-[var(--color-border)] px-3 text-sm font-normal outline-none focus:border-[var(--color-primary)]"
-                      required
-                    />
-                  </label>
-                </div>
-                <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-5 text-center hover:border-[var(--color-primary)]">
-                  <Upload className="h-5 w-5 text-[var(--color-muted)]" />
-                  <span className="text-sm font-semibold text-[var(--color-ink)]">{proofFile ? proofFile.name : 'Chọn ảnh hoặc PDF chứng từ'}</span>
-                  <span className="text-xs text-[var(--color-muted)]">JPG, PNG, WEBP hoặc PDF · tối đa 5 MB</span>
-                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="sr-only" onChange={handleProofFileChange} />
-                </label>
-                {proofPreviewUrl && <img src={proofPreviewUrl} alt="Xem trước chứng từ" className="max-h-56 rounded-xl border border-[var(--color-border)] object-contain" />}
-                {proofFile?.type === 'application/pdf' && <p className="text-xs text-[var(--color-muted)]">Đã chọn PDF: {proofFile.name}</p>}
-                {proofError && <p role="alert" className="text-sm text-rose-700">{proofError}</p>}
-                <button type="submit" disabled={proofSubmitting || !proofFile} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
-                  <Send className="h-4 w-4" />
-                  {proofSubmitting ? 'Đang gửi chứng từ…' : 'Gửi chứng từ'}
-                </button>
-              </form>
+              ) : (
+                <p className="rounded-xl bg-[var(--color-surface-soft)] p-4 text-sm text-[var(--color-muted)]">
+                  Hệ thống chưa cấu hình tài khoản ngân hàng nhận chuyển khoản thủ công. Vui lòng sử dụng phương thức thanh toán trực tuyến qua VNPay.
+                </p>
+              )}
             </div>
           )}
 
@@ -1031,7 +1342,7 @@ export default function CustomerBookingDetailPage() {
                                   : 'Đang chờ xác nhận'}
                           </span>
                           <span className="text-xs text-[var(--color-muted)]">
-                            · {payment.paymentMethod === 'BANK_TRANSFER' ? 'Chuyển khoản' : 'Tiền mặt'}
+                            · {formatPaymentMethodLabel(payment.paymentMethod)}
                           </span>
                         </div>
 
@@ -1042,6 +1353,12 @@ export default function CustomerBookingDetailPage() {
                           </span>
                         </div>
 
+                        {isRefund && isOnlinePaymentMethod(payment.paymentMethod) && payment.status === 'PENDING' && (
+                          <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-2.5 text-xs text-sky-950">
+                            Homestay sẽ liên hệ và xử lý hoàn tiền thủ công cho bạn theo chính sách hủy đơn.
+                          </div>
+                        )}
+
                         {isRefund && (payment.bankAccountNumber || payment.bankName || payment.bankAccountHolder) && (
                           <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-2.5 text-xs text-sky-950 space-y-1">
                             <span className="font-semibold block text-sky-900">Tài khoản nhận tiền hoàn:</span>
@@ -1051,18 +1368,24 @@ export default function CustomerBookingDetailPage() {
                           </div>
                         )}
 
-                        {payment.referenceCode && (
+                        {(payment.providerTransId || payment.referenceCode) && (
                           <div className="flex flex-wrap items-center gap-2 text-xs">
-                            <span className="text-[var(--color-muted)]">{isRefund ? 'Mã GD hoàn tiền:' : 'Nội dung CK:'}</span>
+                            <span className="text-[var(--color-muted)]">
+                              {isOnlinePaymentMethod(payment.paymentMethod)
+                                ? (isRefund
+                                  ? `Mã GD hoàn ${formatPaymentMethodLabel(payment.paymentMethod)}:`
+                                  : `Mã GD ${formatPaymentMethodLabel(payment.paymentMethod)}:`)
+                                : (isRefund ? 'Mã GD hoàn tiền:' : 'Nội dung CK:')}
+                            </span>
                             <span className="break-all font-mono font-semibold text-[var(--color-ink)] bg-[var(--color-surface-soft)] px-2 py-0.5 rounded border border-[var(--color-border)]">
-                              {payment.referenceCode}
+                              {payment.providerTransId || payment.referenceCode}
                             </span>
                           </div>
                         )}
 
                         {payment.rejectionReason && (
                           <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-800 space-y-0.5">
-                            <p className="font-bold">Lý do từ chối từ homestay:</p>
+                            <p className="font-bold">{isOnlinePaymentMethod(payment.paymentMethod) ? 'Trạng thái giao dịch:' : 'Lý do từ chối từ homestay:'}</p>
                             <p>{payment.rejectionReason}</p>
                           </div>
                         )}
@@ -1082,6 +1405,20 @@ export default function CustomerBookingDetailPage() {
                           )}
                         </div>
                       </div>
+
+                      {isDeposit && isOnlinePaymentMethod(payment.paymentMethod) && payment.status === 'PENDING' && (
+                        <div className="shrink-0 pt-1 sm:pt-0">
+                          <button
+                            type="button"
+                            disabled={verifyingKey === payment.id}
+                            onClick={() => handleVerifyOnlinePayment(payment.id, payment.paymentMethod)}
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] shadow-2xs transition-colors disabled:opacity-50"
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 ${verifyingKey === payment.id ? 'animate-spin' : ''}`} />
+                            <span>{verifyingKey === payment.id ? 'Đang kiểm tra…' : 'Kiểm tra trạng thái'}</span>
+                          </button>
+                        </div>
+                      )}
 
                       {payment.proofAvailable && (
                         <div className="shrink-0 pt-1 sm:pt-0">
@@ -1422,55 +1759,66 @@ export default function CustomerBookingDetailPage() {
             </div>
 
             {confirmedDepositAmount > 0 && (
-              <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/70 p-3.5 text-xs text-sky-950">
-                <div>
-                  <p className="font-semibold text-sky-950">
-                    Đơn đã cọc {formatVnd(confirmedDepositAmount)}. Vui lòng cung cấp tài khoản nhận tiền hoàn:
+              paidOnline ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-xs text-emerald-950 space-y-1">
+                  <p className="font-semibold">
+                    Đơn đã đặt cọc {formatVnd(confirmedDepositAmount)} trực tuyến qua {formatPaymentMethodLabel(onlineDepositMethod)}.
                   </p>
-                  <p className="text-2xs text-sky-800 mt-0.5">Homestay sẽ đối soát và chuyển khoản hoàn tiền vào tài khoản này.</p>
+                  <p className="text-emerald-800">
+                    Số tiền hoàn theo chính sách (nếu có) sẽ được homestay liên hệ và xử lý hoàn thủ công cho bạn sau khi xác nhận hủy đơn.
+                  </p>
                 </div>
-                <div className="space-y-2">
+              ) : (
+                <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/70 p-3.5 text-xs text-sky-950">
                   <div>
-                    <label className="block text-2xs font-semibold text-sky-950 mb-1">
-                      Ngân hàng <span className="text-rose-600">*</span>
-                    </label>
-                    <BankSelect
-                      required
-                      value={cancelBankName}
-                      onChange={(val) => setCancelBankName(val)}
-                      placeholder="Chọn hoặc tìm tên ngân hàng"
-                    />
+                    <p className="font-semibold text-sky-950">
+                      Đơn đã cọc {formatVnd(confirmedDepositAmount)}. Vui lòng cung cấp tài khoản nhận tiền hoàn:
+                    </p>
+                    <p className="text-2xs text-sky-800 mt-0.5">Homestay sẽ đối soát và chuyển khoản hoàn tiền vào tài khoản này.</p>
                   </div>
-                  <div>
-                    <label className="block text-2xs font-semibold text-sky-950 mb-1">
-                      Số tài khoản <span className="text-rose-600">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={cancelBankAccountNumber}
-                      onChange={(e) => setCancelBankAccountNumber(e.target.value.replace(/\D/g, ''))}
-                      maxLength={20}
-                      placeholder="Nhập số tài khoản ngân hàng (6-20 chữ số)"
-                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs font-mono outline-none focus:border-[var(--color-primary)]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-2xs font-semibold text-sky-950 mb-1">
-                      Tên chủ tài khoản <span className="text-rose-600">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={cancelBankAccountHolder}
-                      onChange={(e) => setCancelBankAccountHolder(normalizeBankAccountHolder(e.target.value))}
-                      maxLength={50}
-                      placeholder="VD: NGUYEN VAN A"
-                      className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs font-semibold uppercase outline-none focus:border-[var(--color-primary)]"
-                    />
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-2xs font-semibold text-sky-950 mb-1">
+                        Ngân hàng <span className="text-rose-600">*</span>
+                      </label>
+                      <BankSelect
+                        required
+                        value={cancelBankName}
+                        onChange={(val) => setCancelBankName(val)}
+                        placeholder="Chọn hoặc tìm tên ngân hàng"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-2xs font-semibold text-sky-950 mb-1">
+                        Số tài khoản <span className="text-rose-600">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={cancelBankAccountNumber}
+                        onChange={(e) => setCancelBankAccountNumber(e.target.value.replace(/\D/g, ''))}
+                        maxLength={20}
+                        placeholder="Nhập số tài khoản ngân hàng (6-20 chữ số)"
+                        className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs font-mono outline-none focus:border-[var(--color-primary)]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-2xs font-semibold text-sky-950 mb-1">
+                        Tên chủ tài khoản <span className="text-rose-600">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={cancelBankAccountHolder}
+                        onChange={(e) => setCancelBankAccountHolder(normalizeBankAccountHolder(e.target.value))}
+                        maxLength={50}
+                        placeholder="VD: NGUYEN VAN A"
+                        className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-xs font-semibold uppercase outline-none focus:border-[var(--color-primary)]"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             )}
 
             <OptionalNotePicker label="Lý do hủy (không bắt buộc)" value={cancelReason} onChange={setCancelReason} placeholder="Nhập lý do riêng (không bắt buộc)" options={['Thay đổi kế hoạch chuyến đi', 'Không còn nhu cầu lưu trú', 'Lý do cá nhân']} />

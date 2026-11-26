@@ -202,13 +202,13 @@ CREATE TABLE price_rule_change_requests (
 -- 4. ĐẶT PHÒNG
 -- ---------------------------------------------------------------------
 -- Vòng đời status đã chốt:
--- PENDING_DEPOSIT: khách chưa gửi yêu cầu xác minh đặt cọc.
--- PENDING_APPROVAL: khách đã gửi chứng từ/khai báo thanh toán, đang chờ Manager kiểm tra; CHƯA được xác nhận.
--- CONFIRMED: Manager đã xác minh khoản cọc và duyệt booking; đây mới là đặt phòng chính thức.
+-- PENDING_DEPOSIT: khách chưa hoàn tất đặt cọc (chưa gửi chứng từ chuyển khoản và chưa thanh toán online thành công).
+-- PENDING_APPROVAL: khách đã gửi chứng từ/khai báo chuyển khoản thủ công, đang chờ Manager kiểm tra; CHƯA được xác nhận.
+-- CONFIRMED: booking đã được xác nhận chính thức — hoặc qua cổng thanh toán trực tuyến VNPay tự động xác nhận (approved_at NOT NULL, approved_by NULL), hoặc do Manager xác minh cọc thủ công / ghi nhận cọc trực tiếp (approved_by & approved_at NOT NULL).
 -- CHECKED_IN / CHECKED_OUT: khách nhận phòng / đã trả phòng.
 -- Khi tạo booking, booking_room_nights giữ chỗ tạm theo từng đêm để chống overbooking; chưa phải xác nhận chính thức.
--- Manager xác minh payment đặt cọc và duyệt booking trong cùng transaction; Director duyệt riêng yêu cầu thay đổi giá phòng.
--- Nếu payment bị từ chối, booking quay lại PENDING_DEPOSIT nếu còn hạn, nếu không thì EXPIRED.
+-- Xác nhận cọc (tự động qua VNPay /verify, /ipn hoặc thủ công do Manager duyệt) phải cập nhật payment và booking trong cùng transaction; Director duyệt riêng yêu cầu thay đổi giá phòng.
+-- Nếu payment thủ công bị từ chối, booking quay lại PENDING_DEPOSIT nếu còn hạn, nếu không thì EXPIRED.
 -- Khách vãng lai do Manager đặt hộ có customer_id NULL; contact_* là bản chụp liên hệ tại thời điểm đặt.
 -- Booking chỉ lưu ngày nhận và ngày trả. Chính sách: nhận phòng từ 11:00 trở đi; trả phòng trước 08:00.
 -- Mỗi dòng booking_room_nights đại diện một phòng được giữ trong một đêm, từ check_in_date đến trước check_out_date.
@@ -230,8 +230,8 @@ CREATE TABLE bookings (
   hold_expires_at   DATETIME NOT NULL,              -- hạn giữ tạm khi chờ khách nộp cọc
   policy_snapshot   JSON NULL,
   note              VARCHAR(500),
-  approved_by       BIGINT NULL,                    -- Manager duyệt sau khi xác minh tiền cọc
-  approved_at       DATETIME NULL,
+  approved_by       BIGINT NULL,                    -- Manager duyệt sau khi xác minh cọc thủ công; NULL khi tự động xác nhận qua cổng VNPay
+  approved_at       DATETIME NULL,                  -- Thời điểm xác nhận booking (bởi Manager hoặc tự động qua cổng thanh toán trực tuyến)
   -- checked_in_at     DATETIME NULL,
   -- checked_out_at    DATETIME NULL,
   cancelled_at      DATETIME NULL,
@@ -258,11 +258,10 @@ CREATE TABLE bookings (
   CONSTRAINT ck_bookings_guests CHECK (guest_count > 0),
   CONSTRAINT ck_bookings_money CHECK (room_total_price > 0 AND deposit_amount > 0 AND deposit_amount <= room_total_price),
   CONSTRAINT ck_bookings_approval_pair CHECK (
-       (approved_by IS NULL AND approved_at IS NULL)
-    OR (approved_by IS NOT NULL AND approved_at IS NOT NULL)),
+       approved_by IS NULL OR approved_at IS NOT NULL),
   CONSTRAINT ck_bookings_confirmed_approval CHECK (
        status NOT IN ('CONFIRMED','CHECKED_IN','CHECKED_OUT')
-    OR (approved_by IS NOT NULL AND approved_at IS NOT NULL))
+    OR approved_at IS NOT NULL)
 ) ENGINE=InnoDB;
 CREATE TABLE booking_rooms (
   id          BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -353,40 +352,52 @@ CREATE TABLE booking_services (
   CONSTRAINT ck_bs_unit_price CHECK (unit_price >= 0)
 ) ENGINE=InnoDB;
 -- ---------------------------------------------------------------------
--- 6. THANH TOÁN — Manager xác minh cọc và duyệt booking
+-- 6. THANH TOÁN — Đặt cọc trực tuyến (VNPay), xác minh thủ công & hoàn tiền
 -- ---------------------------------------------------------------------
--- Khách gửi thông tin chuyển khoản/chứng từ -> payment PENDING và booking PENDING_APPROVAL.
--- Manager kiểm tra giao dịch; thao tác duyệt cần xác nhận payment và booking trong cùng transaction.
--- Chứng từ thanh toán lưu trực tiếp trong payments.proof_url; media chỉ lưu nội dung homestay/phòng/dịch vụ.
--- Nếu không khớp: payment REJECTED; booking quay về PENDING_DEPOSIT hoặc EXPIRED theo hold_expires_at.
--- Hoàn tiền: tạo payment type REFUND; chỉ ghi nhận thực hoàn khi Manager xác nhận giao dịch hoàn tiền.
+-- Luồng đặt cọc online (VNPay Sandbox): tạo payment (type = DEPOSIT, method = VNPAY, status = PENDING, provider_order_id duy nhất).
+--   Khi đối soát (querydr / xác thực chữ ký HMAC-SHA512 vnp_SecureHash trên Return URL hoặc IPN) trả thành công và khớp amount:
+--   lưu provider_trans_id, cập nhật payment = CONFIRMED (confirmed_at = nowUtc, confirmed_by = NULL) và booking = CONFIRMED (approved_at = nowUtc, approved_by = NULL) trong cùng transaction.
+-- Luồng chuyển khoản thủ công (song song làm phương án dự phòng): khách gửi chứng từ -> payment PENDING và booking PENDING_APPROVAL.
+--   Manager kiểm tra giao dịch; duyệt cập nhật payment & booking trong cùng transaction; nếu từ chối -> payment REJECTED và booking quay về PENDING_DEPOSIT hoặc EXPIRED theo hold_expires_at.
+-- Luồng đơn đặt hộ: Manager ghi nhận tiền đặt cọc trực tiếp (CASH / BANK_TRANSFER) như hiện hành.
+-- Chứng từ thanh toán thủ công lưu trực tiếp trong payments.proof_url; media chỉ lưu nội dung homestay/phòng/dịch vụ.
+-- Hoàn tiền: tạo payment type REFUND (status = PENDING). Khi Manager bấm xác nhận hoàn tiền:
+--   - Nếu đơn cọc gốc qua VNPay (có provider_trans_id): Backend gọi API Hoàn tiền VNPay truyền mã đơn/giao dịch gốc + amount = refund_amount (100% hoặc 50%), lưu provider_order_id/provider_trans_id của giao dịch hoàn và chuyển CONFIRMED.
+--   - Nếu cổng VNPay gặp sự cố, Manager có tùy chọn xác nhận hoàn thủ công dự phòng (chuyển method về BANK_TRANSFER hoặc CASH).
+--   - Nếu đơn cọc gốc là CASH / BANK_TRANSFER: Manager chuyển hoàn ngoài hệ thống rồi nhập reference_code và xác nhận.
 CREATE TABLE payments (
-  id             BIGINT AUTO_INCREMENT PRIMARY KEY,
-  booking_id     BIGINT NOT NULL,
-  homestay_id    BIGINT NOT NULL,
-  type           ENUM('DEPOSIT','PAYMENT','REFUND') NOT NULL,
-  amount         BIGINT NOT NULL,
-  method         ENUM('CASH','BANK_TRANSFER') NOT NULL,
-  status         ENUM('PENDING','CONFIRMED','REJECTED') NOT NULL DEFAULT 'PENDING', 
-  bank_name      VARCHAR(100),
+  id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+  booking_id        BIGINT NOT NULL,
+  homestay_id       BIGINT NOT NULL,
+  type              ENUM('DEPOSIT','PAYMENT','REFUND') NOT NULL,
+  amount            BIGINT NOT NULL,
+  method            ENUM('CASH','BANK_TRANSFER','VNPAY') NOT NULL,
+  status            ENUM('PENDING','CONFIRMED','REJECTED') NOT NULL DEFAULT 'PENDING',
+  bank_name         VARCHAR(100),
   bank_account_number VARCHAR(100),
   bank_account_holder VARCHAR(100),
-  reference_code VARCHAR(100),                    -- mã giao dịch/nội dung chuyển khoản khách cung cấp
-  proof_url      VARCHAR(500) NULL,                -- đường dẫn ảnh/URL chứng từ khách gửi
-  rejection_reason VARCHAR(255) NULL,              -- lý do từ chối chứng từ/thanh toán (nếu có)
-  note           VARCHAR(255),
-  created_by     BIGINT NOT NULL,
-  confirmed_by   BIGINT NULL,
-  confirmed_at   DATETIME NULL,
-  created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reference_code    VARCHAR(100),                    -- mã giao dịch/nội dung chuyển khoản khách cung cấp hoặc đồng bộ từ mã giao dịch cổng
+  provider_order_id VARCHAR(100) NULL,               -- mã đơn duy nhất gửi sang cổng thanh toán (VNPay vnp_TxnRef) để chống gửi trùng và đối soát
+  provider_trans_id VARCHAR(100) NULL,               -- mã giao dịch do cổng thanh toán (VNPay vnp_TransactionNo) cấp khi thu/hoàn thành công (bắt buộc lưu ở DEPOSIT để hoàn tiền)
+  proof_url         VARCHAR(500) NULL,               -- đường dẫn ảnh/URL chứng từ khách gửi (luồng chuyển khoản thủ công)
+  rejection_reason  VARCHAR(255) NULL,               -- lý do từ chối chứng từ/thanh toán hoặc lỗi từ cổng thanh toán (nếu có)
+  note              VARCHAR(255),
+  created_by        BIGINT NOT NULL,
+  confirmed_by      BIGINT NULL,                     -- Manager xác nhận thủ công/hoàn tiền; NULL khi cổng thanh toán VNPay tự động xác nhận đặt cọc
+  confirmed_at      DATETIME NULL,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_pay_provider_order (provider_order_id),
   KEY idx_pay_booking (booking_id),
   KEY idx_pay_finance (homestay_id, status, confirmed_at),
+  KEY idx_pay_provider_trans (provider_trans_id),
   CONSTRAINT fk_pay_booking FOREIGN KEY (booking_id, homestay_id)
     REFERENCES bookings(id, homestay_id),
   CONSTRAINT fk_pay_createdby FOREIGN KEY (created_by) REFERENCES users(id),
   CONSTRAINT fk_pay_confby FOREIGN KEY (confirmed_by) REFERENCES users(id),
   CONSTRAINT ck_pay_amount CHECK (amount > 0),
-  CONSTRAINT ck_pay_confirmed CHECK (status <> 'CONFIRMED' OR (confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL)),
+  CONSTRAINT ck_pay_confirmed CHECK (
+       status <> 'CONFIRMED'
+    OR (confirmed_at IS NOT NULL AND (confirmed_by IS NOT NULL OR (method = 'VNPAY' AND provider_trans_id IS NOT NULL)))),
   CONSTRAINT ck_pay_rejected  CHECK (status <> 'REJECTED' OR rejection_reason IS NOT NULL)
 ) ENGINE=InnoDB;
 -- ---------------------------------------------------------------------
@@ -593,6 +604,7 @@ INSERT INTO policy_settings (policy_group, policy_key, value_type, policy_value,
 -- Các giá trị cơ bản không seed ở đây vì mỗi homestay/phòng sẽ có mức giá riêng.
 -- Tài khoản Admin đầu tiên tạo bằng seeder trong ứng dụng (băm BCrypt), không chèn mật khẩu ở đây.
 -- Quy trình đặt phòng phải được thực thi ở tầng ứng dụng trong transaction: tạo giữ chỗ theo từng đêm;
--- nhận chứng từ -> PENDING_APPROVAL; Manager xác minh cọc và duyệt booking trong cùng transaction;
--- từ chối -> payment REJECTED và booking quay lại PENDING_DEPOSIT hoặc EXPIRED.
+-- đặt cọc online qua VNPay -> đối soát (querydr / xác thực chữ ký HMAC-SHA512 / IPN) tự động CONFIRMED payment & booking;
+-- hoặc nhận chứng từ chuyển khoản thủ công -> PENDING_APPROVAL và Manager xác minh cọc, duyệt booking trong cùng transaction;
+-- từ chối chứng từ -> payment REJECTED và booking quay lại PENDING_DEPOSIT hoặc EXPIRED.
 -- Quy tắc giá do Manager đề xuất được lưu ở price_rule_change_requests; chỉ Director phê duyệt mới được áp dụng vào price_rules.

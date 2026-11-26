@@ -88,6 +88,28 @@ export async function submitCustomerDepositApi(bookingId, { amount, referenceCod
   return res.data?.data || null;
 }
 
+/** API-PAY-05: Khởi tạo phiên đặt cọc trực tuyến (VNPay Sandbox) và lấy payUrl để chuyển hướng. */
+export async function initiateOnlineDepositApi(bookingId, provider = 'VNPAY') {
+  const res = await apiClient.post(`/customer/bookings/${bookingId}/payments/online`, { provider });
+  return res.data?.data || null;
+}
+
+/** API-PAY-06: Chủ động gọi Backend đối soát kết quả đặt cọc trực tuyến theo paymentId. */
+export async function verifyOnlineDepositApi(bookingId, paymentId, gatewayParams) {
+  const payload = gatewayParams && Object.keys(gatewayParams).length > 0 ? { gatewayParams } : undefined;
+  const res = await apiClient.post(`/customer/bookings/${bookingId}/payments/${paymentId}/verify`, payload);
+  return res.data?.data || null;
+}
+
+/** API-PAY-06 (VNPay Return): Đối soát kết quả đặt cọc trực tuyến theo mã đơn providerOrderId (vnp_TxnRef). */
+export async function verifyOnlineDepositByOrderApi(bookingId, providerOrderId, gatewayParams) {
+  const res = await apiClient.post(`/customer/bookings/${bookingId}/payments/verify`, {
+    providerOrderId,
+    gatewayParams,
+  });
+  return res.data?.data || null;
+}
+
 /** Tải chứng từ đặt cọc / thanh toán của booking để chủ booking xem lại. */
 export async function fetchCustomerDepositProofApi(bookingId, paymentId) {
   const url = paymentId

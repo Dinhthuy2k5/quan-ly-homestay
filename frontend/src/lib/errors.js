@@ -25,6 +25,7 @@ export const ERROR_MESSAGES = {
   ROOM_HAS_CONFLICTING_BOOKINGS: 'Phòng đang có lịch đặt phòng mâu thuẫn với thông tin mới.',
   HOMESTAY_INACTIVE: 'Homestay hiện đang tạm ngừng hoạt động.',
   BOOKING_STATE_CONFLICT: 'Trạng thái booking đã thay đổi. Vui lòng tải lại trang.',
+  BOOKING_HOLD_EXPIRED: 'Đơn đặt phòng đã hết thời hạn giữ chỗ.',
   BOOKING_CONCURRENT_MODIFICATION: 'Booking vừa được người khác cập nhật. Vui lòng tải lại trang.',
   ADJUSTMENT_WINDOW_CLOSED: 'Đã quá thời hạn được phép điều chỉnh booking.',
   CANCELLATION_NOT_ALLOWED: 'Booking này không thể hủy ở trạng thái hiện tại.',
@@ -35,6 +36,13 @@ export const ERROR_MESSAGES = {
   DEPOSIT_AMOUNT_INVALID: 'Số tiền đặt cọc chưa đúng theo chính sách.',
   DEPOSIT_AMOUNT_INSUFFICIENT: 'Số tiền cọc chưa đủ theo yêu cầu.',
   PAYMENT_ALREADY_REVIEWED: 'Khoản thanh toán này đã được xử lý trước đó.',
+  PAYMENT_NOT_ONLINE: 'Giao dịch này không phải phiên thanh toán trực tuyến.',
+  PAYMENT_AMOUNT_MISMATCH: 'Số tiền xác nhận từ cổng thanh toán không khớp với số tiền đặt cọc của đơn.',
+  PAYMENT_GATEWAY_NOT_CONFIGURED: 'Cổng thanh toán trực tuyến chưa được cấu hình khóa kết nối (TMN Code / Hash Secret) trên máy chủ. Vui lòng cập nhật tệp .env hoặc chọn chuyển khoản thủ công.',
+  PAYMENT_GATEWAY_ERROR: 'Cổng thanh toán trực tuyến đang gián đoạn hoặc từ chối giao dịch. Vui lòng thử lại sau.',
+  UNSUPPORTED_PAYMENT_PROVIDER: 'Cổng thanh toán được chọn chưa được hỗ trợ.',
+  INVALID_PAYMENT_SIGNATURE: 'Chữ ký xác thực từ cổng thanh toán không hợp lệ.',
+  ORIGINAL_DEPOSIT_TRANSACTION_MISSING: 'Không tìm thấy mã giao dịch gốc của khoản đặt cọc trực tuyến để hoàn tiền tự động.',
   OUTSTANDING_BALANCE: 'Khách vẫn còn số tiền chưa thanh toán.',
   PRICE_REQUEST_ALREADY_PENDING: 'Đã có yêu cầu thay đổi giá đang chờ duyệt cho mục này.',
   PRICE_REQUEST_ALREADY_REVIEWED: 'Yêu cầu thay đổi giá này đã được xử lý.',
@@ -72,6 +80,9 @@ export function getErrorMessage(err) {
 
   // Trường hợp error response từ Spring Boot backend bọc ApiResponse
   const serverError = err.response?.data?.error;
+  if (serverError?.code === 'PAYMENT_GATEWAY_ERROR' && serverError?.message) {
+    return serverError.message;
+  }
   if (serverError?.code && ERROR_MESSAGES[serverError.code]) {
     return ERROR_MESSAGES[serverError.code];
   }

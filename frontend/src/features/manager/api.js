@@ -299,12 +299,20 @@ export async function reviewManagerDepositApi(bookingId, { paymentId, decision, 
   return res.data?.data || null;
 }
 
-/** API-PAY-04: Xác nhận khoản REFUND sau khi đã hoàn tiền thực tế cho khách. */
-export async function confirmManagerRefundApi(paymentId, { referenceCode, note }) {
-  const res = await apiClient.post(`/manager/payments/${paymentId}/confirm`, {
+/** API-PAY-04: Xác nhận khoản REFUND (tự động qua VNPay hoặc hoàn thủ công / dự phòng thủ công khi cổng VNPay lỗi). */
+export async function confirmManagerRefundApi(
+  paymentId,
+  { referenceCode, note, manualFallback = false, fallbackMethod = null } = {},
+) {
+  const payload = {
     referenceCode: referenceCode?.trim() || null,
     note: note?.trim() || null,
-  });
+  };
+  if (manualFallback) {
+    payload.manualFallback = true;
+    payload.fallbackMethod = fallbackMethod || 'BANK_TRANSFER';
+  }
+  const res = await apiClient.post(`/manager/payments/${paymentId}/confirm`, payload);
   return res.data?.data || null;
 }
 
