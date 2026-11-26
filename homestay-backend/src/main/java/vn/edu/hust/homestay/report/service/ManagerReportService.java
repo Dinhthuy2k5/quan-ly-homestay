@@ -335,18 +335,21 @@ public class ManagerReportService {
         return new DateRange(fromDate, toDate);
     }
 
-    /** Kiểm tra mã phương thức thanh toán hợp lệ (CASH, BANK_TRANSFER, CARD, OTHER). */
+    /** Kiểm tra mã phương thức thanh toán hợp lệ (CASH, BANK_TRANSFER, VNPAY, CARD, OTHER). */
     private String parsePaymentMethod(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
         String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        if ("VNPAY".equals(normalized)) {
+            return normalized;
+        }
         try {
             return Expense.PaymentMethod.valueOf(normalized).name();
         } catch (IllegalArgumentException exception) {
             throw BusinessException.badRequest(
                     "INVALID_PAYMENT_METHOD",
-                    "Phương thức thanh toán chỉ hỗ trợ: CASH, BANK_TRANSFER, CARD, OTHER");
+                    "Phương thức thanh toán chỉ hỗ trợ: CASH, BANK_TRANSFER, VNPAY, CARD, OTHER");
         }
     }
 

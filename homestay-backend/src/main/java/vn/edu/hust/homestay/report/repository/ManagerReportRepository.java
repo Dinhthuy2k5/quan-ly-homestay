@@ -76,7 +76,7 @@ public interface ManagerReportRepository extends Repository<Booking, Long> {
               AND p.confirmed_at < :confirmedToExclusiveUtc
               AND (:paymentMethod IS NULL OR p.method = :paymentMethod)
             GROUP BY p.method
-            ORDER BY FIELD(p.method, 'CASH', 'BANK_TRANSFER'), p.method ASC
+            ORDER BY FIELD(p.method, 'CASH', 'BANK_TRANSFER', 'VNPAY'), p.method ASC
             """, nativeQuery = true)
     List<ManagerFinancePaymentMethodProjection> getFinancePaymentsByMethod(
             @Param("homestayId") Long homestayId,
