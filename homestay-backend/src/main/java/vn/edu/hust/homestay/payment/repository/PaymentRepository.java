@@ -7,6 +7,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 import vn.edu.hust.homestay.payment.entity.Payment;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.List;
 
@@ -20,6 +21,50 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     );
 
     Optional<Payment> findByIdAndBookingIdAndHomestayId(Long paymentId, Long bookingId, Long homestayId);
+
+    Optional<Payment> findByProviderOrderId(String providerOrderId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT payment FROM Payment payment WHERE payment.providerOrderId = :providerOrderId")
+    Optional<Payment> findByProviderOrderIdForUpdate(@Param("providerOrderId") String providerOrderId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT payment FROM Payment payment WHERE payment.id = :paymentId AND payment.bookingId = :bookingId")
+    Optional<Payment> findByIdAndBookingIdForUpdate(
+            @Param("paymentId") Long paymentId,
+            @Param("bookingId") Long bookingId
+    );
+
+    /** Tìm giao dịch đặt cọc gốc đã xác nhận theo tập phương thức trực tuyến (VNPAY) để gọi API hoàn tiền. */
+    Optional<Payment> findTopByBookingIdAndTypeAndStatusAndMethodInAndProviderTransIdIsNotNullOrderByConfirmedAtDesc(
+            Long bookingId,
+            Payment.PaymentType type,
+            Payment.PaymentStatus status,
+            Collection<Payment.PaymentMethod> methods
+    );
+
+    /** Tìm giao dịch đặt cọc gốc đã xác nhận theo một phương thức cụ thể. */
+    Optional<Payment> findTopByBookingIdAndTypeAndStatusAndMethodOrderByConfirmedAtDesc(
+            Long bookingId,
+            Payment.PaymentType type,
+            Payment.PaymentStatus status,
+            Payment.PaymentMethod method
+    );
+
+    /** Kiểm tra nhanh xem booking có đặt cọc online qua cổng (có provider_trans_id) hay không. */
+    boolean existsByBookingIdAndTypeAndStatusAndMethodAndProviderTransIdIsNotNull(
+            Long bookingId,
+            Payment.PaymentType type,
+            Payment.PaymentStatus status,
+            Payment.PaymentMethod method
+    );
+
+    /** Lấy các khoản thanh toán đang PENDING theo loại để dọn dẹp/từ chối khi một khoản cọc khác đã xác nhận thành công. */
+    List<Payment> findByBookingIdAndTypeAndStatus(
+            Long bookingId,
+            Payment.PaymentType type,
+            Payment.PaymentStatus status
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT payment FROM Payment payment WHERE payment.id = :paymentId")
