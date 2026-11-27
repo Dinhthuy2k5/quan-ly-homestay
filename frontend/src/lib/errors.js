@@ -17,6 +17,9 @@ export const ERROR_MESSAGES = {
   HOMESTAY_NOT_FOUND: 'Không tìm thấy homestay được yêu cầu.',
   HOMESTAY_NAME_EXISTS: 'Tên homestay đã tồn tại tại tỉnh/thành phố này. Vui lòng chọn tên khác.',
   HOMESTAY_HAS_ACTIVE_BOOKINGS: 'Homestay vẫn còn đơn đặt phòng đang hoạt động hoặc chưa hoàn tất, không thể tạm ngừng.',
+  HOMESTAY_ALREADY_ASSIGNED: 'Quản lý này đang phụ trách một cơ sở khác. Vui lòng gỡ phân công cũ trước.',
+  USER_NOT_FOUND: 'Không tìm thấy tài khoản người dùng được chọn.',
+  USER_NOT_MANAGER: 'Tài khoản được chọn không có vai trò Quản lý (MANAGER).',
   ROOM_NOT_FOUND: 'Không tìm thấy phòng được yêu cầu.',
   ROOM_NOT_AVAILABLE: 'Phòng không còn trống trong khoảng ngày đã chọn. Vui lòng chọn ngày khác.',
   ROOM_LOCKED: 'Phòng đang tạm khóa.',
@@ -84,7 +87,9 @@ export function getErrorMessage(err) {
   const serverError = err.response?.data?.error;
   if (
     (serverError?.code === 'PAYMENT_GATEWAY_ERROR' ||
-      serverError?.code === 'HOMESTAY_HAS_ACTIVE_BOOKINGS') &&
+      serverError?.code === 'HOMESTAY_HAS_ACTIVE_BOOKINGS' ||
+      serverError?.code === 'HOMESTAY_ALREADY_ASSIGNED' ||
+      serverError?.code === 'ACCOUNT_LOCKED') &&
     serverError?.message
   ) {
     return serverError.message;

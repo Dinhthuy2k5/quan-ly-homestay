@@ -8,13 +8,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.edu.hust.homestay.auth.entity.Role;
 import vn.edu.hust.homestay.auth.entity.User;
+import vn.edu.hust.homestay.auth.entity.UserStatus;
 import vn.edu.hust.homestay.auth.repository.UserRepository;
 import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 import vn.edu.hust.homestay.booking.repository.BookingRepository;
 import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.common.response.PagedResult;
+import vn.edu.hust.homestay.homestay.dto.AssignHomestayManagerRequest;
+import vn.edu.hust.homestay.homestay.dto.AssignHomestayManagerResponse;
 import vn.edu.hust.homestay.homestay.dto.CreateDirectorHomestayRequest;
 import vn.edu.hust.homestay.homestay.dto.DirectorHomestayResponse;
+import vn.edu.hust.homestay.homestay.dto.DirectorHomestayResponse.AssignedManagerSummary;
+import vn.edu.hust.homestay.homestay.dto.DirectorManagerOptionResponse;
 import vn.edu.hust.homestay.homestay.dto.UpdateDirectorHomestayRequest;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.entity.Homestay.HomestayStatus;
@@ -22,11 +27,15 @@ import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
 import vn.edu.hust.homestay.room.repository.HomestayRoomCountProjection;
 import vn.edu.hust.homestay.room.repository.RoomRepository;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_ADDRESS_MAX_LENGTH;
 import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_HOTLINE_PHONE_MAX_LENGTH;
@@ -40,6 +49,7 @@ import static vn.edu.hust.homestay.common.constant.ValidationConstants.MIN_PAGE_
  * Service xử lý nghiệp vụ quản lý cơ sở homestay dành cho Giám đốc (Director):
  * - API-DIR-HS-01: Danh sách & tạo mới homestay toàn công ty.
  * - API-DIR-HS-02: Cập nhật thông tin cơ sở, hotline hoặc kích hoạt / tạm ngừng hoạt động.
+ * - API-DIR-HS-03: Gán, thay thế hoặc gỡ Manager phụ trách homestay (quan hệ 1-1).
  */
 @Service
 public class DirectorHomestayService {
@@ -250,6 +260,186 @@ public class DirectorHomestayService {
                 .getOrDefault(saved.getId(), RoomStats.ZERO);
 
         return DirectorHomestayResponse.from(saved, assignedManager, stats.totalRooms(), stats.activeRooms());
+    }
+
+    /**
+     * API phụ trợ chỉ đọc: danh sách tài khoản MANAGER toàn công ty kèm cơ sở đang phụ trách
+     * để Giám đốc chọn người gán cho homestay ở API-DIR-HS-03.
+     */
+    @Transactional(readOnly = true)
+    public List<DirectorManagerOptionResponse> listManagers(
+            String rawStatus, Boolean unassignedOnly, String keyword
+    ) {
+        UserStatus statusFilter = parseOptionalUserStatus(rawStatus);
+        String normalizedKeyword = normalizeOptionalText(keyword);
+
+        List<User> managers = userRepository.searchUsersByRoleForDirector(
+                Role.MANAGER,
+                statusFilter,
+                Boolean.TRUE.equals(unassignedOnly),
+                normalizedKeyword
+        );
+        if (managers.isEmpty()) {
+            return List.of();
+        }
+
+        Set<Long> assignedHomestayIds = managers.stream()
+                .map(User::getHomestayId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<Long, String> homestayNameById = assignedHomestayIds.isEmpty()
+                ? Map.of()
+                : homestayRepository.findAllById(assignedHomestayIds).stream()
+                        .collect(Collectors.toMap(Homestay::getId, Homestay::getName, (a, b) -> a));
+
+        return managers.stream()
+                .sorted(Comparator
+                        .comparingInt(this::managerSortBucket)
+                        .thenComparing(u -> u.getFullName() == null ? "" : u.getFullName().toLowerCase(Locale.ROOT))
+                        .thenComparing(User::getId))
+                .map(user -> DirectorManagerOptionResponse.from(
+                        user,
+                        user.getHomestayId() == null ? null : homestayNameById.get(user.getHomestayId())
+                ))
+                .toList();
+    }
+
+    /**
+     * API-DIR-HS-03 (PUT): Gán, thay thế hoặc gỡ Manager phụ trách một homestay (quan hệ 1-1).
+     * - managerId == null: gỡ Manager hiện tại (kể cả đang LOCKED); idempotent nếu chưa có Manager.
+     * - managerId != null: kiểm tra tồn tại, đúng role MANAGER, tài khoản ACTIVE và chưa phụ trách cơ sở khác;
+     *   nếu homestay đang có Manager M1 khác, tự động gỡ M1 và flush trước rồi gán M2 trong cùng transaction.
+     */
+    @Transactional
+    public AssignHomestayManagerResponse assignManager(Long homestayId, AssignHomestayManagerRequest request) {
+        if (homestayId == null || homestayId <= 0) {
+            throw BusinessException.badRequest("VALIDATION_ERROR", "Mã homestay không hợp lệ");
+        }
+        if (request == null) {
+            throw BusinessException.badRequest("VALIDATION_ERROR", "Dữ liệu yêu cầu không hợp lệ");
+        }
+        Long targetManagerId = request.getManagerId();
+        if (targetManagerId != null && targetManagerId <= 0) {
+            throw BusinessException.badRequest("VALIDATION_ERROR", "Mã Manager không hợp lệ");
+        }
+
+        // Khóa dòng homestay để tuần tự hóa các thao tác gán/gỡ đồng thời trên cùng cơ sở
+        homestayRepository.findByIdForUpdate(homestayId)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "HOMESTAY_NOT_FOUND",
+                        "Không tìm thấy cơ sở homestay"
+                ));
+
+        User currentManager = userRepository.findByRoleAndHomestayIdForUpdate(Role.MANAGER, homestayId)
+                .orElse(null);
+
+        // Nhánh 1: Gỡ Manager (managerId == null) — cho phép gỡ kể cả khi tài khoản Manager hiện tại đang bị LOCKED
+        if (targetManagerId == null) {
+            if (currentManager != null) {
+                currentManager.setHomestayId(null);
+                userRepository.saveAndFlush(currentManager);
+            }
+            return new AssignHomestayManagerResponse(homestayId, null, null);
+        }
+
+        // Nhánh 2: Gán hoặc thay thế Manager mới
+        User targetUser = (currentManager != null && currentManager.getId().equals(targetManagerId))
+                ? currentManager
+                : userRepository.findByIdForUpdate(targetManagerId)
+                        .orElseThrow(() -> BusinessException.notFound(
+                                "USER_NOT_FOUND",
+                                "Không tìm thấy tài khoản người dùng"
+                        ));
+
+        if (targetUser.getRole() != Role.MANAGER) {
+            throw BusinessException.badRequest(
+                    "USER_NOT_MANAGER",
+                    "Tài khoản được chọn không có vai trò Quản lý (MANAGER)"
+            );
+        }
+        if (targetUser.getStatus() != UserStatus.ACTIVE) {
+            throw BusinessException.conflict(
+                    "ACCOUNT_LOCKED",
+                    "Tài khoản Quản lý này đang bị khóa, không thể phân công phụ trách cơ sở"
+            );
+        }
+
+        // Idempotent nếu Manager đích vốn đang phụ trách đúng homestay này
+        if (homestayId.equals(targetUser.getHomestayId())) {
+            return new AssignHomestayManagerResponse(
+                    homestayId,
+                    targetUser.getId(),
+                    AssignedManagerSummary.from(targetUser)
+            );
+        }
+
+        // Chặn nếu Manager đích đang phụ trách một cơ sở khác (giữ nguyên quan hệ 1-1)
+        if (targetUser.getHomestayId() != null) {
+            String otherName = homestayRepository.findById(targetUser.getHomestayId())
+                    .map(Homestay::getName)
+                    .orElse("cơ sở #" + targetUser.getHomestayId());
+            throw BusinessException.conflict(
+                    "HOMESTAY_ALREADY_ASSIGNED",
+                    "Quản lý này đang phụ trách cơ sở khác (" + otherName + "). Vui lòng gỡ phân công cũ trước."
+            );
+        }
+
+        // Nếu homestay đang có Manager M1 khác, gỡ M1 và flush NULL trước để giải phóng UNIQUE uq_users_homestay
+        if (currentManager != null) {
+            currentManager.setHomestayId(null);
+            userRepository.saveAndFlush(currentManager);
+        }
+
+        targetUser.setHomestayId(homestayId);
+        User savedTarget = saveUserWithUniqueHomestayGuard(targetUser);
+        return new AssignHomestayManagerResponse(
+                homestayId,
+                savedTarget.getId(),
+                AssignedManagerSummary.from(savedTarget)
+        );
+    }
+
+    private User saveUserWithUniqueHomestayGuard(User user) {
+        try {
+            return userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException exception) {
+            String detail = exception.getMostSpecificCause() != null
+                    ? exception.getMostSpecificCause().getMessage()
+                    : exception.getMessage();
+            if (detail != null && detail.toLowerCase(Locale.ROOT).contains("uq_users_homestay")) {
+                throw BusinessException.conflict(
+                        "HOMESTAY_ALREADY_ASSIGNED",
+                        "Cơ sở này vừa được phân công quản lý khác. Vui lòng tải lại và thử lại."
+                );
+            }
+            throw exception;
+        }
+    }
+
+    private int managerSortBucket(User user) {
+        if (user.getStatus() == UserStatus.ACTIVE && user.getHomestayId() == null) {
+            return 0;
+        }
+        if (user.getStatus() == UserStatus.ACTIVE) {
+            return 1;
+        }
+        return 2;
+    }
+
+    private UserStatus parseOptionalUserStatus(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        try {
+            return UserStatus.valueOf(normalized);
+        } catch (IllegalArgumentException exception) {
+            throw BusinessException.badRequest(
+                    "VALIDATION_ERROR",
+                    "Trạng thái tài khoản chỉ hỗ trợ ACTIVE hoặc LOCKED"
+            );
+        }
     }
 
     private Homestay saveWithUniqueNameGuard(Homestay homestay) {

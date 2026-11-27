@@ -42,11 +42,15 @@ import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -429,7 +433,27 @@ class DirectorHomestayTests {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"status\":\"INACTIVE\"}"))
                     .andExpect(status().isForbidden());
+
+            mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", existing.getId())
+                            .header("Authorization", "Bearer " + forbiddenToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"managerId\":null}"))
+                    .andExpect(status().isForbidden());
+
+            mockMvc.perform(get("/api/v1/director/managers")
+                            .header("Authorization", "Bearer " + forbiddenToken))
+                    .andExpect(status().isForbidden());
         }
+
+        // Chưa đăng nhập / DIRECTOR bị khóa trên API-DIR-HS-03 & /director/managers → 401
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", existing.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":null}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/v1/director/managers")
+                        .header("Authorization", "Bearer " + lockedDirectorToken))
+                .andExpect(status().isUnauthorized());
 
         // DIRECTOR hợp lệ truy cập thành công
         mockMvc.perform(get("/api/v1/director/homestays")
@@ -437,6 +461,229 @@ class DirectorHomestayTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.meta.totalElements", greaterThanOrEqualTo(1)))
                 .andExpect(jsonPath("$.data[*].id", hasItem(existing.getId().intValue())));
+    }
+
+    @Test
+    @DisplayName("API-DIR-HS-03: gán mới, thay thế trực tiếp M1->M2 trong cùng transaction, gỡ (kể cả Manager LOCKED) và hiệu lực tức thời")
+    void assignReplaceAndUnassignManagerWithImmediateScopeEffect() throws Exception {
+        String tag = UUID.randomUUID().toString().substring(0, 6);
+        Homestay hs = createHomestayEntity(
+                "Assign HS " + tag, "Yên Bái", "Mù Cang Chải", "02163881234", HomestayStatus.ACTIVE);
+        Homestay inactiveHs = createHomestayEntity(
+                "Inactive HS " + tag, "Yên Bái", "Nghĩa Lộ", "02163885678", HomestayStatus.INACTIVE);
+
+        User manager1 = createUser(Role.MANAGER, UserStatus.ACTIVE, null);
+        User manager2 = createUser(Role.MANAGER, UserStatus.ACTIVE, null);
+        String manager1Token = jwtService.generateAccessToken(manager1);
+        String manager2Token = jwtService.generateAccessToken(manager2);
+
+        // 1. Gán manager1 cho hs
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":" + manager1.getId() + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.homestayId", is(hs.getId().intValue())))
+                .andExpect(jsonPath("$.data.managerId", is(manager1.getId().intValue())))
+                .andExpect(jsonPath("$.data.manager.id", is(manager1.getId().intValue())))
+                .andExpect(jsonPath("$.data.manager.email", is(manager1.getEmail())));
+
+        assertEquals(hs.getId(), userRepository.findById(manager1.getId()).orElseThrow().getHomestayId());
+
+        // manager1 lập tức truy cập được API-MGR-01 với cơ sở mới được gán
+        mockMvc.perform(get("/api/v1/manager/homestay")
+                        .header("Authorization", "Bearer " + manager1Token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id", is(hs.getId().intValue())));
+
+        // 2. Gán lại đúng manager1 (idempotent) → 200 OK
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":" + manager1.getId() + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.managerId", is(manager1.getId().intValue())));
+
+        // 3. Thay thế trực tiếp manager1 -> manager2 trong cùng transaction (tự gỡ M1 + flush rồi gán M2)
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":" + manager2.getId() + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.homestayId", is(hs.getId().intValue())))
+                .andExpect(jsonPath("$.data.managerId", is(manager2.getId().intValue())));
+
+        assertNull(userRepository.findById(manager1.getId()).orElseThrow().getHomestayId());
+        assertEquals(hs.getId(), userRepository.findById(manager2.getId()).orElseThrow().getHomestayId());
+
+        // Quyền đổi tức thời: manager1 mất quyền, manager2 có quyền
+        mockMvc.perform(get("/api/v1/manager/homestay")
+                        .header("Authorization", "Bearer " + manager1Token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_NOT_ASSIGNED")));
+
+        mockMvc.perform(get("/api/v1/manager/homestay")
+                        .header("Authorization", "Bearer " + manager2Token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id", is(hs.getId().intValue())));
+
+        // 4. Giả sử manager2 bị Admin khóa tài khoản, Director vẫn phải gỡ được manager2 bằng managerId = null
+        User persistedManager2 = userRepository.findById(manager2.getId()).orElseThrow();
+        persistedManager2.setStatus(UserStatus.LOCKED);
+        userRepository.saveAndFlush(persistedManager2);
+
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.homestayId", is(hs.getId().intValue())))
+                .andExpect(jsonPath("$.data.managerId", nullValue()))
+                .andExpect(jsonPath("$.data.manager", nullValue()));
+
+        assertNull(userRepository.findById(manager2.getId()).orElseThrow().getHomestayId());
+
+        // Gỡ lần 2 khi homestay vốn chưa có Manager → idempotent 200 OK
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.managerId", nullValue()));
+
+        // 5. Cho phép gán Manager cho cơ sở đang INACTIVE (để chuẩn bị cấu hình trước khi mở lại)
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", inactiveHs.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":" + manager1.getId() + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.homestayId", is(inactiveHs.getId().intValue())))
+                .andExpect(jsonPath("$.data.managerId", is(manager1.getId().intValue())));
+    }
+
+    @Test
+    @DisplayName("API-DIR-HS-03: từ chối homestay/user không tồn tại, sai role, tài khoản LOCKED và Manager đã phụ trách cơ sở khác")
+    void assignManagerRejectsInvalidAndConflictingAssignments() throws Exception {
+        String tag = UUID.randomUUID().toString().substring(0, 6);
+        Homestay hs1 = createHomestayEntity(
+                "Conflict HS1 " + tag, "Tuyên Quang", "Na Hang", "02073881111", HomestayStatus.ACTIVE);
+        Homestay hs2 = createHomestayEntity(
+                "Conflict HS2 " + tag, "Tuyên Quang", "Lâm Bình", "02073882222", HomestayStatus.ACTIVE);
+
+        User currentMgr1 = createUser(Role.MANAGER, UserStatus.ACTIVE, hs1.getId());
+        User busyMgr2 = createUser(Role.MANAGER, UserStatus.ACTIVE, hs2.getId());
+        User lockedMgr = createUser(Role.MANAGER, UserStatus.LOCKED, null);
+
+        // Homestay không tồn tại → 404 HOMESTAY_NOT_FOUND
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", 999_999_999L)
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":" + currentMgr1.getId() + "}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_NOT_FOUND")));
+
+        // User không tồn tại → 404 USER_NOT_FOUND
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs1.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":999999999}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("USER_NOT_FOUND")));
+
+        // User không có vai trò MANAGER (CUSTOMER / ADMIN / DIRECTOR) → 400 USER_NOT_MANAGER
+        for (User nonManager : new User[]{customer, admin, director}) {
+            mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs1.getId())
+                            .header("Authorization", "Bearer " + directorToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"managerId\":" + nonManager.getId() + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code", is("USER_NOT_MANAGER")));
+        }
+
+        // Tài khoản MANAGER đang bị LOCKED → 409 ACCOUNT_LOCKED và giữ nguyên currentMgr1
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs1.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":" + lockedMgr.getId() + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("ACCOUNT_LOCKED")));
+        assertEquals(hs1.getId(), userRepository.findById(currentMgr1.getId()).orElseThrow().getHomestayId());
+
+        // busyMgr2 đang phụ trách hs2 → 409 HOMESTAY_ALREADY_ASSIGNED; cả hs1 và hs2 đều không bị sửa
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs1.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":" + busyMgr2.getId() + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("HOMESTAY_ALREADY_ASSIGNED")));
+        assertEquals(hs1.getId(), userRepository.findById(currentMgr1.getId()).orElseThrow().getHomestayId());
+        assertEquals(hs2.getId(), userRepository.findById(busyMgr2.getId()).orElseThrow().getHomestayId());
+
+        // managerId <= 0 → 400 VALIDATION_ERROR
+        mockMvc.perform(put("/api/v1/director/homestays/{id}/manager", hs1.getId())
+                        .header("Authorization", "Bearer " + directorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"managerId\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("VALIDATION_ERROR")));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/director/managers: chỉ trả tài khoản MANAGER kèm homestayName, hỗ trợ lọc unassignedOnly & status")
+    void listManagersForDirectorFiltersCorrectly() throws Exception {
+        String tag = "DIRMGR-" + UUID.randomUUID().toString().substring(0, 6);
+        Homestay hs = createHomestayEntity(
+                "Assigned Name " + tag, "Cao Bằng", "Trùng Khánh", "02063881234", HomestayStatus.ACTIVE);
+
+        User freeMgr = createUser(Role.MANAGER, UserStatus.ACTIVE, null);
+        freeMgr.setFullName("An Free " + tag);
+        userRepository.saveAndFlush(freeMgr);
+
+        User assignedMgr = createUser(Role.MANAGER, UserStatus.ACTIVE, hs.getId());
+        assignedMgr.setFullName("Binh Assigned " + tag);
+        userRepository.saveAndFlush(assignedMgr);
+
+        User lockedMgr = createUser(Role.MANAGER, UserStatus.LOCKED, null);
+        lockedMgr.setFullName("Cuong Locked " + tag);
+        userRepository.saveAndFlush(lockedMgr);
+
+        User customerWithTag = createUser(Role.CUSTOMER, UserStatus.ACTIVE, null);
+        customerWithTag.setFullName("Customer " + tag);
+        userRepository.saveAndFlush(customerWithTag);
+
+        // Lọc keyword = tag → trả đủ 3 MANAGER (không có CUSTOMER), sắp xếp free ACTIVE -> assigned ACTIVE -> LOCKED
+        mockMvc.perform(get("/api/v1/director/managers")
+                        .header("Authorization", "Bearer " + directorToken)
+                        .param("keyword", tag))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data", hasSize(3)))
+                .andExpect(jsonPath("$.data[0].id", is(freeMgr.getId().intValue())))
+                .andExpect(jsonPath("$.data[0].homestayId", nullValue()))
+                .andExpect(jsonPath("$.data[1].id", is(assignedMgr.getId().intValue())))
+                .andExpect(jsonPath("$.data[1].homestayId", is(hs.getId().intValue())))
+                .andExpect(jsonPath("$.data[1].homestayName", is("Assigned Name " + tag)))
+                .andExpect(jsonPath("$.data[2].id", is(lockedMgr.getId().intValue())))
+                .andExpect(jsonPath("$.data[2].status", is("LOCKED")))
+                .andExpect(jsonPath("$.data[*].id", not(hasItem(customerWithTag.getId().intValue()))));
+
+        // Lọc unassignedOnly=true & status=ACTIVE → chỉ còn freeMgr
+        mockMvc.perform(get("/api/v1/director/managers")
+                        .header("Authorization", "Bearer " + directorToken)
+                        .param("keyword", tag)
+                        .param("unassignedOnly", "true")
+                        .param("status", "ACTIVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].id", is(freeMgr.getId().intValue())));
+
+        // status sai → 400 VALIDATION_ERROR
+        mockMvc.perform(get("/api/v1/director/managers")
+                        .header("Authorization", "Bearer " + directorToken)
+                        .param("status", "INACTIVE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("VALIDATION_ERROR")));
     }
 
     private User createUser(Role role, UserStatus status, Long homestayId) {

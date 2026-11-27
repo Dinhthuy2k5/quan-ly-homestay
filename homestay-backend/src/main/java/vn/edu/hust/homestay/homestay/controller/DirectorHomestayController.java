@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 import vn.edu.hust.homestay.common.response.ApiResponse;
 import vn.edu.hust.homestay.common.response.PageMeta;
 import vn.edu.hust.homestay.common.response.PagedResult;
+import vn.edu.hust.homestay.homestay.dto.AssignHomestayManagerRequest;
+import vn.edu.hust.homestay.homestay.dto.AssignHomestayManagerResponse;
 import vn.edu.hust.homestay.homestay.dto.CreateDirectorHomestayRequest;
 import vn.edu.hust.homestay.homestay.dto.DirectorHomestayResponse;
 import vn.edu.hust.homestay.homestay.dto.UpdateDirectorHomestayRequest;
@@ -28,6 +31,7 @@ import java.util.List;
  * Controller cung cấp các API quản lý cơ sở homestay dành riêng cho Giám đốc (DIRECTOR):
  * - API-DIR-HS-01: GET/POST /api/v1/director/homestays
  * - API-DIR-HS-02: PATCH /api/v1/director/homestays/{homestayId}
+ * - API-DIR-HS-03: PUT /api/v1/director/homestays/{homestayId}/manager
  */
 @RestController
 @RequestMapping("/api/v1/director/homestays")
@@ -85,5 +89,16 @@ public class DirectorHomestayController {
     ) {
         DirectorHomestayResponse updated = directorHomestayService.updateHomestay(homestayId, request);
         return ResponseEntity.ok(ApiResponse.ok(updated));
+    }
+
+    /** API-DIR-HS-03: Gán, thay thế hoặc gỡ Manager phụ trách homestay (managerId = null để gỡ). */
+    @PutMapping("/{homestayId}/manager")
+    @Operation(summary = "API-DIR-HS-03: Gán, thay thế hoặc gỡ Manager phụ trách homestay")
+    public ResponseEntity<ApiResponse<AssignHomestayManagerResponse>> assignManager(
+            @PathVariable Long homestayId,
+            @RequestBody AssignHomestayManagerRequest request
+    ) {
+        AssignHomestayManagerResponse response = directorHomestayService.assignManager(homestayId, request);
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 }

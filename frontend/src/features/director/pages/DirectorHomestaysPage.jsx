@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Edit3,
   ExternalLink,
+  Lock,
   MapPin,
   Phone,
   Plus,
@@ -18,10 +19,12 @@ import {
   RotateCcw,
   Search,
   UserCheck,
+  UserCog,
   UserX,
 } from 'lucide-react';
 import { getDirectorHomestaysApi } from '../api';
 import HomestayFormModal from '../components/HomestayFormModal';
+import HomestayManagerModal from '../components/HomestayManagerModal';
 import HomestayStatusModal from '../components/HomestayStatusModal';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import { getErrorMessage } from '../../../lib/errors';
@@ -69,6 +72,7 @@ export function DirectorHomestaysPage() {
   // Thông báo & hộp thoại
   const [successMessage, setSuccessMessage] = useState('');
   const [formModal, setFormModal] = useState({ open: false, mode: 'create', homestay: null });
+  const [managerModal, setManagerModal] = useState({ open: false, homestay: null });
   const [statusModal, setStatusModal] = useState({ open: false, homestay: null });
 
   // Tự ẩn thông báo thành công sau 4.5 giây
@@ -182,6 +186,22 @@ export function DirectorHomestaysPage() {
     setStatusModal({ open: false, homestay: null });
     const label = updated?.status === 'ACTIVE' ? 'kích hoạt lại' : 'tạm ngừng hoạt động';
     setSuccessMessage(`Đã ${label} cơ sở "${updated?.name || ''}".`);
+    setReloadKey((v) => v + 1);
+  };
+
+  const handleManagerUpdated = (result, action, homestay) => {
+    setManagerModal({ open: false, homestay: null });
+    if (action === 'unassign') {
+      setSuccessMessage(`Đã gỡ quản lý khỏi cơ sở "${homestay?.name || ''}".`);
+    } else if (action === 'replace') {
+      setSuccessMessage(
+        `Đã đổi quản lý cơ sở "${homestay?.name || ''}" sang ${result?.manager?.fullName || 'quản lý mới'}.`
+      );
+    } else {
+      setSuccessMessage(
+        `Đã phân công ${result?.manager?.fullName || 'quản lý mới'} phụ trách cơ sở "${homestay?.name || ''}".`
+      );
+    }
     setReloadKey((v) => v + 1);
   };
 
@@ -485,10 +505,21 @@ export function DirectorHomestaysPage() {
                     {/* Meta: Manager & Quỹ phòng */}
                     <div className="flex flex-wrap items-center gap-2 pt-0.5 text-xs">
                       {hs.manager ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/70 px-2.5 py-1 text-emerald-900">
-                          <UserCheck className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${
+                            hs.manager.status === 'LOCKED'
+                              ? 'border-rose-200 bg-rose-50/70 text-rose-900'
+                              : 'border-emerald-200 bg-emerald-50/70 text-emerald-900'
+                          }`}
+                        >
+                          {hs.manager.status === 'LOCKED' ? (
+                            <Lock className="h-3.5 w-3.5 text-rose-700" aria-hidden="true" />
+                          ) : (
+                            <UserCheck className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
+                          )}
                           <span>
                             Quản lý: <strong>{hs.manager.fullName}</strong> ({hs.manager.email})
+                            {hs.manager.status === 'LOCKED' ? ' · Đã khóa' : ''}
                           </span>
                         </span>
                       ) : (
@@ -507,8 +538,17 @@ export function DirectorHomestaysPage() {
                     </div>
                   </div>
 
-                  {/* Hành động (API-DIR-HS-02) */}
+                  {/* Hành động (API-DIR-HS-02 & API-DIR-HS-03) */}
                   <div className="flex shrink-0 flex-wrap items-center gap-2 lg:flex-col lg:items-end xl:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => setManagerModal({ open: true, homestay: hs })}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 cursor-pointer"
+                    >
+                      <UserCog className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>{hs.manager ? 'Đổi / gỡ quản lý' : 'Gán quản lý'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => setFormModal({ open: true, mode: 'edit', homestay: hs })}
@@ -594,6 +634,15 @@ export function DirectorHomestaysPage() {
           homestay={statusModal.homestay}
           onClose={() => setStatusModal({ open: false, homestay: null })}
           onUpdated={handleStatusUpdated}
+        />
+      )}
+
+      {managerModal.open && managerModal.homestay && (
+        <HomestayManagerModal
+          key={`${managerModal.homestay.id}-${managerModal.homestay.manager?.id ?? 'none'}`}
+          homestay={managerModal.homestay}
+          onClose={() => setManagerModal({ open: false, homestay: null })}
+          onUpdated={handleManagerUpdated}
         />
       )}
     </div>

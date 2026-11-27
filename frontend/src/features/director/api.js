@@ -66,3 +66,31 @@ export async function updateDirectorHomestayApi(homestayId, patchPayload) {
   const res = await apiClient.patch(`/director/homestays/${homestayId}`, payload);
   return res.data?.data || null;
 }
+
+/**
+ * API phụ trợ chỉ đọc: Danh sách tài khoản MANAGER toàn công ty để Giám đốc phân công cơ sở.
+ */
+export async function getDirectorManagersApi({
+  status,
+  unassignedOnly,
+  keyword,
+  signal,
+} = {}) {
+  const params = {};
+  if (status) params.status = status;
+  if (unassignedOnly) params.unassignedOnly = true;
+  if (keyword?.trim()) params.keyword = keyword.trim();
+
+  const res = await apiClient.get('/director/managers', { params, signal });
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+}
+
+/**
+ * API-DIR-HS-03 (PUT): Gán, thay thế hoặc gỡ Manager phụ trách homestay (managerId = null để gỡ).
+ */
+export async function assignHomestayManagerApi(homestayId, managerId) {
+  const res = await apiClient.put(`/director/homestays/${homestayId}/manager`, {
+    managerId: managerId ?? null,
+  });
+  return res.data?.data || null;
+}

@@ -78,6 +78,14 @@ test('getErrorMessage returns friendly Vietnamese message from error code', () =
   };
   assert.equal(getErrorMessage(errHomestayActiveBookings), 'Homestay hiện còn 2 đơn đặt phòng đang hoạt động.');
 
+  const errUserNotManager = { response: { data: { error: { code: 'USER_NOT_MANAGER' } } } };
+  assert.equal(getErrorMessage(errUserNotManager), ERROR_MESSAGES.USER_NOT_MANAGER);
+
+  const errAlreadyAssigned = {
+    response: { data: { error: { code: 'HOMESTAY_ALREADY_ASSIGNED', message: 'Quản lý này đang phụ trách cơ sở khác (Mai Chau Homestay).' } } },
+  };
+  assert.equal(getErrorMessage(errAlreadyAssigned), 'Quản lý này đang phụ trách cơ sở khác (Mai Chau Homestay).');
+
   const errNotFound = { response: { status: 404 } };
   assert.equal(getErrorMessage(errNotFound), 'Không tìm thấy dữ liệu yêu cầu.');
 });
