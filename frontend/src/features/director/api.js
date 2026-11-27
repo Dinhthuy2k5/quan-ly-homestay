@@ -94,3 +94,36 @@ export async function assignHomestayManagerApi(homestayId, managerId) {
   });
   return res.data?.data || null;
 }
+
+/**
+ * API-DIR-PRICE-01 (GET): Danh sách yêu cầu phê duyệt thay đổi quy tắc giá toàn công ty.
+ */
+export async function getDirectorPriceRequestsApi({
+  status,
+  homestayId,
+  fromDate,
+  toDate,
+  page = 0,
+  size = 20,
+  sort = 'requestedAt,desc',
+  signal,
+} = {}) {
+  const params = { page, size, sort };
+  if (status) params.status = status;
+  if (homestayId) params.homestayId = Number(homestayId);
+  if (fromDate) params.fromDate = fromDate;
+  if (toDate) params.toDate = toDate;
+
+  const res = await apiClient.get('/director/price-rule-change-requests', { params, signal });
+  return {
+    items: Array.isArray(res.data?.data) ? res.data.data : [],
+    meta: res.data?.meta || {
+      page,
+      size,
+      totalElements: 0,
+      totalPages: 0,
+      first: true,
+      last: true,
+    },
+  };
+}

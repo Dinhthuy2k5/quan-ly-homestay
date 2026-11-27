@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Building2, ChevronRight, ShieldCheck } from 'lucide-react';
+import { Building2, ChevronRight, CircleDollarSign, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../auth/context/useAuth';
 
 const DIRECTOR_NAV_ITEMS = [
@@ -8,6 +8,12 @@ const DIRECTOR_NAV_ITEMS = [
     to: '/director/homestays',
     label: 'Quản lý cơ sở',
     icon: Building2,
+    end: false,
+  },
+  {
+    to: '/director/price-requests',
+    label: 'Phê duyệt giá',
+    icon: CircleDollarSign,
     end: false,
   },
 ];
@@ -132,7 +138,7 @@ export function DirectorLayout() {
               <span>Khu vực Giám đốc</span>
             </div>
             <p className="leading-relaxed">
-              Quản lý toàn bộ cơ sở homestay thuộc hệ thống: tạo cơ sở mới, cập nhật thông tin và điều phối trạng thái hoạt động.
+              Quản lý toàn bộ cơ sở homestay, phân công Quản lý và theo dõi, phê duyệt các đề xuất quy tắc giá phòng.
             </p>
           </div>
         </aside>

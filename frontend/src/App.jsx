@@ -40,6 +40,7 @@ import ManagerDashboardPage from './features/manager/pages/ManagerDashboardPage'
 import ManagerReportOverviewPage from './features/manager/pages/ManagerReportOverviewPage';
 import DirectorLayout from './features/director/layouts/DirectorLayout';
 import DirectorHomestaysPage from './features/director/pages/DirectorHomestaysPage';
+import DirectorPriceRequestsPage from './features/director/pages/DirectorPriceRequestsPage';
 
 function SearchResultsRoute() {
   const location = useLocation();
@@ -150,7 +151,7 @@ export function App() {
               <Route path="reports" element={<ManagerReportOverviewPage />} />
             </Route>
 
-            {/* Khu vực Giám đốc (Director: API-DIR-HS-01, API-DIR-HS-02) */}
+            {/* Khu vực Giám đốc (Director: API-DIR-HS-01..03, API-DIR-PRICE-01) */}
             <Route
               path="/director"
               element={
@@ -161,6 +162,7 @@ export function App() {
             >
               <Route index element={<Navigate to="homestays" replace />} />
               <Route path="homestays" element={<DirectorHomestaysPage />} />
+              <Route path="price-requests" element={<DirectorPriceRequestsPage />} />
             </Route>
 
             {/* Trang 403 Forbidden */}

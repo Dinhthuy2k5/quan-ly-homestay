@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import vn.edu.hust.homestay.pricing.entity.PriceRuleChangeRequest;
 import vn.edu.hust.homestay.pricing.entity.PriceRuleChangeRequest.Status;
 
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -17,6 +18,25 @@ import java.util.Optional;
  */
 @Repository
 public interface PriceRuleChangeRequestRepository extends JpaRepository<PriceRuleChangeRequest, Long> {
+
+    /**
+     * API-DIR-PRICE-01: Tra cứu danh sách yêu cầu thay đổi giá toàn công ty cho Giám đốc,
+     * hỗ trợ lọc theo trạng thái, cơ sở homestay và khoảng thời gian gửi [fromInstant, toExclusiveInstant).
+     */
+    @Query("""
+        SELECT r FROM PriceRuleChangeRequest r
+        WHERE (:status IS NULL OR r.status = :status)
+          AND (:homestayId IS NULL OR r.homestayId = :homestayId)
+          AND (:fromInstant IS NULL OR r.requestedAt >= :fromInstant)
+          AND (:toExclusiveInstant IS NULL OR r.requestedAt < :toExclusiveInstant)
+    """)
+    Page<PriceRuleChangeRequest> searchForDirector(
+            @Param("status") Status status,
+            @Param("homestayId") Long homestayId,
+            @Param("fromInstant") Instant fromInstant,
+            @Param("toExclusiveInstant") Instant toExclusiveInstant,
+            Pageable pageable
+    );
 
     /** Kiểm tra xem một quy tắc giá mục tiêu đã có đề xuất đang chờ duyệt hay chưa */
     boolean existsByTargetRuleIdAndStatus(Long targetRuleId, Status status);

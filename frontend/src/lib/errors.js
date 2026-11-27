@@ -89,7 +89,8 @@ export function getErrorMessage(err) {
     (serverError?.code === 'PAYMENT_GATEWAY_ERROR' ||
       serverError?.code === 'HOMESTAY_HAS_ACTIVE_BOOKINGS' ||
       serverError?.code === 'HOMESTAY_ALREADY_ASSIGNED' ||
-      serverError?.code === 'ACCOUNT_LOCKED') &&
+      serverError?.code === 'ACCOUNT_LOCKED' ||
+      serverError?.code === 'INVALID_DATE_RANGE') &&
     serverError?.message
   ) {
     return serverError.message;
