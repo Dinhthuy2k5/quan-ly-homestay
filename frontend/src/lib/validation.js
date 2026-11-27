@@ -21,6 +21,13 @@ export const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 export const PHONE_REGEX = /^0[0-9]{9}$/;
 
 /**
+ * Biểu thức chính quy kiểm tra số điện thoại hotline cơ sở homestay:
+ * - Khớp với backend HOMESTAY_HOTLINE_PHONE_REGEX: chấp nhận số di động 10 số,
+ *   số cố định 11 số (ví dụ: 02123881234) và đầu số quốc tế +84.
+ */
+export const HOTLINE_PHONE_REGEX = /^(0|\+84)[0-9]{8,11}$/;
+
+/**
  * Biểu thức chính quy kiểm tra số tài khoản ngân hàng:
  * - Chỉ gồm các chữ số 0-9
  * - Độ dài từ 6 đến 20 chữ số
@@ -65,6 +72,22 @@ export function validatePhone(phone) {
   }
   if (!PHONE_REGEX.test(trimmed)) {
     return 'Số điện thoại không hợp lệ (phải gồm 10 chữ số và bắt đầu bằng số 0, ví dụ: 0901234567).';
+  }
+  return null;
+}
+
+/**
+ * Kiểm tra tính hợp lệ của Số điện thoại Hotline cơ sở homestay.
+ * @param {string} phone
+ * @returns {string|null} Chuỗi thông báo lỗi tiếng Việt nếu không hợp lệ, hoặc null nếu hợp lệ.
+ */
+export function validateHotlinePhone(phone) {
+  const trimmed = String(phone || '').trim();
+  if (!trimmed) {
+    return 'Số điện thoại hotline không được để trống.';
+  }
+  if (trimmed.length > 20 || !HOTLINE_PHONE_REGEX.test(trimmed)) {
+    return 'Số điện thoại hotline không đúng định dạng (ví dụ: 02123881234, 0912345678 hoặc +842123881234).';
   }
   return null;
 }

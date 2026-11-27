@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatVnd, formatDate, formatDateTime, nightsBetween, getNextDate } from '../format.js';
 import { getStatusInfo } from '../status.js';
 import { getErrorMessage, ERROR_MESSAGES } from '../errors.js';
-import { validateEmail, validatePhone, validateBankAccountNumber, validateBankAccountHolder, normalizeBankAccountHolder } from '../validation.js';
+import { validateEmail, validatePhone, validateHotlinePhone, validateBankAccountNumber, validateBankAccountHolder, normalizeBankAccountHolder } from '../validation.js';
 
 test('formatVnd formats money integers correctly to Vietnamese Dong', () => {
   assert.equal(formatVnd(0), '0 ₫');
@@ -70,6 +70,14 @@ test('getErrorMessage returns friendly Vietnamese message from error code', () =
   const errPriceConflict = { response: { data: { error: { code: 'PRICE_RULE_CONFLICT' } } } };
   assert.equal(getErrorMessage(errPriceConflict), ERROR_MESSAGES.PRICE_RULE_CONFLICT);
 
+  const errHomestayNameExists = { response: { data: { error: { code: 'HOMESTAY_NAME_EXISTS' } } } };
+  assert.equal(getErrorMessage(errHomestayNameExists), ERROR_MESSAGES.HOMESTAY_NAME_EXISTS);
+
+  const errHomestayActiveBookings = {
+    response: { data: { error: { code: 'HOMESTAY_HAS_ACTIVE_BOOKINGS', message: 'Homestay hiện còn 2 đơn đặt phòng đang hoạt động.' } } },
+  };
+  assert.equal(getErrorMessage(errHomestayActiveBookings), 'Homestay hiện còn 2 đơn đặt phòng đang hoạt động.');
+
   const errNotFound = { response: { status: 404 } };
   assert.equal(getErrorMessage(errNotFound), 'Không tìm thấy dữ liệu yêu cầu.');
 });
@@ -92,6 +100,15 @@ test('validatePhone validates Vietnamese phone numbers using regular expression'
   assert.match(validatePhone('09012345abc'), /không hợp lệ/);
   assert.match(validatePhone('01234'), /không hợp lệ/);
   assert.match(validatePhone('090123456789'), /không hợp lệ/);
+});
+
+test('validateHotlinePhone accepts 10-digit mobile, 11-digit landline, and +84 formats', () => {
+  assert.equal(validateHotlinePhone('02123881234'), null);
+  assert.equal(validateHotlinePhone('0912345678'), null);
+  assert.equal(validateHotlinePhone('+842183881234'), null);
+  assert.match(validateHotlinePhone(''), /không được để trống/);
+  assert.match(validateHotlinePhone('12345'), /không đúng định dạng/);
+  assert.match(validateHotlinePhone('0212-388-1234'), /không đúng định dạng/);
 });
 
 test('validateBankAccountNumber validates bank account number using regular expression', () => {

@@ -15,6 +15,8 @@ export const ERROR_MESSAGES = {
   HOMESTAY_SCOPE_VIOLATION: 'Bạn không có quyền thao tác trên homestay này.',
   HOMESTAY_NOT_ASSIGNED: 'Tài khoản quản lý của bạn chưa được gán homestay.',
   HOMESTAY_NOT_FOUND: 'Không tìm thấy homestay được yêu cầu.',
+  HOMESTAY_NAME_EXISTS: 'Tên homestay đã tồn tại tại tỉnh/thành phố này. Vui lòng chọn tên khác.',
+  HOMESTAY_HAS_ACTIVE_BOOKINGS: 'Homestay vẫn còn đơn đặt phòng đang hoạt động hoặc chưa hoàn tất, không thể tạm ngừng.',
   ROOM_NOT_FOUND: 'Không tìm thấy phòng được yêu cầu.',
   ROOM_NOT_AVAILABLE: 'Phòng không còn trống trong khoảng ngày đã chọn. Vui lòng chọn ngày khác.',
   ROOM_LOCKED: 'Phòng đang tạm khóa.',
@@ -80,7 +82,11 @@ export function getErrorMessage(err) {
 
   // Trường hợp error response từ Spring Boot backend bọc ApiResponse
   const serverError = err.response?.data?.error;
-  if (serverError?.code === 'PAYMENT_GATEWAY_ERROR' && serverError?.message) {
+  if (
+    (serverError?.code === 'PAYMENT_GATEWAY_ERROR' ||
+      serverError?.code === 'HOMESTAY_HAS_ACTIVE_BOOKINGS') &&
+    serverError?.message
+  ) {
     return serverError.message;
   }
   if (serverError?.code && ERROR_MESSAGES[serverError.code]) {

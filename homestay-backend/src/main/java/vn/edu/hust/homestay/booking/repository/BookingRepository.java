@@ -12,10 +12,14 @@ import vn.edu.hust.homestay.booking.entity.Booking.BookingStatus;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface BookingRepository extends JpaRepository<Booking, Long> {
+
+    /** Đếm booking theo homestay và tập trạng thái (dùng kiểm tra trước khi ngừng cơ sở). */
+    long countByHomestayIdAndStatusIn(Long homestayId, Collection<BookingStatus> statuses);
 
     /** Khóa một lô giới hạn để luồng hết hạn không xung đột với các thay đổi trạng thái booking khác. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import vn.edu.hust.homestay.room.entity.Room;
 import vn.edu.hust.homestay.room.entity.Room.RoomStatus;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.time.LocalDate;
@@ -51,6 +52,17 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     long countByHomestayIdAndStatus(Long homestayId, RoomStatus status);
 
     long countByHomestayId(Long homestayId);
+
+    /** Đếm tổng số phòng và số phòng ACTIVE theo từng homestay trong 1 truy vấn (phục vụ API-DIR-HS-01/02). */
+    @Query(value = """
+        SELECT r.homestay_id AS homestayId,
+               COUNT(*) AS totalRooms,
+               COALESCE(SUM(CASE WHEN r.status = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS activeRooms
+        FROM rooms r
+        WHERE r.homestay_id IN (:homestayIds)
+        GROUP BY r.homestay_id
+    """, nativeQuery = true)
+    List<HomestayRoomCountProjection> countRoomStatsByHomestayIds(@Param("homestayIds") Collection<Long> homestayIds);
 
     /** Danh sách phòng đang hoạt động công khai thuộc homestay, phân trang ổn định. */
     Page<Room> findByHomestayIdAndStatusOrderByIdAsc(Long homestayId, RoomStatus status, Pageable pageable);

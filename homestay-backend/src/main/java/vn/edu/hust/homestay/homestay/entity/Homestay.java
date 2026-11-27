@@ -29,7 +29,7 @@ public class Homestay {
     @Column(nullable = false, length = 255)
     private String address;
 
-    @Column(name = "hotline_phone", length = 20)
+    @Column(name = "hotline_phone", nullable = false, length = 20)
     private String hotlinePhone;
 
     @Column(columnDefinition = "TEXT")
