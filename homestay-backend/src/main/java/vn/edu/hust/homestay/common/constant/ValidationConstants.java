@@ -19,6 +19,7 @@ public final class ValidationConstants {
     public static final int HOMESTAY_PROVINCE_MAX_LENGTH = 100;
     public static final int HOMESTAY_ADDRESS_MAX_LENGTH = 255;
     public static final int HOMESTAY_HOTLINE_PHONE_MAX_LENGTH = 20;
+    public static final int HOMESTAY_DESCRIPTION_MAX_LENGTH = 2000;
     public static final String HOMESTAY_HOTLINE_PHONE_REGEX = "^(0|\\+84)[0-9]{8,11}$";
 
     public static final int ROOM_NAME_MAX_LENGTH = 100;

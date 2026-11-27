@@ -305,12 +305,14 @@ export function HomestayFormModal({ mode = 'create', homestay = null, onClose, o
               id="dir-hs-description"
               name="description"
               rows={4}
+              maxLength={2000}
               value={form.description}
               onChange={handleChange}
               disabled={submitting}
               placeholder="Giới thiệu ngắn về không gian, vị trí và điểm nổi bật của homestay..."
               className="w-full rounded-xl border border-[var(--color-border)] px-3.5 py-2.5 text-sm text-[var(--color-ink)] outline-none transition focus:border-[var(--color-ink)]"
             />
+            <p className="mt-1 text-[11px] text-[var(--color-muted)]">Tối đa 2.000 ký tự.</p>
           </div>
 
           {/* Footer actions */}

@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_ADDRESS_MAX_LENGTH;
+import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_DESCRIPTION_MAX_LENGTH;
 import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_HOTLINE_PHONE_MAX_LENGTH;
 import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_NAME_MAX_LENGTH;
 import static vn.edu.hust.homestay.common.constant.ValidationConstants.HOMESTAY_PROVINCE_MAX_LENGTH;
@@ -36,6 +37,7 @@ public class UpdateDirectorHomestayRequest {
     @Size(max = HOMESTAY_HOTLINE_PHONE_MAX_LENGTH, message = "Số điện thoại hotline không được vượt quá " + HOMESTAY_HOTLINE_PHONE_MAX_LENGTH + " ký tự")
     private String hotlinePhone;
 
+    @Size(max = HOMESTAY_DESCRIPTION_MAX_LENGTH, message = "Mô tả homestay không được vượt quá " + HOMESTAY_DESCRIPTION_MAX_LENGTH + " ký tự")
     private String description;
 
     private String status;
