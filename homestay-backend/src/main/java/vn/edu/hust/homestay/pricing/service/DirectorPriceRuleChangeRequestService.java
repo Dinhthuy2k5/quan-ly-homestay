@@ -1,6 +1,7 @@
 package vn.edu.hust.homestay.pricing.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -19,6 +20,15 @@ import vn.edu.hust.homestay.common.exception.BusinessException;
 import vn.edu.hust.homestay.common.response.PagedResult;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
+import vn.edu.hust.homestay.media.entity.Media;
+import vn.edu.hust.homestay.media.entity.Media.OwnerType;
+import vn.edu.hust.homestay.media.repository.MediaRepository;
+import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestDetailResponse;
+import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestDetailResponse.ActiveRuleItem;
+import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestDetailResponse.AffectedRoomPreview;
+import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestDetailResponse.HomestayScopeDetail;
+import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestDetailResponse.PeerPriceBenchmark;
+import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestDetailResponse.RoomDetailContext;
 import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestSummaryResponse;
 import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestSummaryResponse.CurrentRuleSummary;
 import vn.edu.hust.homestay.pricing.dto.DirectorPriceRuleChangeRequestSummaryResponse.HomestayScopeSummary;
@@ -48,6 +58,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,12 +75,16 @@ import static vn.edu.hust.homestay.common.constant.ValidationConstants.MIN_PAGE_
  * Service xử lý nghiệp vụ phê duyệt yêu cầu thay đổi quy tắc giá dành cho Giám đốc (Director):
  * - API-DIR-PRICE-01: Danh sách yêu cầu thay đổi giá toàn công ty kèm đối chiếu giá hiện tại → đề xuất
  *   và tóm tắt phòng/phạm vi cơ sở (batch-load, không N+1).
+ * - API-DIR-PRICE-02: Chi tiết yêu cầu phê duyệt giá kèm quy tắc hiện hành, hồ sơ phòng & mặt bằng giá
+ *   cùng hạng/cơ sở và danh sách quy tắc đang hiệu lực.
  */
 @Service
 public class DirectorPriceRuleChangeRequestService {
 
     private static final Logger log = LoggerFactory.getLogger(DirectorPriceRuleChangeRequestService.class);
+    /** Múi giờ nghiệp vụ Việt Nam (+07:00) dùng để quy đổi bộ lọc ngày fromDate/toDate sang UTC Instant. */
     private static final ZoneId BUSINESS_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    /** Danh sách trắng các cột được phép truyền vào tham số sort (tránh lỗi/lộ cột nhạy cảm). */
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
             "requestedAt", "id", "status", "requestType", "reviewedAt"
     );
@@ -80,6 +95,8 @@ public class DirectorPriceRuleChangeRequestService {
     private final UserRepository userRepository;
     private final RoomRepository roomRepository;
     private final RoomTypeRepository roomTypeRepository;
+    private final MediaRepository mediaRepository;
+    /** ObjectMapper riêng cấu hình chuẩn hóa LocalDate sang chuỗi ISO YYYY-MM-DD và bỏ qua field thừa. */
     private final ObjectMapper objectMapper;
 
     public DirectorPriceRuleChangeRequestService(
@@ -88,7 +105,8 @@ public class DirectorPriceRuleChangeRequestService {
             HomestayRepository homestayRepository,
             UserRepository userRepository,
             RoomRepository roomRepository,
-            RoomTypeRepository roomTypeRepository
+            RoomTypeRepository roomTypeRepository,
+            MediaRepository mediaRepository
     ) {
         this.changeRequestRepository = changeRequestRepository;
         this.priceRuleRepository = priceRuleRepository;
@@ -96,6 +114,7 @@ public class DirectorPriceRuleChangeRequestService {
         this.userRepository = userRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
+        this.mediaRepository = mediaRepository;
         this.objectMapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
@@ -117,8 +136,12 @@ public class DirectorPriceRuleChangeRequestService {
             int size,
             String rawSort
     ) {
+        // --- Bước 0: Validate và chuẩn hóa các tham số lọc & phân trang từ query string ---
+        // Trạng thái cần lọc (null = lấy tất cả trạng thái)
         Status statusFilter = parseOptionalStatus(rawStatus);
+        // ID cơ sở homestay cần lọc (null = lấy toàn công ty)
         Long homestayIdFilter = parseOptionalPositiveId(rawHomestayId, "homestayId phải là số nguyên dương hợp lệ");
+        // Ngày bắt đầu / kết thúc lọc theo lịch Việt Nam (YYYY-MM-DD, inclusive)
         LocalDate fromDate = parseOptionalDate(rawFromDate);
         LocalDate toDate = parseOptionalDate(rawToDate);
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
@@ -128,17 +151,21 @@ public class DirectorPriceRuleChangeRequestService {
             );
         }
 
+        // Mốc UTC đầu ngày fromDate (00:00:00 +07:00, bao gồm mốc này)
         Instant fromInstant = fromDate == null
                 ? null
                 : fromDate.atStartOfDay(BUSINESS_TIME_ZONE).toInstant();
+        // Mốc UTC đầu ngày kế tiếp sau toDate ((toDate + 1) 00:00:00 +07:00, không bao gồm mốc này)
         Instant toExclusiveInstant = toDate == null
                 ? null
                 : toDate.plusDays(1).atStartOfDay(BUSINESS_TIME_ZONE).toInstant();
 
+        // Chỉ số trang an toàn (>= 0) và kích thước trang nằm trong [MIN_PAGE_SIZE, MAX_PAGE_SIZE]
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(MIN_PAGE_SIZE, size), MAX_PAGE_SIZE);
         Pageable pageable = PageRequest.of(safePage, safeSize, parseSort(rawSort));
 
+        // Trang kết quả thô truy vấn từ bảng price_rule_change_requests
         Page<PriceRuleChangeRequest> requestPage = changeRequestRepository.searchForDirector(
                 statusFilter,
                 homestayIdFilter,
@@ -147,15 +174,20 @@ public class DirectorPriceRuleChangeRequestService {
                 pageable
         );
 
+        // Danh sách các bản ghi yêu cầu trên trang hiện tại
         List<PriceRuleChangeRequest> rows = requestPage.getContent();
         if (rows.isEmpty()) {
             return PagedResult.of(requestPage, List.of());
         }
 
-        // 1. Parse proposed_rule 1 lần và gom tập ID để nạp batch (không N+1)
+        // --- Bước 1: Giải mã cột JSON proposed_rule 1 lần và gom các tập ID để truy vấn batch (tránh N+1) ---
+        // Map: requestId (ID yêu cầu) -> kết quả giải mã JSON proposed_rule (roomId, DTO chuẩn hóa, payload trả JSON)
         Map<Long, ParsedProposal> parsedById = new HashMap<>(rows.size());
+        // Tập homestayId xuất hiện trên trang để nạp tên cơ sở và quy tắc giá đang ACTIVE
         Set<Long> homestayIds = new HashSet<>();
+        // Tập userId của cả người gửi (requestedBy) và người duyệt (reviewedBy)
         Set<Long> userIds = new HashSet<>();
+        // Tập targetRuleId (ID quy tắc gốc trong price_rules của các yêu cầu UPDATE / DEACTIVATE)
         Set<Long> targetRuleIds = new HashSet<>();
 
         for (PriceRuleChangeRequest row : rows) {
@@ -172,22 +204,28 @@ public class DirectorPriceRuleChangeRequestService {
             parsedById.put(row.getId(), parseProposalSafely(row));
         }
 
-        // 2. Nạp batch cơ sở, người dùng, quy tắc mục tiêu và toàn bộ quy tắc ACTIVE của các cơ sở trên trang
+        // --- Bước 2: Nạp batch dữ liệu tham chiếu từ DB theo các tập ID đã gom ---
+        // Map: homestayId -> tên cơ sở homestay
         Map<Long, String> homestayNameById = homestayRepository.findAllById(homestayIds).stream()
                 .collect(Collectors.toMap(Homestay::getId, Homestay::getName, (a, b) -> a));
 
+        // Map: userId -> thực thể User (dùng lấy họ tên, email người gửi và họ tên người duyệt)
         Map<Long, User> userById = userIds.isEmpty()
                 ? Map.of()
                 : userRepository.findAllById(userIds).stream()
                         .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
 
+        // Map: targetRuleId -> quy tắc giá gốc trong bảng price_rules (cho yêu cầu UPDATE / DEACTIVATE)
         Map<Long, PriceRule> targetRuleById = targetRuleIds.isEmpty()
                 ? Map.of()
                 : priceRuleRepository.findAllById(targetRuleIds).stream()
                         .collect(Collectors.toMap(PriceRule::getId, r -> r, (a, b) -> a));
 
+        // Toàn bộ quy tắc giá đang ACTIVE của các cơ sở xuất hiện trên trang
         List<PriceRule> activeRules = priceRuleRepository.findByHomestayIdInAndStatus(homestayIds, PriceRule.Status.ACTIVE);
+        // Map: roomId -> quy tắc giá cơ bản (BASE) đang ACTIVE của phòng đó (mỗi phòng tối đa 1 dòng)
         Map<Long, PriceRule> activeBaseRuleByRoomId = new HashMap<>();
+        // Map: homestayId -> danh sách tất cả quy tắc giá cơ bản (BASE) đang ACTIVE thuộc cơ sở đó
         Map<Long, List<PriceRule>> activeBaseRulesByHomestayId = new HashMap<>();
         for (PriceRule rule : activeRules) {
             if (rule.getRuleType() == RuleType.BASE && rule.getRoomId() != null) {
@@ -196,9 +234,12 @@ public class DirectorPriceRuleChangeRequestService {
             }
         }
 
-        // 3. Xác định roomId hiệu lực của từng yêu cầu, gom phòng cụ thể và homestay áp dụng toàn cơ sở
+        // --- Bước 3: Xác định phạm vi (phòng cụ thể hay toàn cơ sở) và nạp batch thông tin phòng/loại phòng ---
+        // Map: requestId -> roomId hiệu lực của yêu cầu (null nếu yêu cầu áp dụng cho toàn cơ sở)
         Map<Long, Long> effectiveRoomIdByRequestId = new HashMap<>(rows.size());
+        // Tập roomId cần nạp chi tiết phòng (tên, loại phòng, sức chứa, trạng thái)
         Set<Long> roomIds = new HashSet<>();
+        // Tập homestayId có ít nhất 1 yêu cầu phạm vi toàn cơ sở (roomId == null) để tính thống kê cơ sở
         Set<Long> homestayWideIds = new HashSet<>();
 
         for (PriceRuleChangeRequest row : rows) {
@@ -213,38 +254,48 @@ public class DirectorPriceRuleChangeRequestService {
             }
         }
 
+        // Map: roomId -> thực thể Room (chứa tên phòng, roomTypeId, maxGuests, status, statusReason)
         Map<Long, Room> roomById = roomIds.isEmpty()
                 ? Map.of()
                 : roomRepository.findAllById(roomIds).stream()
                         .collect(Collectors.toMap(Room::getId, r -> r, (a, b) -> a));
 
+        // Tập roomTypeId cần nạp tên loại/hạng phòng
         Set<Long> roomTypeIds = roomById.values().stream()
                 .map(Room::getRoomTypeId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
+        // Map: roomTypeId -> tên loại phòng (VD: Deluxe, Standard...)
         Map<Long, String> roomTypeNameById = roomTypeIds.isEmpty()
                 ? Map.of()
                 : roomTypeRepository.findAllById(roomTypeIds).stream()
                         .collect(Collectors.toMap(RoomType::getId, RoomType::getName, (a, b) -> a));
 
+        // Map: homestayId -> tóm tắt phạm vi toàn cơ sở (số phòng đang nhận đặt, tổng phòng, dải giá cơ bản min–max)
         Map<Long, HomestayScopeSummary> homestayScopeSummaryById = buildHomestayScopeSummaries(
                 homestayWideIds,
                 activeBaseRulesByHomestayId
         );
 
-        // 4. Lắp ráp DTO phản hồi đầy đủ ngữ cảnh cho từng dòng
+        // --- Bước 4: Lắp ráp danh sách DTO phản hồi đầy đủ ngữ cảnh cho từng yêu cầu ---
         List<DirectorPriceRuleChangeRequestSummaryResponse> items = new ArrayList<>(rows.size());
 
         for (PriceRuleChangeRequest row : rows) {
+            // Người gửi yêu cầu (Manager) và người đã duyệt/từ chối (Director, nếu đã xử lý)
             User requester = row.getRequestedBy() == null ? null : userById.get(row.getRequestedBy());
             User reviewer = row.getReviewedBy() == null ? null : userById.get(row.getReviewedBy());
+            // Kết quả giải mã cột proposed_rule và DTO đã ép kiểu (có thể null nếu JSON cũ bị lệch cấu trúc)
             ParsedProposal parsed = parsedById.get(row.getId());
             ProposedRuleDto proposedDto = parsed != null ? parsed.dto() : null;
+            // Quy tắc gốc trong price_rules ứng với targetRuleId (null nếu là yêu cầu CREATE)
             PriceRule targetRule = row.getTargetRuleId() == null ? null : targetRuleById.get(row.getTargetRuleId());
+            // Phòng bị tác động (null nếu là quy tắc giá điều chỉnh toàn cơ sở)
             Long roomId = effectiveRoomIdByRequestId.get(row.getId());
             Room room = roomId == null ? null : roomById.get(roomId);
+            // Quy tắc giá cơ bản (BASE) đang ACTIVE hiện tại của phòng đó (dùng đối chiếu hoặc quy đổi giá điều chỉnh)
             PriceRule activeBaseForRoom = roomId == null ? null : activeBaseRuleByRoomId.get(roomId);
 
+            // Tóm tắt thông tin phòng (chỉ có khi quy tắc gắn với 1 phòng cụ thể)
             RoomSummary roomSummary = room == null ? null : new RoomSummary(
                     room.getId(),
                     room.getName(),
@@ -255,10 +306,12 @@ public class DirectorPriceRuleChangeRequestService {
                     activeBaseForRoom != null ? activeBaseForRoom.getBasePrice() : null
             );
 
+            // Tóm tắt phạm vi cơ sở (chỉ có khi quy tắc áp dụng toàn cơ sở, roomId == null)
             HomestayScopeSummary scopeSummary = roomId == null
                     ? homestayScopeSummaryById.get(row.getHomestayId())
                     : null;
 
+            // Quy tắc hiện hành dùng để đối chiếu: ưu tiên targetRule; với CREATE BASE đang chờ duyệt thì lấy BASE hiện tại của phòng
             PriceRule referenceCurrentRule = resolveReferenceCurrentRule(row, proposedDto, targetRule, activeBaseForRoom);
             CurrentRuleSummary currentRuleSummary = referenceCurrentRule == null
                     ? null
@@ -305,6 +358,347 @@ public class DirectorPriceRuleChangeRequestService {
         return PagedResult.of(requestPage, items);
     }
 
+    /**
+     * API-DIR-PRICE-02: Chi tiết yêu cầu phê duyệt thay đổi quy tắc giá.
+     * Trả đầy đủ quy tắc hiện hành, proposedRule, thông tin người gửi/duyệt, hồ sơ phòng kèm mặt bằng giá
+     * cùng hạng/cơ sở (hoặc danh sách phòng bị ảnh hưởng nếu áp dụng toàn cơ sở) và các quy tắc đang ACTIVE.
+     */
+    @Transactional(readOnly = true)
+    public DirectorPriceRuleChangeRequestDetailResponse getChangeRequestDetail(Long requestId) {
+        if (requestId == null || requestId <= 0) {
+            throw BusinessException.notFound("PRICE_REQUEST_NOT_FOUND", "Không tìm thấy yêu cầu thay đổi quy tắc giá");
+        }
+
+        // 1. Nạp bản ghi yêu cầu thay đổi giá theo ID (không tìm thấy -> 404 PRICE_REQUEST_NOT_FOUND)
+        PriceRuleChangeRequest row = changeRequestRepository.findById(requestId)
+                .orElseThrow(() -> BusinessException.notFound(
+                        "PRICE_REQUEST_NOT_FOUND",
+                        "Không tìm thấy yêu cầu thay đổi quy tắc giá"
+                ));
+
+        // 2. Giải mã proposed_rule và nạp thông tin cơ sở + người gửi/người duyệt
+        ParsedProposal parsed = parseProposalSafely(row);
+        ProposedRuleDto proposedDto = parsed.dto();
+        Homestay homestay = homestayRepository.findById(row.getHomestayId()).orElse(null);
+
+        Set<Long> userIds = new HashSet<>();
+        if (row.getRequestedBy() != null) {
+            userIds.add(row.getRequestedBy());
+        }
+        if (row.getReviewedBy() != null) {
+            userIds.add(row.getReviewedBy());
+        }
+        // Map: userId -> thực thể User (dùng lấy thông tin người gửi và người duyệt trong 1 truy vấn)
+        Map<Long, User> userById = userIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(userIds).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+        User requester = row.getRequestedBy() == null ? null : userById.get(row.getRequestedBy());
+        User reviewer = row.getReviewedBy() == null ? null : userById.get(row.getReviewedBy());
+
+        // 3. Nạp toàn bộ quy tắc giá đang ACTIVE của cơ sở đó trong 1 truy vấn
+        List<PriceRule> activeHomestayRules = priceRuleRepository.findByHomestayIdInAndStatus(
+                List.of(row.getHomestayId()),
+                PriceRule.Status.ACTIVE
+        );
+        // Map: priceRuleId -> quy tắc ACTIVE của cơ sở (để tra nhanh targetRule nếu vẫn còn ACTIVE)
+        Map<Long, PriceRule> activeRuleById = activeHomestayRules.stream()
+                .collect(Collectors.toMap(PriceRule::getId, r -> r, (a, b) -> a));
+        // Map: roomId -> quy tắc giá cơ bản (BASE) đang ACTIVE của phòng đó
+        Map<Long, PriceRule> activeBaseRuleByRoomId = new HashMap<>();
+        for (PriceRule rule : activeHomestayRules) {
+            if (rule.getRuleType() == RuleType.BASE && rule.getRoomId() != null) {
+                activeBaseRuleByRoomId.put(rule.getRoomId(), rule);
+            }
+        }
+
+        // Quy tắc gốc của UPDATE / DEACTIVATE (ưu tiên lấy từ tập ACTIVE đã nạp; fallback truy vấn DB nếu đã INACTIVE/EXPIRED)
+        PriceRule targetRule = null;
+        if (row.getTargetRuleId() != null) {
+            targetRule = activeRuleById.get(row.getTargetRuleId());
+            if (targetRule == null) {
+                targetRule = priceRuleRepository.findById(row.getTargetRuleId()).orElse(null);
+            }
+        }
+
+        // 4. Nạp toàn bộ phòng & loại phòng của cơ sở đó (phục vụ hồ sơ phòng, so sánh ngang cùng hạng và bảng toàn cơ sở)
+        List<Room> homestayRooms = roomRepository.findByHomestayIdOrderByIdAsc(row.getHomestayId());
+        // Map: roomId -> thực thể Room trong cơ sở
+        Map<Long, Room> roomById = homestayRooms.stream()
+                .collect(Collectors.toMap(Room::getId, r -> r, (a, b) -> a));
+        // Map: roomTypeId -> tên hạng/loại phòng trong cơ sở
+        Map<Long, String> roomTypeNameById = roomTypeRepository.findByHomestayIdOrderByNameAsc(row.getHomestayId())
+                .stream()
+                .collect(Collectors.toMap(RoomType::getId, RoomType::getName, (a, b) -> a));
+
+        // Xác định phòng bị tác động (null nếu quy tắc áp dụng toàn cơ sở)
+        Long roomId = resolveEffectiveRoomId(row, parsed, targetRule);
+        Room targetRoom = roomId == null ? null : roomById.get(roomId);
+        // Quy tắc giá cơ bản (BASE) đang ACTIVE hiện tại của phòng mục tiêu
+        PriceRule activeBaseForRoom = roomId == null ? null : activeBaseRuleByRoomId.get(roomId);
+
+        // 5. Dựng ngữ cảnh phạm vi: hồ sơ chi tiết phòng (roomDetail) HOẶC chi tiết toàn cơ sở (homestayScopeDetail)
+        RoomDetailContext roomDetail = null;
+        HomestayScopeSummary scopeSummaryForComparison = null;
+        HomestayScopeDetail homestayScopeDetail = null;
+
+        if (targetRoom != null) {
+            // Ảnh đại diện đầu tiên của phòng theo sortOrder (nếu có trong bảng media)
+            String coverImageUrl = mediaRepository
+                    .findFirstByOwnerTypeAndOwnerIdOrderBySortOrderAsc(OwnerType.ROOM, targetRoom.getId())
+                    .map(Media::getUrl)
+                    .orElse(null);
+
+            // Mặt bằng giá cơ bản của các phòng ACTIVE khác cùng hạng phòng và toàn cơ sở
+            PeerPriceBenchmark sameTypeBenchmark = computePeerBenchmark(
+                    homestayRooms, activeBaseRuleByRoomId, targetRoom.getId(), targetRoom.getRoomTypeId()
+            );
+            PeerPriceBenchmark homestayBenchmark = computePeerBenchmark(
+                    homestayRooms, activeBaseRuleByRoomId, targetRoom.getId(), null
+            );
+
+            roomDetail = new RoomDetailContext(
+                    targetRoom.getId(),
+                    targetRoom.getName(),
+                    targetRoom.getRoomTypeId(),
+                    roomTypeNameById.get(targetRoom.getRoomTypeId()),
+                    targetRoom.getMaxGuests() == null ? null : Byte.toUnsignedInt(targetRoom.getMaxGuests()),
+                    targetRoom.getStatus(),
+                    targetRoom.getStatusReason(),
+                    targetRoom.getDescription(),
+                    parseAmenitiesSafely(targetRoom),
+                    coverImageUrl,
+                    activeBaseForRoom != null ? activeBaseForRoom.getBasePrice() : null,
+                    sameTypeBenchmark,
+                    homestayBenchmark
+            );
+        } else if (roomId == null) {
+            // Tính thống kê & danh sách từng phòng ACTIVE bị tác động khi áp dụng toàn cơ sở
+            homestayScopeDetail = buildHomestayScopeDetail(
+                    row, proposedDto, homestayRooms, roomTypeNameById, activeBaseRuleByRoomId
+            );
+            scopeSummaryForComparison = new HomestayScopeSummary(
+                    homestayScopeDetail.activeRoomCount(),
+                    homestayScopeDetail.totalRoomCount(),
+                    homestayScopeDetail.minBasePrice(),
+                    homestayScopeDetail.maxBasePrice()
+            );
+        }
+
+        // 6. Quy tắc hiện hành làm mốc đối chiếu + so sánh Trước → Sau (chỉ tính cho PENDING_APPROVAL)
+        PriceRule referenceCurrentRule = resolveReferenceCurrentRule(row, proposedDto, targetRule, activeBaseForRoom);
+        CurrentRuleSummary currentRuleSummary = referenceCurrentRule == null
+                ? null
+                : toCurrentRuleSummary(referenceCurrentRule);
+
+        PriceComparisonSummary priceComparison = row.getStatus() == Status.PENDING_APPROVAL
+                ? buildPriceComparison(
+                        row,
+                        proposedDto,
+                        targetRule,
+                        referenceCurrentRule,
+                        activeBaseForRoom,
+                        scopeSummaryForComparison
+                )
+                : null;
+
+        // 7. Danh sách các quy tắc đang ACTIVE ảnh hưởng lên phòng/phạm vi hiện tại
+        List<ActiveRuleItem> activeRuleItems = buildActiveRuleItems(
+                activeHomestayRules, roomId, roomById, referenceCurrentRule
+        );
+
+        return new DirectorPriceRuleChangeRequestDetailResponse(
+                row.getId(),
+                row.getHomestayId(),
+                homestay != null ? homestay.getName() : null,
+                homestay != null ? homestay.getProvince() : null,
+                homestay != null ? homestay.getAddress() : null,
+                row.getTargetRuleId(),
+                row.getRequestType(),
+                row.getStatus(),
+                row.getRequestedBy(),
+                requester != null ? requester.getFullName() : null,
+                requester != null ? requester.getEmail() : null,
+                requester != null ? requester.getPhone() : null,
+                row.getRequestedAt(),
+                row.getReviewedBy(),
+                reviewer != null ? reviewer.getFullName() : null,
+                reviewer != null ? reviewer.getEmail() : null,
+                row.getReviewedAt(),
+                row.getRejectionReason(),
+                roomId,
+                targetRoom != null ? targetRoom.getName() : null,
+                parsed.payload(),
+                currentRuleSummary,
+                priceComparison,
+                roomDetail,
+                homestayScopeDetail,
+                activeRuleItems
+        );
+    }
+
+    /**
+     * Tính mặt bằng giá cơ bản (min, max, trung bình) của các phòng ACTIVE khác trong cùng cơ sở.
+     * Nếu filterRoomTypeId != null: chỉ so với các phòng cùng hạng phòng; nếu null: so với toàn cơ sở.
+     */
+    private PeerPriceBenchmark computePeerBenchmark(
+            List<Room> homestayRooms,
+            Map<Long, PriceRule> activeBaseRuleByRoomId,
+            Long excludeRoomId,
+            Long filterRoomTypeId
+    ) {
+        List<Long> peerBasePrices = new ArrayList<>();
+        for (Room candidate : homestayRooms) {
+            if (candidate.getStatus() != RoomStatus.ACTIVE) {
+                continue;
+            }
+            if (Objects.equals(candidate.getId(), excludeRoomId)) {
+                continue;
+            }
+            if (filterRoomTypeId != null && !Objects.equals(candidate.getRoomTypeId(), filterRoomTypeId)) {
+                continue;
+            }
+            PriceRule baseRule = activeBaseRuleByRoomId.get(candidate.getId());
+            if (baseRule != null && baseRule.getBasePrice() != null) {
+                peerBasePrices.add(baseRule.getBasePrice());
+            }
+        }
+        if (peerBasePrices.isEmpty()) {
+            return null;
+        }
+        long min = peerBasePrices.stream().min(Long::compareTo).orElse(0L);
+        long max = peerBasePrices.stream().max(Long::compareTo).orElse(0L);
+        long sum = peerBasePrices.stream().mapToLong(Long::longValue).sum();
+        long avg = BigDecimal.valueOf(sum)
+                .divide(BigDecimal.valueOf(peerBasePrices.size()), 0, RoundingMode.HALF_UP)
+                .longValueExact();
+        return new PeerPriceBenchmark(peerBasePrices.size(), min, max, avg);
+    }
+
+    /**
+     * Dựng chi tiết phạm vi toàn cơ sở gồm số phòng đang nhận đặt, khoảng giá cơ bản min–max
+     * và mức giá dự kiến cho từng phòng ACTIVE sau khi áp dụng quy tắc đề xuất.
+     */
+    private HomestayScopeDetail buildHomestayScopeDetail(
+            PriceRuleChangeRequest row,
+            ProposedRuleDto proposedDto,
+            List<Room> homestayRooms,
+            Map<Long, String> roomTypeNameById,
+            Map<Long, PriceRule> activeBaseRuleByRoomId
+    ) {
+        long totalRooms = homestayRooms.size();
+        long activeRooms = 0L;
+        List<Long> activeBasePrices = new ArrayList<>();
+        List<AffectedRoomPreview> affectedRooms = new ArrayList<>();
+
+        for (Room room : homestayRooms) {
+            if (room.getStatus() != RoomStatus.ACTIVE) {
+                continue;
+            }
+            activeRooms++;
+            PriceRule baseRule = activeBaseRuleByRoomId.get(room.getId());
+            Long currentBasePrice = baseRule != null ? baseRule.getBasePrice() : null;
+            if (currentBasePrice != null) {
+                activeBasePrices.add(currentBasePrice);
+            }
+
+            // Chỉ tính giá dự kiến sau áp dụng cho yêu cầu đang PENDING_APPROVAL
+            Long projectedPrice = null;
+            if (row.getStatus() == Status.PENDING_APPROVAL) {
+                if (row.getRequestType() == RequestType.DEACTIVATE) {
+                    projectedPrice = currentBasePrice;
+                } else if (proposedDto != null) {
+                    projectedPrice = calculateAdjustedPrice(
+                            currentBasePrice, proposedDto.getAdjustType(), proposedDto.getAdjustValue()
+                    );
+                }
+            }
+
+            affectedRooms.add(new AffectedRoomPreview(
+                    room.getId(),
+                    room.getName(),
+                    roomTypeNameById.get(room.getRoomTypeId()),
+                    room.getMaxGuests() == null ? null : Byte.toUnsignedInt(room.getMaxGuests()),
+                    currentBasePrice,
+                    projectedPrice
+            ));
+        }
+
+        Long minBase = activeBasePrices.isEmpty()
+                ? null
+                : activeBasePrices.stream().min(Long::compareTo).orElse(null);
+        Long maxBase = activeBasePrices.isEmpty()
+                ? null
+                : activeBasePrices.stream().max(Long::compareTo).orElse(null);
+
+        return new HomestayScopeDetail(activeRooms, totalRooms, minBase, maxBase, affectedRooms);
+    }
+
+    /**
+     * Lọc và sắp xếp các quy tắc đang ACTIVE tác động lên phạm vi hiện tại:
+     * - Phạm vi phòng: lấy giá BASE của phòng + các giá điều chỉnh riêng phòng đó + các giá điều chỉnh toàn cơ sở.
+     * - Phạm vi toàn cơ sở: lấy tất cả các giá điều chỉnh toàn cơ sở đang ACTIVE.
+     */
+    private List<ActiveRuleItem> buildActiveRuleItems(
+            List<PriceRule> activeHomestayRules,
+            Long targetRoomId,
+            Map<Long, Room> roomById,
+            PriceRule referenceCurrentRule
+    ) {
+        Long referenceRuleId = referenceCurrentRule != null ? referenceCurrentRule.getId() : null;
+        return activeHomestayRules.stream()
+                .filter(rule -> {
+                    if (targetRoomId != null) {
+                        return rule.getRoomId() == null || targetRoomId.equals(rule.getRoomId());
+                    }
+                    return rule.getRuleType() == RuleType.ADJUSTMENT && rule.getRoomId() == null;
+                })
+                .sorted(Comparator
+                        .comparingInt((PriceRule r) -> r.getRuleType() == RuleType.BASE ? 0 : 1)
+                        .thenComparing(r -> r.getPriority() != null ? r.getPriority() : (short) 0, Comparator.reverseOrder())
+                        .thenComparingInt(r -> r.getRoomId() != null ? 0 : 1)
+                        .thenComparing(PriceRule::getId))
+                .map(rule -> {
+                    Room room = rule.getRoomId() == null ? null : roomById.get(rule.getRoomId());
+                    return new ActiveRuleItem(
+                            rule.getId(),
+                            rule.getRoomId(),
+                            room != null ? room.getName() : null,
+                            rule.getRuleType(),
+                            rule.getName(),
+                            rule.getBasePrice(),
+                            rule.getAdjustType(),
+                            rule.getAdjustValue(),
+                            parseWeekdaysCsv(rule.getWeekdays()),
+                            rule.getStartDate(),
+                            rule.getEndDate(),
+                            rule.getPriority(),
+                            Objects.equals(rule.getId(), referenceRuleId)
+                    );
+                })
+                .toList();
+    }
+
+    /** Đọc danh sách tiện nghi phòng từ cột JSON amenities một cách an toàn. */
+    private List<String> parseAmenitiesSafely(Room room) {
+        if (room == null || room.getAmenities() == null || room.getAmenities().isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> list = objectMapper.readValue(room.getAmenities(), new TypeReference<>() {});
+            return list == null ? List.of() : list;
+        } catch (Exception exception) {
+            log.warn("Không thể đọc JSON amenities của phòng id={}: {}", room.getId(), exception.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Xác định roomId hiệu lực của yêu cầu:
+     * - Với DEACTIVATE: lấy theo quy tắc gốc (vì proposed_rule có thể chỉ chứa {"action":"DEACTIVATE"}).
+     * - Với BASE: ưu tiên proposed_rule.roomId, fallback sang targetRule.roomId nếu thiếu.
+     * - Với ADJUSTMENT (CREATE/UPDATE): lấy đúng proposed_rule.roomId (null = áp dụng toàn cơ sở).
+     */
     private Long resolveEffectiveRoomId(PriceRuleChangeRequest row, ParsedProposal parsed, PriceRule targetRule) {
         if (row.getRequestType() == RequestType.DEACTIVATE) {
             return targetRule != null ? targetRule.getRoomId() : (parsed != null ? parsed.roomId() : null);
@@ -319,6 +713,10 @@ public class DirectorPriceRuleChangeRequestService {
         return proposedRoomId;
     }
 
+    /**
+     * Tính thống kê phạm vi toàn cơ sở cho các homestay có yêu cầu áp dụng toàn cơ sở (roomId == null):
+     * gồm số phòng ACTIVE, tổng số phòng và khoảng giá cơ bản (min–max) của các phòng đang ACTIVE.
+     */
     private Map<Long, HomestayScopeSummary> buildHomestayScopeSummaries(
             Set<Long> homestayWideIds,
             Map<Long, List<PriceRule>> activeBaseRulesByHomestayId
@@ -326,11 +724,13 @@ public class DirectorPriceRuleChangeRequestService {
         if (homestayWideIds.isEmpty()) {
             return Map.of();
         }
+        // Map: homestayId -> thống kê đếm phòng (tổng số phòng và số phòng đang ACTIVE)
         Map<Long, HomestayRoomCountProjection> statsByHomestayId = roomRepository
                 .countRoomStatsByHomestayIds(homestayWideIds)
                 .stream()
                 .collect(Collectors.toMap(HomestayRoomCountProjection::getHomestayId, s -> s, (a, b) -> a));
 
+        // Map: homestayId -> tập roomId của các phòng đang ở trạng thái ACTIVE (để lọc đúng giá cơ bản phòng đang nhận đặt)
         Map<Long, Set<Long>> activeRoomIdsByHomestayId = new HashMap<>();
         for (Room activeRoom : roomRepository.findByHomestayIdInAndStatus(homestayWideIds, RoomStatus.ACTIVE)) {
             activeRoomIdsByHomestayId
@@ -338,18 +738,22 @@ public class DirectorPriceRuleChangeRequestService {
                     .add(activeRoom.getId());
         }
 
+        // Map kết quả: homestayId -> HomestayScopeSummary
         Map<Long, HomestayScopeSummary> result = new HashMap<>(homestayWideIds.size());
         for (Long hsId : homestayWideIds) {
             HomestayRoomCountProjection stats = statsByHomestayId.get(hsId);
             long activeRooms = stats != null && stats.getActiveRooms() != null ? stats.getActiveRooms() : 0L;
             long totalRooms = stats != null && stats.getTotalRooms() != null ? stats.getTotalRooms() : 0L;
 
+            // Tập ID phòng đang ACTIVE thuộc cơ sở hsId
             Set<Long> activeRoomIds = activeRoomIdsByHomestayId.getOrDefault(hsId, Set.of());
+            // Danh sách mức giá cơ bản hiện hành của các phòng đang ACTIVE trong cơ sở hsId
             List<Long> activeRoomBasePrices = activeBaseRulesByHomestayId.getOrDefault(hsId, List.of()).stream()
                     .filter(rule -> rule.getBasePrice() != null && activeRoomIds.contains(rule.getRoomId()))
                     .map(PriceRule::getBasePrice)
                     .toList();
 
+            // Giá cơ bản thấp nhất và cao nhất trong các phòng đang nhận đặt của cơ sở
             Long minBase = activeRoomBasePrices.isEmpty()
                     ? null
                     : activeRoomBasePrices.stream().min(Long::compareTo).orElse(null);
@@ -362,6 +766,12 @@ public class DirectorPriceRuleChangeRequestService {
         return result;
     }
 
+    /**
+     * Chọn quy tắc hiện hành làm mốc đối chiếu:
+     * - UPDATE / DEACTIVATE: dùng đúng targetRule.
+     * - CREATE BASE (đang PENDING_APPROVAL): dùng quy tắc BASE đang ACTIVE của phòng (nếu có) vì khi duyệt sẽ thay thế nó.
+     * - CREATE ADJUSTMENT: trả null (không thay thế quy tắc nào).
+     */
     private PriceRule resolveReferenceCurrentRule(
             PriceRuleChangeRequest row,
             ProposedRuleDto proposedDto,
@@ -397,6 +807,10 @@ public class DirectorPriceRuleChangeRequestService {
         );
     }
 
+    /**
+     * Tính thông tin đối chiếu giá Trước → Sau và % chênh lệch cho các yêu cầu đang PENDING_APPROVAL,
+     * bao phủ cả 3 loại thao tác (CREATE, UPDATE, DEACTIVATE) và 2 loại quy tắc (BASE, ADJUSTMENT).
+     */
     private PriceComparisonSummary buildPriceComparison(
             PriceRuleChangeRequest row,
             ProposedRuleDto proposed,
@@ -405,16 +819,20 @@ public class DirectorPriceRuleChangeRequestService {
             PriceRule activeBaseForRoom,
             HomestayScopeSummary scopeSummary
     ) {
+        // Giá cơ bản hiện hành của phòng bị tác động (null nếu toàn cơ sở hoặc phòng chưa có giá BASE)
         Long roomBasePrice = activeBaseForRoom != null ? activeBaseForRoom.getBasePrice() : null;
+        // Loại quy tắc hiệu lực (BASE hoặc ADJUSTMENT)
         RuleType effectiveType = proposed != null && proposed.getRuleType() != null
                 ? proposed.getRuleType()
                 : (referenceCurrentRule != null ? referenceCurrentRule.getRuleType() : null);
 
+        // --- Nhánh 1: Ngừng áp dụng (DEACTIVATE) quy tắc giá điều chỉnh ---
         if (row.getRequestType() == RequestType.DEACTIVATE) {
             if (referenceCurrentRule == null || referenceCurrentRule.getRuleType() != RuleType.ADJUSTMENT) {
                 return null;
             }
             if (referenceCurrentRule.getRoomId() != null && roomBasePrice != null) {
+                // Giá đêm hiện tại khi quy tắc điều chỉnh còn bật -> sau khi ngừng sẽ quay về giá cơ bản roomBasePrice
                 Long currentNightly = calculateAdjustedPrice(
                         roomBasePrice,
                         referenceCurrentRule.getAdjustType(),
@@ -453,16 +871,21 @@ public class DirectorPriceRuleChangeRequestService {
             return null;
         }
 
+        // --- Nhánh 2: Giá cơ bản (BASE — CREATE hoặc UPDATE) ---
         if (effectiveType == RuleType.BASE) {
+            // Giá cơ bản hiện hành (VNĐ) và giá cơ bản đề xuất mới (VNĐ)
             Long currentAmount = referenceCurrentRule != null ? referenceCurrentRule.getBasePrice() : null;
             Long proposedAmount = proposed.getBasePrice();
+            // Chênh lệch tuyệt đối (VNĐ) và tỷ lệ phần trăm (%) so với giá hiện hành
             Long deltaAmount = (currentAmount != null && proposedAmount != null)
                     ? proposedAmount - currentAmount
                     : null;
             Double deltaPercent = (currentAmount != null && proposedAmount != null)
                     ? computeDeltaPercent(currentAmount, proposedAmount)
                     : null;
+            // true nếu là CREATE BASE nhưng phòng đã có giá BASE ACTIVE (duyệt sẽ tự thay thế)
             boolean replacesActiveBase = row.getRequestType() == RequestType.CREATE && referenceCurrentRule != null;
+            // Danh sách các trường thực sự thay đổi giữa quy tắc gốc và đề xuất (với UPDATE)
             List<String> changedFields = row.getRequestType() == RequestType.UPDATE && targetRule != null
                     ? computeChangedFields(targetRule, proposed)
                     : List.of();
@@ -478,15 +901,18 @@ public class DirectorPriceRuleChangeRequestService {
             );
         }
 
-        // Quy tắc ADJUSTMENT (CREATE hoặc UPDATE)
+        // --- Nhánh 3: Giá điều chỉnh (ADJUSTMENT — CREATE hoặc UPDATE) ---
+        // true nếu áp dụng cho 1 phòng cụ thể; false nếu áp dụng toàn cơ sở (roomId == null)
         boolean isRoomScoped = proposed.getRoomId() != null;
         List<String> changedFields = row.getRequestType() == RequestType.UPDATE && targetRule != null
                 ? computeChangedFields(targetRule, proposed)
                 : List.of();
 
+        // 3a. Thêm mới giá điều chỉnh (CREATE ADJUSTMENT)
         if (row.getRequestType() == RequestType.CREATE) {
             if (isRoomScoped) {
                 if (roomBasePrice != null) {
+                    // Quy đổi ra giá đêm thực tế sau khi áp dụng quy tắc mới lên giá cơ bản của phòng
                     Long proposedNightly = calculateAdjustedPrice(roomBasePrice, proposed.getAdjustType(), proposed.getAdjustValue());
                     Long deltaAmount = proposedNightly != null ? proposedNightly - roomBasePrice : null;
                     Double deltaPercent = proposedNightly != null ? computeDeltaPercent(roomBasePrice, proposedNightly) : null;
@@ -508,7 +934,7 @@ public class DirectorPriceRuleChangeRequestService {
                 return new PriceComparisonSummary(null, proposedFixed, null, deltaPct, null, null, false, List.of());
             }
 
-            // Toàn cơ sở (CREATE ADJUSTMENT)
+            // Toàn cơ sở: ước tính khoảng giá bán sau duyệt (min–max) từ dải giá cơ bản của cơ sở
             Long projectedMin = projectScopePrice(scopeSummary != null ? scopeSummary.minBasePrice() : null, proposed);
             Long projectedMax = projectScopePrice(scopeSummary != null ? scopeSummary.maxBasePrice() : null, proposed);
             Long proposedFixed = proposed.getAdjustType() == AdjustType.FIXED_PRICE ? proposed.getAdjustValue() : null;
@@ -518,8 +944,9 @@ public class DirectorPriceRuleChangeRequestService {
             return new PriceComparisonSummary(null, proposedFixed, null, deltaPct, projectedMin, projectedMax, false, List.of());
         }
 
-        // UPDATE ADJUSTMENT
+        // 3b. Cập nhật giá điều chỉnh cho 1 phòng cụ thể (UPDATE ADJUSTMENT theo phòng)
         if (isRoomScoped) {
+            // Giá đêm quy đổi theo quy tắc cũ (currentNightly) vs theo quy tắc đề xuất mới (proposedNightly)
             Long currentNightly = null;
             Long proposedNightly = null;
             if (roomBasePrice != null) {
@@ -553,7 +980,7 @@ public class DirectorPriceRuleChangeRequestService {
             );
         }
 
-        // UPDATE ADJUSTMENT toàn cơ sở
+        // 3c. Cập nhật giá điều chỉnh toàn cơ sở (UPDATE ADJUSTMENT toàn cơ sở)
         Long projectedMin = projectScopePrice(scopeSummary != null ? scopeSummary.minBasePrice() : null, proposed);
         Long projectedMax = projectScopePrice(scopeSummary != null ? scopeSummary.maxBasePrice() : null, proposed);
         Long currentAmount = null;
@@ -592,6 +1019,7 @@ public class DirectorPriceRuleChangeRequestService {
         );
     }
 
+    /** So sánh từng thuộc tính giữa quy tắc gốc (target) và đề xuất mới (proposed) để trả về các trường bị thay đổi. */
     private List<String> computeChangedFields(PriceRule target, ProposedRuleDto proposed) {
         List<String> changed = new ArrayList<>();
         if (!Objects.equals(trimToNull(target.getName()), trimToNull(proposed.getName()))) {
@@ -627,6 +1055,7 @@ public class DirectorPriceRuleChangeRequestService {
         return changed;
     }
 
+    /** Tính giá đêm sau khi áp dụng giá điều chỉnh (khớp công thức làm tròn HALF_UP của AvailabilitySearchService). */
     private Long calculateAdjustedPrice(Long basePrice, AdjustType adjustType, Long adjustValue) {
         if (adjustType == null || adjustValue == null) {
             return null;
@@ -643,6 +1072,7 @@ public class DirectorPriceRuleChangeRequestService {
                 .longValueExact();
     }
 
+    /** Ước tính giá bán toàn cơ sở sau duyệt từ 1 đầu mút giá cơ bản (minBasePrice hoặc maxBasePrice). */
     private Long projectScopePrice(Long scopeBasePrice, ProposedRuleDto proposed) {
         if (proposed == null || proposed.getAdjustType() == null || proposed.getAdjustValue() == null) {
             return null;
@@ -653,6 +1083,10 @@ public class DirectorPriceRuleChangeRequestService {
         return calculateAdjustedPrice(scopeBasePrice, proposed.getAdjustType(), proposed.getAdjustValue());
     }
 
+    /**
+     * Tính % biến động giá bán thực tế khi cập nhật từ quy tắc PERCENT cũ sang PERCENT mới
+     * (VD: +10% → +25% tương ứng hệ số 110 → 125, tức giá bán thực tế tăng +13.6%).
+     */
     private Double computePercentToPercentEffectiveDelta(PriceRule targetRule, ProposedRuleDto proposed) {
         if (targetRule == null
                 || proposed == null
@@ -662,11 +1096,13 @@ public class DirectorPriceRuleChangeRequestService {
                 || proposed.getAdjustValue() == null) {
             return null;
         }
+        // Hệ số phần trăm thực tế so với giá gốc (100% + mức điều chỉnh)
         long oldMultiplier = 100L + targetRule.getAdjustValue();
         long newMultiplier = 100L + proposed.getAdjustValue();
         return computeDeltaPercent(oldMultiplier, newMultiplier);
     }
 
+    /** Tính phần trăm chênh lệch ((after - before) / before * 100), làm tròn 1 chữ số thập phân. */
     private Double computeDeltaPercent(long before, long after) {
         if (before <= 0) {
             return null;
@@ -677,6 +1113,7 @@ public class DirectorPriceRuleChangeRequestService {
                 .doubleValue();
     }
 
+    /** Tách chuỗi thứ trong tuần dạng CSV từ DB (VD: "FRI,SAT") thành danh sách viết hoa. */
     private List<String> parseWeekdaysCsv(String csv) {
         if (csv == null || csv.isBlank()) {
             return List.of();
@@ -688,6 +1125,7 @@ public class DirectorPriceRuleChangeRequestService {
                 .toList();
     }
 
+    /** Chuẩn hóa danh sách thứ thành Set viết hoa để so sánh không phụ thuộc thứ tự phần tử. */
     private Set<String> normalizeWeekdaySet(List<String> weekdays) {
         if (weekdays == null || weekdays.isEmpty()) {
             return Set.of();
@@ -800,5 +1238,11 @@ public class DirectorPriceRuleChangeRequestService {
         return Sort.by(new Sort.Order(direction, property), Sort.Order.desc("id"));
     }
 
+    /**
+     * Kết quả trung gian sau khi đọc JSON cột proposed_rule:
+     * - roomId: ID phòng trích được từ JSON (null nếu toàn cơ sở hoặc không có)
+     * - dto: đối tượng ProposedRuleDto đã ép kiểu chuẩn (null nếu phải dùng fallback)
+     * - payload: dữ liệu trả thẳng ra field proposedRule trong response JSON
+     */
     private record ParsedProposal(Long roomId, ProposedRuleDto dto, Object payload) {}
 }

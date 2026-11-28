@@ -18,6 +18,9 @@ import vn.edu.hust.homestay.auth.security.JwtService;
 import vn.edu.hust.homestay.homestay.entity.Homestay;
 import vn.edu.hust.homestay.homestay.entity.Homestay.HomestayStatus;
 import vn.edu.hust.homestay.homestay.repository.HomestayRepository;
+import vn.edu.hust.homestay.media.entity.Media;
+import vn.edu.hust.homestay.media.entity.Media.OwnerType;
+import vn.edu.hust.homestay.media.repository.MediaRepository;
 import vn.edu.hust.homestay.pricing.entity.PriceRule;
 import vn.edu.hust.homestay.pricing.entity.PriceRule.AdjustType;
 import vn.edu.hust.homestay.pricing.entity.PriceRule.RuleType;
@@ -44,7 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Kiểm thử tích hợp cho API-DIR-PRICE-01 (GET /api/v1/director/price-rule-change-requests).
+ * Kiểm thử tích hợp cho API-DIR-PRICE-01 (danh sách) và API-DIR-PRICE-02 (chi tiết) phê duyệt quy tắc giá Giám đốc.
  */
 @SpringBootTest
 @Transactional
@@ -55,6 +58,7 @@ class DirectorPriceRuleChangeRequestTests {
     @Autowired private HomestayRepository homestayRepository;
     @Autowired private RoomTypeRepository roomTypeRepository;
     @Autowired private RoomRepository roomRepository;
+    @Autowired private MediaRepository mediaRepository;
     @Autowired private PriceRuleRepository priceRuleRepository;
     @Autowired private PriceRuleChangeRequestRepository changeRequestRepository;
     @Autowired private JwtService jwtService;
@@ -527,6 +531,243 @@ class DirectorPriceRuleChangeRequestTests {
 
         for (String forbiddenToken : new String[]{adminToken, managerToken, customerToken}) {
             mockMvc.perform(get("/api/v1/director/price-rule-change-requests")
+                            .header("Authorization", "Bearer " + forbiddenToken))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    @DisplayName("API-DIR-PRICE-02: chi tiết yêu cầu UPDATE BASE trả hồ sơ phòng, mặt bằng giá cùng hạng/cơ sở và danh sách quy tắc ACTIVE")
+    void returnsRichRoomDetailBenchmarksAndActiveRules() throws Exception {
+        // Bổ sung mô tả, tiện nghi và ảnh đại diện cho room1
+        room1.setDescription("Phòng view núi có ban công rộng");
+        room1.setAmenities("[\"wifi\",\"balcony\"]");
+        room1 = roomRepository.saveAndFlush(room1);
+
+        Media cover = new Media();
+        cover.setHomestayId(homestay1.getId());
+        cover.setOwnerType(OwnerType.ROOM);
+        cover.setOwnerId(room1.getId());
+        cover.setUrl("/uploads/test-room-301.jpg");
+        cover.setSortOrder(0);
+        cover.setUploadedBy(manager1.getId());
+        mediaRepository.saveAndFlush(cover);
+
+        // Giá BASE hiện tại của room1 = 800k
+        PriceRule room1Base = createBaseRule(homestay1.getId(), room1.getId(), "Giá cơ bản Phòng 301", 800_000L);
+
+        // Điều chỉnh existingAdjustmentRule (+15%, priority 10) thành chỉ áp dụng toàn cơ sở vào T6, T7 (+20%) cho dễ đối chiếu mô phỏng
+        existingAdjustmentRule.setRoomId(null);
+        existingAdjustmentRule.setName("Cuối tuần +20%");
+        existingAdjustmentRule.setAdjustValue(20L);
+        existingAdjustmentRule.setWeekdays("FRI,SAT");
+        existingAdjustmentRule = priceRuleRepository.saveAndFlush(existingAdjustmentRule);
+
+        // Tạo thêm 2 phòng ACTIVE khác cùng hạng phòng (850k, 950k) và 1 phòng hạng khác (600k) + 1 phòng LOCKED (2.000k, bị loại khỏi benchmark)
+        Room sameTypePeer1 = createRoom(homestay1.getId(), room1.getRoomTypeId(), "Peer Deluxe A", (byte) 2, RoomStatus.ACTIVE);
+        Room sameTypePeer2 = createRoom(homestay1.getId(), room1.getRoomTypeId(), "Peer Deluxe B", (byte) 2, RoomStatus.ACTIVE);
+        Room sameTypeLocked = createRoom(homestay1.getId(), room1.getRoomTypeId(), "Peer Locked", (byte) 2, RoomStatus.LOCKED);
+        createBaseRule(homestay1.getId(), sameTypePeer1.getId(), "BASE Peer A", 850_000L);
+        createBaseRule(homestay1.getId(), sameTypePeer2.getId(), "BASE Peer B", 950_000L);
+        createBaseRule(homestay1.getId(), sameTypeLocked.getId(), "BASE Locked", 2_000_000L);
+
+        RoomType otherType = new RoomType();
+        otherType.setHomestayId(homestay1.getId());
+        otherType.setName("Standard");
+        otherType = roomTypeRepository.saveAndFlush(otherType);
+        Room otherTypePeer = createRoom(homestay1.getId(), otherType.getId(), "Standard 101", (byte) 2, RoomStatus.ACTIVE);
+        createBaseRule(homestay1.getId(), otherTypePeer.getId(), "BASE Standard", 600_000L);
+
+        // Yêu cầu UPDATE BASE 800k → 1.000k (+25%)
+        PriceRuleChangeRequest req = createChangeRequest(
+                homestay1.getId(),
+                room1Base.getId(),
+                RequestType.UPDATE,
+                """
+                {
+                  "roomId": %d,
+                  "ruleType": "BASE",
+                  "name": "Giá cơ bản Phòng 301",
+                  "basePrice": 1000000
+                }
+                """.formatted(room1.getId()),
+                Status.PENDING_APPROVAL,
+                manager1.getId(),
+                Instant.parse("2048-04-01T08:00:00Z"),
+                null, null, null
+        );
+
+        mockMvc.perform(get("/api/v1/director/price-rule-change-requests/{id}", req.getId())
+                        .header("Authorization", "Bearer " + directorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.meta").doesNotExist())
+                .andExpect(jsonPath("$.data.id", is(req.getId().intValue())))
+                .andExpect(jsonPath("$.data.homestayName", is(homestay1.getName())))
+                .andExpect(jsonPath("$.data.homestayProvince", is("Lào Cai")))
+                .andExpect(jsonPath("$.data.requestedByName", is(manager1.getFullName())))
+                .andExpect(jsonPath("$.data.requestedByEmail", is(manager1.getEmail())))
+                .andExpect(jsonPath("$.data.currentRule.id", is(room1Base.getId().intValue())))
+                .andExpect(jsonPath("$.data.currentRule.basePrice", is(800000)))
+                .andExpect(jsonPath("$.data.priceComparison.currentAmount", is(800000)))
+                .andExpect(jsonPath("$.data.priceComparison.proposedAmount", is(1000000)))
+                .andExpect(jsonPath("$.data.priceComparison.deltaAmount", is(200000)))
+                .andExpect(jsonPath("$.data.priceComparison.deltaPercent", is(25.0)))
+                // Hồ sơ phòng + ảnh + tiện nghi + benchmark
+                .andExpect(jsonPath("$.data.roomDetail.id", is(room1.getId().intValue())))
+                .andExpect(jsonPath("$.data.roomDetail.description", is("Phòng view núi có ban công rộng")))
+                .andExpect(jsonPath("$.data.roomDetail.amenities", contains("wifi", "balcony")))
+                .andExpect(jsonPath("$.data.roomDetail.coverImageUrl", is("/uploads/test-room-301.jpg")))
+                .andExpect(jsonPath("$.data.roomDetail.currentBasePrice", is(800000)))
+                .andExpect(jsonPath("$.data.roomDetail.sameTypeBenchmark.roomCount", is(2)))
+                .andExpect(jsonPath("$.data.roomDetail.sameTypeBenchmark.minBasePrice", is(850000)))
+                .andExpect(jsonPath("$.data.roomDetail.sameTypeBenchmark.maxBasePrice", is(950000)))
+                .andExpect(jsonPath("$.data.roomDetail.sameTypeBenchmark.avgBasePrice", is(900000)))
+                .andExpect(jsonPath("$.data.roomDetail.homestayBenchmark.roomCount", is(3)))
+                .andExpect(jsonPath("$.data.roomDetail.homestayBenchmark.minBasePrice", is(600000)))
+                .andExpect(jsonPath("$.data.roomDetail.homestayBenchmark.maxBasePrice", is(950000)))
+                .andExpect(jsonPath("$.data.roomDetail.homestayBenchmark.avgBasePrice", is(800000)))
+                .andExpect(jsonPath("$.data.homestayScopeDetail", nullValue()))
+                // Danh sách quy tắc ACTIVE tác động lên phòng (BASE được đánh dấu isTargetRule=true + quy tắc toàn cơ sở)
+                .andExpect(jsonPath("$.data.activeRules", hasSize(2)))
+                .andExpect(jsonPath("$.data.activeRules[0].id", is(room1Base.getId().intValue())))
+                .andExpect(jsonPath("$.data.activeRules[0].isTargetRule", is(true)))
+                .andExpect(jsonPath("$.data.activeRules[1].id", is(existingAdjustmentRule.getId().intValue())))
+                .andExpect(jsonPath("$.data.activeRules[1].isTargetRule", is(false)))
+                .andExpect(jsonPath("$.data.ratePreview").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("API-DIR-PRICE-02: chi tiết toàn cơ sở, chuẩn hóa ngày mảng cũ, yêu cầu đã từ chối, 404 và RBAC")
+    void handlesHomestayWideLegacyDatesRejectedNotFoundAndRbac() throws Exception {
+        // 1. Tạo 3 phòng ở HS2 (2 ACTIVE: 600k & 1.000k; 1 LOCKED: 2.000k)
+        RoomType hs2Type = new RoomType();
+        hs2Type.setHomestayId(homestay2.getId());
+        hs2Type.setName("Bungalow");
+        hs2Type = roomTypeRepository.saveAndFlush(hs2Type);
+        Room hs2A = createRoom(homestay2.getId(), hs2Type.getId(), "Bungalow 1", (byte) 2, RoomStatus.ACTIVE);
+        Room hs2B = createRoom(homestay2.getId(), hs2Type.getId(), "Bungalow 2", (byte) 4, RoomStatus.ACTIVE);
+        Room hs2Locked = createRoom(homestay2.getId(), hs2Type.getId(), "Bungalow Khóa", (byte) 2, RoomStatus.LOCKED);
+        createBaseRule(homestay2.getId(), hs2A.getId(), "BASE B1", 600_000L);
+        createBaseRule(homestay2.getId(), hs2B.getId(), "BASE B2", 1_000_000L);
+        createBaseRule(homestay2.getId(), hs2Locked.getId(), "BASE Locked", 2_000_000L);
+
+        // Yêu cầu toàn cơ sở (+20% Cuối tuần)
+        PriceRuleChangeRequest scopeReq = createChangeRequest(
+                homestay2.getId(),
+                null,
+                RequestType.CREATE,
+                """
+                {
+                  "ruleType": "ADJUSTMENT",
+                  "name": "Phụ thu cuối tuần toàn cơ sở",
+                  "adjustType": "PERCENT",
+                  "adjustValue": 20,
+                  "weekdays": ["SAT", "SUN"],
+                  "priority": 10
+                }
+                """,
+                Status.PENDING_APPROVAL,
+                manager2.getId(),
+                Instant.parse("2048-05-01T08:00:00Z"),
+                null, null, null
+        );
+
+        mockMvc.perform(get("/api/v1/director/price-rule-change-requests/{id}", scopeReq.getId())
+                        .header("Authorization", "Bearer " + directorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.roomDetail", nullValue()))
+                .andExpect(jsonPath("$.data.homestayScopeDetail.activeRoomCount", is(2)))
+                .andExpect(jsonPath("$.data.homestayScopeDetail.totalRoomCount", is(3)))
+                .andExpect(jsonPath("$.data.homestayScopeDetail.affectedRooms", hasSize(2)))
+                .andExpect(jsonPath("$.data.homestayScopeDetail.affectedRooms[0].roomName", is("Bungalow 1")))
+                .andExpect(jsonPath("$.data.homestayScopeDetail.affectedRooms[0].currentBasePrice", is(600000)))
+                .andExpect(jsonPath("$.data.homestayScopeDetail.affectedRooms[0].projectedPrice", is(720000)))
+                .andExpect(jsonPath("$.data.homestayScopeDetail.affectedRooms[1].roomName", is("Bungalow 2")))
+                .andExpect(jsonPath("$.data.homestayScopeDetail.affectedRooms[1].projectedPrice", is(1200000)));
+
+        // 2. Quy tắc có startDate/endDate dạng mảng cũ [2048, 6, 5] được chuẩn hóa sang ISO YYYY-MM-DD
+        createBaseRule(homestay1.getId(), room1.getId(), "BASE P301", 800_000L);
+        PriceRuleChangeRequest futureAdjReq = createChangeRequest(
+                homestay1.getId(),
+                null,
+                RequestType.CREATE,
+                """
+                {
+                  "roomId": %d,
+                  "ruleType": "ADJUSTMENT",
+                  "name": "Lễ hè đặc biệt",
+                  "adjustType": "FIXED_PRICE",
+                  "adjustValue": 1200000,
+                  "weekdays": ["FRI", "SAT"],
+                  "startDate": [2048, 6, 5],
+                  "endDate": [2048, 6, 15],
+                  "priority": 25
+                }
+                """.formatted(room1.getId()),
+                Status.PENDING_APPROVAL,
+                manager1.getId(),
+                Instant.parse("2048-05-02T08:00:00Z"),
+                null, null, null
+        );
+
+        mockMvc.perform(get("/api/v1/director/price-rule-change-requests/{id}", futureAdjReq.getId())
+                        .header("Authorization", "Bearer " + directorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.proposedRule.startDate", is("2048-06-05")))
+                .andExpect(jsonPath("$.data.proposedRule.endDate", is("2048-06-15")))
+                .andExpect(jsonPath("$.data.priceComparison.currentAmount", is(800000)))
+                .andExpect(jsonPath("$.data.priceComparison.proposedAmount", is(1200000)))
+                .andExpect(jsonPath("$.data.priceComparison.deltaPercent", is(50.0)));
+
+        // 3. Yêu cầu đã REJECTED: giữ thông tin duyệt & hồ sơ phòng, KHÔNG dựng priceComparison giả
+        PriceRuleChangeRequest rejectedReq = createChangeRequest(
+                homestay1.getId(),
+                null,
+                RequestType.CREATE,
+                """
+                {
+                  "roomId": %d,
+                  "ruleType": "ADJUSTMENT",
+                  "name": "Tăng giá bị từ chối",
+                  "adjustType": "PERCENT",
+                  "adjustValue": 80,
+                  "priority": 30
+                }
+                """.formatted(room1.getId()),
+                Status.REJECTED,
+                manager1.getId(),
+                Instant.parse("2048-05-03T08:00:00Z"),
+                director.getId(),
+                Instant.parse("2048-05-03T09:00:00Z"),
+                "Mức tăng chưa phù hợp"
+        );
+
+        mockMvc.perform(get("/api/v1/director/price-rule-change-requests/{id}", rejectedReq.getId())
+                        .header("Authorization", "Bearer " + directorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status", is("REJECTED")))
+                .andExpect(jsonPath("$.data.reviewedByName", is(director.getFullName())))
+                .andExpect(jsonPath("$.data.rejectionReason", is("Mức tăng chưa phù hợp")))
+                .andExpect(jsonPath("$.data.roomDetail.id", is(room1.getId().intValue())))
+                .andExpect(jsonPath("$.data.priceComparison", nullValue()));
+
+        // 4. Không tìm thấy → 404 PRICE_REQUEST_NOT_FOUND
+        mockMvc.perform(get("/api/v1/director/price-rule-change-requests/{id}", 999999999L)
+                        .header("Authorization", "Bearer " + directorToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("PRICE_REQUEST_NOT_FOUND")));
+
+        // 5. RBAC: chưa đăng nhập / LOCKED → 401; ADMIN / MANAGER / CUSTOMER → 403
+        mockMvc.perform(get("/api/v1/director/price-rule-change-requests/{id}", scopeReq.getId()))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/v1/director/price-rule-change-requests/{id}", scopeReq.getId())
+                        .header("Authorization", "Bearer " + lockedDirectorToken))
+                .andExpect(status().isUnauthorized());
+
+        for (String forbiddenToken : new String[]{adminToken, managerToken, customerToken}) {
+            mockMvc.perform(get("/api/v1/director/price-rule-change-requests/{id}", scopeReq.getId())
                             .header("Authorization", "Bearer " + forbiddenToken))
                     .andExpect(status().isForbidden());
         }

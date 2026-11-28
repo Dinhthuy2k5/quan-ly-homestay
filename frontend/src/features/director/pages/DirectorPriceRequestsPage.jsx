@@ -11,6 +11,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   Clock,
+  Eye,
   RefreshCw,
   RotateCcw,
   User as UserIcon,
@@ -18,6 +19,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { getDirectorHomestaysApi, getDirectorPriceRequestsApi } from '../api';
+import PriceRequestDetailDrawer from '../components/PriceRequestDetailDrawer';
 import { formatDate, formatDateTime, formatVnd } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
 import {
@@ -417,6 +419,9 @@ export function DirectorPriceRequestsPage() {
   const [sort, setSort] = useState('requestedAt,desc');
   const [page, setPage] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
+
+  // Yêu cầu đang mở trong ngăn kéo chi tiết (API-DIR-PRICE-02)
+  const [selectedRequestId, setSelectedRequestId] = useState(null);
 
   // 1. Tải danh sách cơ sở homestay phục vụ dropdown lọc
   useEffect(() => {
@@ -841,14 +846,15 @@ export function DirectorPriceRequestsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] border-collapse text-left text-xs">
+            <table className="w-full min-w-[1120px] border-collapse text-left text-xs">
               <thead>
                 <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-soft)]/70 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
                   <th className="py-3 pl-5 pr-3">Yêu cầu</th>
                   <th className="py-3 px-3">Cơ sở &amp; Người gửi</th>
                   <th className="py-3 px-3">Phạm vi &amp; Thay đổi giá (Trước → Sau)</th>
                   <th className="py-3 px-3">Thời gian gửi</th>
-                  <th className="py-3 pl-3 pr-5">Trạng thái</th>
+                  <th className="py-3 px-3">Trạng thái</th>
+                  <th className="py-3 pl-3 pr-5 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
@@ -877,10 +883,16 @@ export function DirectorPriceRequestsPage() {
                     req.requestType === 'DEACTIVATE' ? current.priority : rule.priority;
                   const weekdaysText = formatWeekdaysShort(effectiveWeekdays);
 
+                  const isSelected = selectedRequestId === req.id;
+
                   return (
                     <tr
                       key={req.id}
-                      className="align-top transition-colors hover:bg-[var(--color-surface-soft)]/45"
+                      className={`align-top transition-colors ${
+                        isSelected
+                          ? 'bg-[var(--color-primary-soft)]/35'
+                          : 'hover:bg-[var(--color-surface-soft)]/45'
+                      }`}
                     >
                       {/* Yêu cầu */}
                       <td className="py-4 pl-5 pr-3 whitespace-nowrap">
@@ -969,7 +981,7 @@ export function DirectorPriceRequestsPage() {
                       </td>
 
                       {/* Trạng thái */}
-                      <td className="py-4 pl-3 pr-5 max-w-[240px]">
+                      <td className="py-4 px-3 max-w-[220px]">
                         <span
                           className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.badgeClass}`}
                         >
@@ -980,6 +992,19 @@ export function DirectorPriceRequestsPage() {
                             Lý do: {req.rejectionReason}
                           </p>
                         )}
+                      </td>
+
+                      {/* Thao tác */}
+                      <td className="py-4 pl-3 pr-5 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRequestId(req.id)}
+                          aria-label={`Xem chi tiết yêu cầu #${req.id}`}
+                          className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[var(--color-border-strong)] bg-white px-3 text-xs font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] cursor-pointer"
+                        >
+                          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span>Chi tiết</span>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1019,6 +1044,15 @@ export function DirectorPriceRequestsPage() {
           </div>
         )}
       </section>
+
+      {/* Ngăn kéo xem chi tiết yêu cầu phê duyệt giá (API-DIR-PRICE-02) */}
+      {selectedRequestId != null && (
+        <PriceRequestDetailDrawer
+          key={selectedRequestId}
+          requestId={selectedRequestId}
+          onClose={() => setSelectedRequestId(null)}
+        />
+      )}
     </div>
   );
 }

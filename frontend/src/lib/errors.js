@@ -49,6 +49,7 @@ export const ERROR_MESSAGES = {
   INVALID_PAYMENT_SIGNATURE: 'Chữ ký xác thực từ cổng thanh toán không hợp lệ.',
   ORIGINAL_DEPOSIT_TRANSACTION_MISSING: 'Không tìm thấy mã giao dịch gốc của khoản đặt cọc trực tuyến để hoàn tiền tự động.',
   OUTSTANDING_BALANCE: 'Khách vẫn còn số tiền chưa thanh toán.',
+  PRICE_REQUEST_NOT_FOUND: 'Không tìm thấy yêu cầu thay đổi quy tắc giá.',
   PRICE_REQUEST_ALREADY_PENDING: 'Đã có yêu cầu thay đổi giá đang chờ phê duyệt cho mục này.',
   PRICE_REQUEST_ALREADY_REVIEWED: 'Yêu cầu thay đổi giá này đã được xử lý.',
   PRICE_RULE_CONFLICT: 'Quy tắc giá bị trùng hoặc xung đột với quy tắc khác.',

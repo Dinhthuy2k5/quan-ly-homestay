@@ -127,3 +127,12 @@ export async function getDirectorPriceRequestsApi({
     },
   };
 }
+
+/**
+ * API-DIR-PRICE-02 (GET): Xem chi tiết yêu cầu phê duyệt thay đổi quy tắc giá
+ * kèm quy tắc hiện hành, hồ sơ phòng/toàn cơ sở và các quy tắc đang áp dụng.
+ */
+export async function getDirectorPriceRequestDetailApi(requestId, { signal } = {}) {
+  const res = await apiClient.get(`/director/price-rule-change-requests/${requestId}`, { signal });
+  return res.data?.data || null;
+}
