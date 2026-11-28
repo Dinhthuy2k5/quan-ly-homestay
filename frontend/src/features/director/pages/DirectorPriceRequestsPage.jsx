@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   AlertCircle,
+  ArrowRight,
   ArrowUpDown,
   BedDouble,
   Building2,
@@ -13,101 +14,369 @@ import {
   RefreshCw,
   RotateCcw,
   User as UserIcon,
+  Users,
   XCircle,
 } from 'lucide-react';
 import { getDirectorHomestaysApi, getDirectorPriceRequestsApi } from '../api';
 import { formatDate, formatDateTime, formatVnd } from '../../../lib/format';
 import { getErrorMessage } from '../../../lib/errors';
+import {
+  PRICE_REQUEST_STATUS_META,
+  PRICE_REQUEST_TYPE_META,
+  PRICE_RULE_TYPE_META,
+  formatAdjustmentValue,
+  formatWeekdaysShort,
+} from '../../../lib/pricing';
+import { ROOM_STATUS } from '../../../lib/status';
 
 const CARD_CLASS =
   'rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-1)]';
 const NUM_FORMAT = new Intl.NumberFormat('vi-VN');
+const PERCENT_FORMAT = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 });
 const PAGE_SIZE = 15;
 
 const STATUS_TABS = [
-  { value: 'PENDING_APPROVAL', label: 'Chờ duyệt' },
+  { value: 'PENDING_APPROVAL', label: PRICE_REQUEST_STATUS_META.PENDING_APPROVAL.label },
   { value: '', label: 'Tất cả' },
-  { value: 'APPROVED', label: 'Đã duyệt' },
-  { value: 'REJECTED', label: 'Từ chối' },
+  { value: 'APPROVED', label: PRICE_REQUEST_STATUS_META.APPROVED.label },
+  { value: 'REJECTED', label: PRICE_REQUEST_STATUS_META.REJECTED.label },
 ];
 
-const STATUS_META = {
-  PENDING_APPROVAL: {
-    label: 'Chờ phê duyệt',
-    badgeClass: 'border-amber-200 bg-amber-50 text-amber-800',
-  },
-  APPROVED: {
-    label: 'Đã phê duyệt',
-    badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  },
-  REJECTED: {
-    label: 'Đã từ chối',
-    badgeClass: 'border-rose-200 bg-rose-50 text-rose-800',
-  },
+const ROOM_STATUS_BADGE_CLASS = {
+  ACTIVE: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  LOCKED: 'border-amber-200 bg-amber-50 text-amber-800',
+  INACTIVE: 'border-rose-200 bg-rose-50 text-rose-800',
 };
 
-const REQUEST_TYPE_META = {
-  CREATE: {
-    label: 'Thêm mới',
-    badgeClass: 'border-sky-200 bg-sky-50 text-sky-800',
-  },
-  UPDATE: {
-    label: 'Cập nhật',
-    badgeClass: 'border-violet-200 bg-violet-50 text-violet-800',
-  },
-  DEACTIVATE: {
-    label: 'Ngừng áp dụng',
-    badgeClass: 'border-gray-200 bg-gray-100 text-gray-700',
-  },
+const CHANGED_FIELD_LABELS = {
+  name: 'Đổi tên',
+  roomId: 'Đổi phạm vi',
+  weekdays: 'Đổi thứ',
+  dateRange: 'Đổi hiệu lực',
+  priority: 'Đổi ưu tiên',
 };
 
-const WEEKDAY_LABELS = {
-  MON: 'T2',
-  TUE: 'T3',
-  WED: 'T4',
-  THU: 'T5',
-  FRI: 'T6',
-  SAT: 'T7',
-  SUN: 'CN',
-};
+function formatSignedPercent(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '';
+  const num = Number(value);
+  const sign = num > 0 ? '+' : '';
+  return `${sign}${PERCENT_FORMAT.format(num)}%`;
+}
 
-function formatWeekdays(weekdays) {
-  if (!Array.isArray(weekdays) || weekdays.length === 0) return '';
-  return weekdays.map((day) => WEEKDAY_LABELS[String(day).toUpperCase()] || day).join(', ');
+function formatSignedVnd(amount) {
+  if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return '';
+  const num = Math.round(Number(amount));
+  if (num === 0) return '0 ₫';
+  const sign = num > 0 ? '+' : '-';
+  return `${sign}${formatVnd(Math.abs(num))}`;
+}
+
+function formatPriceRange(minPrice, maxPrice) {
+  if (minPrice == null && maxPrice == null) return '';
+  if (minPrice != null && maxPrice != null && minPrice !== maxPrice) {
+    return `${formatVnd(minPrice)} – ${formatVnd(maxPrice)}`;
+  }
+  return formatVnd(minPrice ?? maxPrice);
+}
+
+function getDeltaBadgeClass(deltaPercent) {
+  if (deltaPercent === null || deltaPercent === undefined || Number.isNaN(Number(deltaPercent))) {
+    return 'border-gray-200 bg-gray-100 text-gray-700';
+  }
+  const num = Number(deltaPercent);
+  const abs = Math.abs(num);
+  if (abs >= 50) return 'border-rose-200 bg-rose-50 text-rose-800';
+  if (abs >= 30) return 'border-amber-200 bg-amber-50 text-amber-800';
+  if (num > 0) return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (num < 0) return 'border-sky-200 bg-sky-50 text-sky-800';
+  return 'border-gray-200 bg-gray-100 text-gray-700';
 }
 
 function formatRuleHeadline(request) {
   const rule = request.proposedRule;
+  const current = request.currentRule;
+  const effectiveType = rule?.ruleType || current?.ruleType;
+  const isBase = effectiveType === 'BASE';
+
   if (request.requestType === 'DEACTIVATE') {
-    const name = rule?.name || `Quy tắc #${request.targetRuleId}`;
-    return { title: name, priceBadge: 'Ngừng áp dụng quy tắc', isBase: rule?.ruleType === 'BASE' };
+    const name = current?.name || rule?.name || `Quy tắc #${request.targetRuleId}`;
+    return { title: name, priceBadge: 'Ngừng áp dụng quy tắc', isBase };
   }
   if (!rule || typeof rule !== 'object') {
     return { title: 'Không có dữ liệu quy tắc', priceBadge: '', isBase: false };
   }
 
-  const isBase = rule.ruleType === 'BASE';
   if (isBase) {
     return {
-      title: rule.name || 'Giá cơ bản theo đêm',
+      title: rule.name || PRICE_RULE_TYPE_META.BASE.label,
       priceBadge: rule.basePrice != null ? `${formatVnd(rule.basePrice)} / đêm` : '',
       isBase: true,
     };
   }
 
-  let priceBadge = '';
-  if (rule.adjustType === 'PERCENT' && rule.adjustValue != null) {
-    const val = Number(rule.adjustValue);
-    priceBadge = `${val > 0 ? '+' : ''}${val}% so với giá cơ bản`;
-  } else if (rule.adjustType === 'FIXED_PRICE' && rule.adjustValue != null) {
-    priceBadge = `Cố định ${formatVnd(rule.adjustValue)} / đêm`;
-  }
-
   return {
-    title: rule.name || 'Quy tắc điều chỉnh giá',
-    priceBadge,
+    title: rule.name || PRICE_RULE_TYPE_META.ADJUSTMENT.label,
+    priceBadge: formatAdjustmentValue(rule, { withBaseHint: true, withNightSuffix: true }),
     isBase: false,
   };
+}
+
+/**
+ * Hiển thị khối đối chiếu giá Trước → Sau + % chênh lệch cho các yêu cầu chờ duyệt.
+ * Với yêu cầu đã xử lý (APPROVED / REJECTED) hiển thị trung thực giá trị đề xuất, không dựng diff giả.
+ */
+function PriceComparisonBlock({ request, headline }) {
+  const cmp = request.priceComparison;
+  const current = request.currentRule;
+  const rule = request.proposedRule || {};
+
+  // Chưa có so sánh (APPROVED / REJECTED hoặc thiếu dữ liệu): hiển thị đơn giản
+  if (!cmp) {
+    return headline.priceBadge ? (
+      <p className="font-semibold text-[var(--color-primary)] tabular-nums">{headline.priceBadge}</p>
+    ) : null;
+  }
+
+  const deltaPill =
+    cmp.deltaPercent !== null && cmp.deltaPercent !== undefined ? (
+      <span
+        className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${getDeltaBadgeClass(
+          cmp.deltaPercent
+        )}`}
+      >
+        {formatSignedPercent(cmp.deltaPercent)}
+        {cmp.deltaAmount !== null && cmp.deltaAmount !== undefined && cmp.deltaAmount !== 0
+          ? ` (${formatSignedVnd(cmp.deltaAmount)})`
+          : ''}
+      </span>
+    ) : null;
+
+  const nonPriceChangedTags = Array.isArray(cmp.changedFields)
+    ? cmp.changedFields.filter((f) => CHANGED_FIELD_LABELS[f]).map((f) => CHANGED_FIELD_LABELS[f])
+    : [];
+
+  // 1. DEACTIVATE
+  if (request.requestType === 'DEACTIVATE') {
+    const currentExpr = formatAdjustmentValue(current);
+    return (
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          {currentExpr && (
+            <span className="font-medium text-[var(--color-muted)] line-through tabular-nums">
+              {currentExpr}
+            </span>
+          )}
+          <span className="font-semibold text-[var(--color-ink)]">Ngừng áp dụng</span>
+        </div>
+        {cmp.currentAmount != null && cmp.proposedAmount != null && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs tabular-nums">
+            <span className="text-[var(--color-muted)]">Về giá cơ bản:</span>
+            <span className="text-[var(--color-muted)] line-through">{formatVnd(cmp.currentAmount)}</span>
+            <ArrowRight className="h-3 w-3 text-[var(--color-muted)]" aria-hidden="true" />
+            <span className="font-bold text-[var(--color-ink)]">{formatVnd(cmp.proposedAmount)} / đêm</span>
+            {deltaPill}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 2. BASE (CREATE hoặc UPDATE)
+  if (headline.isBase) {
+    if (cmp.currentAmount != null && cmp.proposedAmount != null) {
+      const unchangedPrice = cmp.deltaAmount === 0;
+      return (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-1.5 tabular-nums">
+            {unchangedPrice ? (
+              <>
+                <span className="font-bold text-[var(--color-ink)]">
+                  {formatVnd(cmp.proposedAmount)} / đêm
+                </span>
+                <span className="inline-flex rounded-md border border-gray-200 bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold text-gray-700">
+                  Giữ nguyên giá
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-xs font-medium text-[var(--color-muted)] line-through">
+                  {formatVnd(cmp.currentAmount)}
+                </span>
+                <ArrowRight className="h-3.5 w-3.5 text-[var(--color-muted)]" aria-hidden="true" />
+                <span className="text-sm font-bold text-[var(--color-primary)]">
+                  {formatVnd(cmp.proposedAmount)} / đêm
+                </span>
+                {deltaPill}
+              </>
+            )}
+          </div>
+          {nonPriceChangedTags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {nonPriceChangedTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // CREATE BASE lần đầu cho phòng chưa có giá cơ bản
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 tabular-nums">
+        <span className="text-[11px] text-[var(--color-muted)]">Chưa có giá</span>
+        <ArrowRight className="h-3.5 w-3.5 text-[var(--color-muted)]" aria-hidden="true" />
+        <span className="text-sm font-bold text-[var(--color-primary)]">
+          {cmp.proposedAmount != null ? `${formatVnd(cmp.proposedAmount)} / đêm` : headline.priceBadge}
+        </span>
+        <span className="inline-flex rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">
+          Giá mới
+        </span>
+      </div>
+    );
+  }
+
+  // 3. ADJUSTMENT (CREATE hoặc UPDATE)
+  const currentExpr = formatAdjustmentValue(current);
+  const proposedExpr = formatAdjustmentValue(rule);
+  const hasRuleExprChange =
+    request.requestType === 'UPDATE' && currentExpr && proposedExpr && currentExpr !== proposedExpr;
+  const projectedRangeText = formatPriceRange(cmp.projectedMinPrice, cmp.projectedMaxPrice);
+
+  return (
+    <div className="space-y-1">
+      {/* Dòng 1: Biểu thức giá điều chỉnh (Trước → Sau nếu UPDATE thay đổi mức điều chỉnh) */}
+      <div className="flex flex-wrap items-center gap-1.5 tabular-nums">
+        {hasRuleExprChange ? (
+          <>
+            <span className="font-medium text-[var(--color-muted)] line-through">{currentExpr}</span>
+            <ArrowRight className="h-3.5 w-3.5 text-[var(--color-muted)]" aria-hidden="true" />
+            <span className="font-bold text-[var(--color-primary)]">{proposedExpr}</span>
+            {cmp.currentAmount == null && deltaPill}
+          </>
+        ) : (
+          <span className="font-semibold text-[var(--color-primary)]">{headline.priceBadge}</span>
+        )}
+      </div>
+
+      {/* Dòng 2: Quy đổi ra giá bán thực tế theo đêm (VND) */}
+      {cmp.currentAmount != null && cmp.proposedAmount != null ? (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] tabular-nums">
+          <span className="text-[var(--color-muted)]">
+            {request.requestType === 'CREATE' ? 'Từ giá cơ bản:' : 'Giá đêm:'}
+          </span>
+          <span className="text-[var(--color-muted)] line-through">{formatVnd(cmp.currentAmount)}</span>
+          <ArrowRight className="h-3 w-3 text-[var(--color-muted)]" aria-hidden="true" />
+          <span className="font-bold text-[var(--color-ink)]">{formatVnd(cmp.proposedAmount)} / đêm</span>
+          {deltaPill}
+        </div>
+      ) : projectedRangeText ? (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] tabular-nums">
+          <span className="text-[var(--color-muted)]">Dự kiến sau phê duyệt:</span>
+          <span className="font-bold text-[var(--color-ink)]">{projectedRangeText} / đêm</span>
+          {!hasRuleExprChange && request.requestType === 'UPDATE' && deltaPill}
+        </div>
+      ) : null}
+
+      {/* Dòng 3: Nhãn thay đổi phụ cho UPDATE (thứ, ngày, ưu tiên, tên, phạm vi) */}
+      {nonPriceChangedTags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {nonPriceChangedTags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Tóm tắt nhanh phòng bị tác động (hạng phòng · sức chứa · trạng thái · giá cơ bản hiện tại)
+ * hoặc phạm vi toàn cơ sở (số phòng đang nhận đặt · dải giá cơ bản hiện tại).
+ */
+function ScopeSummaryBar({ request, headline }) {
+  const room = request.roomSummary;
+  const scope = request.homestayScopeSummary;
+
+  if (room) {
+    const roomStatusLabel = ROOM_STATUS[room.status]?.label || room.status;
+    const roomStatusClass =
+      ROOM_STATUS_BADGE_CLASS[room.status] || 'border-gray-200 bg-gray-100 text-gray-700';
+    // Với giá điều chỉnh hoặc yêu cầu đã xử lý, hiển thị thêm giá cơ bản hiện hành để đối chiếu
+    const showCurrentBaseInline =
+      room.currentBasePrice != null &&
+      (!headline.isBase || request.status !== 'PENDING_APPROVAL');
+
+    return (
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-soft)]/55 px-2.5 py-1.5 text-[11px] text-[var(--color-body)]">
+        <span className="inline-flex items-center gap-1 font-semibold text-[var(--color-ink)]">
+          <BedDouble className="h-3.5 w-3.5 text-[var(--color-muted)]" aria-hidden="true" />
+          <span>{room.name || `Phòng #${room.id}`}</span>
+        </span>
+        {room.roomTypeName && (
+          <span className="text-[var(--color-muted)]">· {room.roomTypeName}</span>
+        )}
+        {room.maxGuests != null && (
+          <span className="inline-flex items-center gap-0.5 text-[var(--color-muted)] tabular-nums">
+            <Users className="h-3 w-3" aria-hidden="true" />
+            <span>Tối đa {room.maxGuests} khách</span>
+          </span>
+        )}
+        <span
+          title={room.statusReason || undefined}
+          className={`inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${roomStatusClass}`}
+        >
+          {roomStatusLabel}
+        </span>
+        {showCurrentBaseInline && (
+          <span className="text-[var(--color-muted)] tabular-nums">
+            · Giá cơ bản: <strong className="text-[var(--color-ink)]">{formatVnd(room.currentBasePrice)}</strong>
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (scope) {
+    const baseRange = formatPriceRange(scope.minBasePrice, scope.maxBasePrice);
+    const roomCountLabel =
+      scope.activeRoomCount === scope.totalRoomCount
+        ? `${NUM_FORMAT.format(scope.activeRoomCount)} phòng đang nhận đặt`
+        : `${NUM_FORMAT.format(scope.activeRoomCount)}/${NUM_FORMAT.format(scope.totalRoomCount)} phòng đang nhận đặt`;
+
+    return (
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-soft)]/55 px-2.5 py-1.5 text-[11px] text-[var(--color-body)]">
+        <span className="inline-flex items-center gap-1 font-semibold text-[var(--color-ink)]">
+          <Building2 className="h-3.5 w-3.5 text-[var(--color-muted)]" aria-hidden="true" />
+          <span>Toàn cơ sở</span>
+        </span>
+        <span className="text-[var(--color-muted)] tabular-nums">· {roomCountLabel}</span>
+        {baseRange && (
+          <span className="text-[var(--color-muted)] tabular-nums">
+            · Giá cơ bản: <strong className="text-[var(--color-ink)]">{baseRange}</strong>
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback khi không có metadata bổ sung
+  return (
+    <div className="inline-flex items-center gap-1 text-[11px] text-[var(--color-muted)]">
+      <BedDouble className="h-3 w-3" aria-hidden="true" />
+      <span>{request.roomId ? request.roomName || `Phòng #${request.roomId}` : 'Toàn cơ sở'}</span>
+    </div>
+  );
 }
 
 /**
@@ -279,7 +548,7 @@ export function DirectorPriceRequestsPage() {
               Phê duyệt quy tắc giá
             </h1>
             <p className="mt-0.5 text-sm text-[var(--color-muted)]">
-              Theo dõi các đề xuất thêm mới, cập nhật và ngừng quy tắc giá phòng do Quản lý các cơ sở gửi lên.
+              Đối chiếu nhanh giá hiện tại với mức đề xuất và thông tin phòng trên toàn hệ thống.
             </p>
           </div>
         </div>
@@ -309,7 +578,7 @@ export function DirectorPriceRequestsPage() {
           }`}
         >
           <div>
-            <p className="text-xs font-semibold text-[var(--color-muted)]">Đang chờ phê duyệt</p>
+            <p className="text-xs font-semibold text-[var(--color-muted)]">{PRICE_REQUEST_STATUS_META.PENDING_APPROVAL.label}</p>
             {summary.loading ? (
               <div className="mt-2 h-8 w-16 animate-pulse rounded-lg bg-[var(--color-surface-soft)]" />
             ) : (
@@ -546,7 +815,7 @@ export function DirectorPriceRequestsPage() {
         {loading ? (
           <div className="space-y-3 p-5">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-20 animate-pulse rounded-xl bg-[var(--color-surface-soft)]" />
+              <div key={i} className="h-24 animate-pulse rounded-xl bg-[var(--color-surface-soft)]" />
             ))}
           </div>
         ) : requests.length === 0 ? (
@@ -572,42 +841,56 @@ export function DirectorPriceRequestsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] border-collapse text-left text-xs">
+            <table className="w-full min-w-[1040px] border-collapse text-left text-xs">
               <thead>
                 <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-soft)]/70 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
                   <th className="py-3 pl-5 pr-3">Yêu cầu</th>
                   <th className="py-3 px-3">Cơ sở &amp; Người gửi</th>
-                  <th className="py-3 px-3">Nội dung quy tắc đề xuất</th>
+                  <th className="py-3 px-3">Phạm vi &amp; Thay đổi giá (Trước → Sau)</th>
                   <th className="py-3 px-3">Thời gian gửi</th>
                   <th className="py-3 pl-3 pr-5">Trạng thái</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {requests.map((req) => {
-                  const typeMeta = REQUEST_TYPE_META[req.requestType] || {
+                  const typeMeta = PRICE_REQUEST_TYPE_META[req.requestType] || {
                     label: req.requestType,
                     badgeClass: 'border-gray-200 bg-gray-100 text-gray-700',
                   };
-                  const statusMeta = STATUS_META[req.status] || {
+                  const statusMeta = PRICE_REQUEST_STATUS_META[req.status] || {
                     label: req.status,
                     badgeClass: 'border-gray-200 bg-gray-100 text-gray-700',
                   };
                   const headline = formatRuleHeadline(req);
+                  const ruleTypeMeta = headline.isBase
+                    ? PRICE_RULE_TYPE_META.BASE
+                    : PRICE_RULE_TYPE_META.ADJUSTMENT;
                   const rule = req.proposedRule || {};
-                  const weekdaysText = formatWeekdays(rule.weekdays);
-                  const scopeLabel = req.roomId
-                    ? req.roomName || `Phòng #${req.roomId}`
-                    : 'Toàn cơ sở';
+                  const current = req.currentRule || {};
+                  const effectiveWeekdays =
+                    req.requestType === 'DEACTIVATE' ? current.weekdays : rule.weekdays;
+                  const effectiveStartDate =
+                    req.requestType === 'DEACTIVATE' ? current.startDate : rule.startDate;
+                  const effectiveEndDate =
+                    req.requestType === 'DEACTIVATE' ? current.endDate : rule.endDate;
+                  const effectivePriority =
+                    req.requestType === 'DEACTIVATE' ? current.priority : rule.priority;
+                  const weekdaysText = formatWeekdaysShort(effectiveWeekdays);
 
                   return (
-                    <tr key={req.id} className="align-top transition-colors hover:bg-[var(--color-surface-soft)]/45">
+                    <tr
+                      key={req.id}
+                      className="align-top transition-colors hover:bg-[var(--color-surface-soft)]/45"
+                    >
                       {/* Yêu cầu */}
                       <td className="py-4 pl-5 pr-3 whitespace-nowrap">
                         <div className="flex flex-col items-start gap-1.5">
                           <span className="font-mono text-xs font-bold text-[var(--color-ink)]">
                             #{req.id}
                           </span>
-                          <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${typeMeta.badgeClass}`}>
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${typeMeta.badgeClass}`}
+                          >
                             {typeMeta.label}
                           </span>
                           {req.targetRuleId && (
@@ -629,7 +912,7 @@ export function DirectorPriceRequestsPage() {
                             <UserIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-muted)]" aria-hidden="true" />
                             <div>
                               <p className="font-medium text-[var(--color-ink)]">
-                                {req.requestedByName || `Manager #${req.requestedBy}`}
+                                {req.requestedByName || `Quản lý #${req.requestedBy}`}
                               </p>
                               {req.requestedByEmail && (
                                 <p className="text-[11px] text-[var(--color-muted)]">{req.requestedByEmail}</p>
@@ -639,44 +922,36 @@ export function DirectorPriceRequestsPage() {
                         </div>
                       </td>
 
-                      {/* Nội dung quy tắc đề xuất */}
-                      <td className="py-4 px-3 max-w-[380px]">
-                        <div className="space-y-1.5">
+                      {/* Phạm vi & Thay đổi giá (Trước → Sau) + Tóm tắt phòng */}
+                      <td className="py-4 px-3 max-w-[500px]">
+                        <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span
-                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase ${
-                                headline.isBase
-                                  ? 'bg-emerald-50 text-emerald-800'
-                                  : 'bg-sky-50 text-sky-800'
-                              }`}
+                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase ${ruleTypeMeta.badgeClass}`}
                             >
-                              {headline.isBase ? 'Giá cơ bản' : 'Điều chỉnh'}
+                              {ruleTypeMeta.label}
                             </span>
                             <span className="font-bold text-[var(--color-ink)]">{headline.title}</span>
                           </div>
 
-                          {headline.priceBadge && (
-                            <p className="font-semibold text-[var(--color-primary)] tabular-nums">
-                              {headline.priceBadge}
-                            </p>
-                          )}
+                          <PriceComparisonBlock request={req} headline={headline} />
 
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--color-muted)]">
-                            <span className="inline-flex items-center gap-1">
-                              <BedDouble className="h-3 w-3" aria-hidden="true" />
-                              <span>{scopeLabel}</span>
-                            </span>
-                            {weekdaysText && <span>Thứ: {weekdaysText}</span>}
-                            {(rule.startDate || rule.endDate) && (
-                              <span>
-                                Hiệu lực: {rule.startDate ? formatDate(rule.startDate) : '…'} →{' '}
-                                {rule.endDate ? formatDate(rule.endDate) : '…'}
-                              </span>
-                            )}
-                            {rule.priority != null && !headline.isBase && (
-                              <span>Ưu tiên: {rule.priority}</span>
-                            )}
-                          </div>
+                          <ScopeSummaryBar request={req} headline={headline} />
+
+                          {(weekdaysText || effectiveStartDate || effectiveEndDate || (effectivePriority != null && !headline.isBase)) && (
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--color-muted)]">
+                              {weekdaysText && <span>Thứ: {weekdaysText}</span>}
+                              {(effectiveStartDate || effectiveEndDate) && (
+                                <span>
+                                  Hiệu lực: {effectiveStartDate ? formatDate(effectiveStartDate) : '…'} →{' '}
+                                  {effectiveEndDate ? formatDate(effectiveEndDate) : '…'}
+                                </span>
+                              )}
+                              {effectivePriority != null && !headline.isBase && (
+                                <span>Ưu tiên: {effectivePriority}</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
 
@@ -695,7 +970,9 @@ export function DirectorPriceRequestsPage() {
 
                       {/* Trạng thái */}
                       <td className="py-4 pl-3 pr-5 max-w-[240px]">
-                        <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.badgeClass}`}>
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.badgeClass}`}
+                        >
                           {statusMeta.label}
                         </span>
                         {req.status === 'REJECTED' && req.rejectionReason && (

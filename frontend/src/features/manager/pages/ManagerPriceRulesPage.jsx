@@ -11,53 +11,22 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { getManagerPriceRulesApi, getManagerRoomsApi } from '../api';
-import { formatVnd } from '../../../lib/format';
+import { formatDate } from '../../../lib/format';
+import {
+  PRICE_REQUEST_TYPE_META,
+  PRICE_RULE_STATUS_META,
+  PRICE_RULE_TYPE_META,
+  formatPriceRuleValue,
+  formatWeekdaysShort,
+} from '../../../lib/pricing';
 import PriceRuleChangeRequestModal from '../components/PriceRuleChangeRequestModal';
 import PriceRuleChangeRequestsPanel from '../components/PriceRuleChangeRequestsPanel';
 
-function describeRule(rule) {
-  if (rule.ruleType === 'BASE') {
-    return rule.basePrice == null ? 'Chưa có giá' : `${formatVnd(rule.basePrice)} / đêm`;
-  }
-  if (rule.adjustType === 'PERCENT') {
-    const value = Number(rule.adjustValue || 0);
-    return `${value > 0 ? '+' : ''}${value}% so với giá cơ bản`;
-  }
-  return `Giá cuối ${formatVnd(rule.adjustValue || 0)} / đêm`;
-}
-
 function dateRange(rule) {
   if (!rule.startDate && !rule.endDate) return 'Không giới hạn ngày';
-  return `${rule.startDate || 'Không giới hạn'} – ${rule.endDate || 'Không giới hạn'}`;
-}
-
-const WEEKDAY_NAMES = {
-  // Chuẩn 3 ký tự (SET trong MySQL: 'MON','TUE','WED','THU','FRI','SAT','SUN')
-  MON: 'Thứ 2',
-  TUE: 'Thứ 3',
-  WED: 'Thứ 4',
-  THU: 'Thứ 5',
-  FRI: 'Thứ 6',
-  SAT: 'Thứ 7',
-  SUN: 'Chủ Nhật',
-  // Chuẩn tên tiếng Anh đầy đủ
-  MONDAY: 'Thứ 2',
-  TUESDAY: 'Thứ 3',
-  WEDNESDAY: 'Thứ 4',
-  THURSDAY: 'Thứ 5',
-  FRIDAY: 'Thứ 6',
-  SATURDAY: 'Thứ 7',
-  SUNDAY: 'Chủ Nhật',
-};
-
-function formatWeekdays(weekdays) {
-  if (!weekdays || (Array.isArray(weekdays) && weekdays.length === 0)) return 'Mọi ngày';
-  const list = Array.isArray(weekdays) ? weekdays : String(weekdays).split(',');
-  const formatted = list
-    .map((day) => String(day).trim())
-    .filter(Boolean)
-    .map((day) => WEEKDAY_NAMES[day.toUpperCase()] || day);
-  return formatted.length > 0 ? formatted.join(', ') : 'Mọi ngày';
+  return `${rule.startDate ? formatDate(rule.startDate) : 'Không giới hạn'} – ${
+    rule.endDate ? formatDate(rule.endDate) : 'Không giới hạn'
+  }`;
 }
 
 function errorMessage(error) {
@@ -157,12 +126,9 @@ export default function ManagerPriceRulesPage() {
   };
 
   const handleRequestSuccess = (createdRequest) => {
-    const typeLabel =
-      createdRequest?.requestType === 'CREATE'
-        ? 'thêm mới'
-        : createdRequest?.requestType === 'UPDATE'
-        ? 'cập nhật'
-        : 'ngừng áp dụng';
+    const typeLabel = (
+      PRICE_REQUEST_TYPE_META[createdRequest?.requestType]?.label || 'thay đổi'
+    ).toLowerCase();
     setToast({
       type: 'success',
       message: `Đã gửi đề xuất ${typeLabel} quy tắc giá thành công! Yêu cầu đang chờ Giám đốc phê duyệt.`,
@@ -199,7 +165,7 @@ export default function ManagerPriceRulesPage() {
           </p>
           <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-ink)]">Quy tắc giá</h2>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            Xem quy tắc giá đang áp dụng. Manager có thể gửi đề xuất thay đổi giá để Giám đốc xét duyệt.
+            Xem các quy tắc giá đang áp dụng. Quản lý có thể gửi đề xuất thêm mới, cập nhật hoặc ngừng áp dụng để Giám đốc phê duyệt.
           </p>
         </div>
         <div className="flex items-center gap-2.5 self-start">
@@ -208,7 +174,7 @@ export default function ManagerPriceRulesPage() {
             onClick={() => openModal('CREATE')}
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-semibold text-white shadow-sm hover:opacity-95 transition-opacity"
           >
-            <Plus aria-hidden="true" className="h-4 w-4" /> Đề xuất đổi giá
+            <Plus aria-hidden="true" className="h-4 w-4" /> Gửi đề xuất giá
           </button>
           <button
             type="button"
@@ -244,17 +210,17 @@ export default function ManagerPriceRulesPage() {
           Loại quy tắc
           <select value={filters.ruleType} onChange={(event) => updateFilter('ruleType', event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-900">
             <option value="">Tất cả</option>
-            <option value="BASE">Giá cơ bản</option>
-            <option value="ADJUSTMENT">Điều chỉnh giá</option>
+            <option value="BASE">{PRICE_RULE_TYPE_META.BASE.label}</option>
+            <option value="ADJUSTMENT">{PRICE_RULE_TYPE_META.ADJUSTMENT.label}</option>
           </select>
         </label>
         <label className="text-xs font-semibold text-gray-600">
           Trạng thái
           <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-900">
             <option value="">Tất cả</option>
-            <option value="ACTIVE">Đang áp dụng</option>
-            <option value="INACTIVE">Ngừng áp dụng</option>
-            <option value="EXPIRED">Đã hết hạn</option>
+            <option value="ACTIVE">{PRICE_RULE_STATUS_META.ACTIVE.label}</option>
+            <option value="INACTIVE">{PRICE_RULE_STATUS_META.INACTIVE.label}</option>
+            <option value="EXPIRED">{PRICE_RULE_STATUS_META.EXPIRED.label}</option>
           </select>
         </label>
         <label className="text-xs font-semibold text-gray-600">
@@ -290,7 +256,7 @@ export default function ManagerPriceRulesPage() {
                 <tr>
                   <th className="px-4 py-3">Quy tắc</th>
                   <th className="px-4 py-3">Phạm vi</th>
-                  <th className="px-4 py-3">Giá / điều chỉnh</th>
+                  <th className="px-4 py-3">Mức giá áp dụng</th>
                   <th className="px-4 py-3">Ngày áp dụng</th>
                   <th className="px-4 py-3">Thứ trong tuần</th>
                   <th className="px-4 py-3">Ưu tiên</th>
@@ -302,20 +268,29 @@ export default function ManagerPriceRulesPage() {
                 {loading && items.length === 0 && (
                   <tr><td colSpan="8" className="px-4 py-10 text-center text-gray-500">Đang tải quy tắc giá…</td></tr>
                 )}
-                {items.map((rule) => (
+                {items.map((rule) => {
+                  const ruleTypeMeta =
+                    PRICE_RULE_TYPE_META[rule.ruleType] || PRICE_RULE_TYPE_META.ADJUSTMENT;
+                  const ruleStatusMeta =
+                    PRICE_RULE_STATUS_META[rule.status] || PRICE_RULE_STATUS_META.INACTIVE;
+                  return (
                   <tr key={rule.id} className="align-top hover:bg-gray-50/70">
                     <td className="px-4 py-4">
                       <div className="font-semibold text-gray-900">{rule.name}</div>
-                      <div className="mt-1 text-xs text-gray-500">{rule.ruleType === 'BASE' ? 'Giá cơ bản' : 'Điều chỉnh'}</div>
+                      <span
+                        className={`mt-1 inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase ${ruleTypeMeta.badgeClass}`}
+                      >
+                        {ruleTypeMeta.label}
+                      </span>
                     </td>
-                    <td className="px-4 py-4 text-gray-700">{rule.roomId == null ? 'Toàn homestay' : (roomsMap[rule.roomId] || `Phòng #${rule.roomId}`)}</td>
-                    <td className="px-4 py-4 font-medium text-gray-900">{describeRule(rule)}</td>
-                    <td className="px-4 py-4 text-gray-700">{dateRange(rule)}</td>
-                    <td className="px-4 py-4 text-gray-700">{formatWeekdays(rule.weekdays)}</td>
-                    <td className="px-4 py-4 text-gray-700">{rule.priority ?? 0}</td>
+                    <td className="px-4 py-4 text-gray-700">{rule.roomId == null ? 'Toàn cơ sở' : (roomsMap[rule.roomId] || `Phòng #${rule.roomId}`)}</td>
+                    <td className="px-4 py-4 font-medium text-gray-900 tabular-nums">{formatPriceRuleValue(rule)}</td>
+                    <td className="px-4 py-4 text-gray-700 tabular-nums">{dateRange(rule)}</td>
+                    <td className="px-4 py-4 text-gray-700">{formatWeekdaysShort(rule.weekdays, 'Cả tuần')}</td>
+                    <td className="px-4 py-4 text-gray-700 tabular-nums">{rule.priority ?? 0}</td>
                     <td className="px-4 py-4">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${rule.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : rule.status === 'EXPIRED' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
-                        {rule.status === 'ACTIVE' ? 'Đang áp dụng' : rule.status === 'EXPIRED' ? 'Đã hết hạn' : 'Ngừng áp dụng'}
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${ruleStatusMeta.badgeClass}`}>
+                        {ruleStatusMeta.label}
                       </span>
                     </td>
                     <td className="px-4 py-4 text-right">
@@ -325,20 +300,20 @@ export default function ManagerPriceRulesPage() {
                             type="button"
                             onClick={() => openModal('UPDATE', rule)}
                             className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:text-[var(--color-primary)] transition-colors shadow-2xs"
-                            title="Gửi đề xuất sửa quy tắc giá này"
+                            title="Gửi đề xuất cập nhật quy tắc giá này"
                           >
                             <Edit3 className="h-3.5 w-3.5 text-gray-500" />
-                            Sửa
+                            Cập nhật
                           </button>
                           {rule.ruleType !== 'BASE' && (
                             <button
                               type="button"
                               onClick={() => openModal('DEACTIVATE', rule)}
                               className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs"
-                              title="Gửi đề xuất ngừng áp dụng quy tắc này"
+                              title="Gửi đề xuất ngừng áp dụng quy tắc giá này"
                             >
                               <PowerOff className="h-3.5 w-3.5 text-rose-600" />
-                              Ngừng
+                              Ngừng áp dụng
                             </button>
                           )}
                         </div>
@@ -347,7 +322,8 @@ export default function ManagerPriceRulesPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -365,7 +341,7 @@ export default function ManagerPriceRulesPage() {
         </div>
       )}
 
-      <PriceRuleChangeRequestsPanel reloadKey={reloadKey} />
+      <PriceRuleChangeRequestsPanel reloadKey={reloadKey} roomsMap={roomsMap} />
 
       {/* Modal đề xuất thay đổi giá */}
       {modalOpen && (

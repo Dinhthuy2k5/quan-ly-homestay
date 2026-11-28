@@ -1,46 +1,49 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { getManagerPriceRuleChangeRequestsApi } from '../api';
-import { formatDateTime, formatVnd } from '../../../lib/format';
+import { formatDateTime } from '../../../lib/format';
+import {
+  PRICE_REQUEST_STATUS_META,
+  PRICE_REQUEST_TYPE_META,
+  PRICE_RULE_TYPE_META,
+  formatPriceRuleValue,
+} from '../../../lib/pricing';
 
-const REQUEST_TYPE_LABELS = {
-  CREATE: 'Thêm mới quy tắc giá',
-  UPDATE: 'Sửa quy tắc giá',
-  DEACTIVATE: 'Ngừng quy tắc giá',
-};
-
-const STATUS_LABELS = {
-  PENDING_APPROVAL: 'Chờ Giám đốc duyệt',
-  APPROVED: 'Đã duyệt',
-  REJECTED: 'Từ chối',
-};
-
-function describeProposal(request) {
-  if (request.requestType === 'DEACTIVATE') {
-    return request.proposedRule?.name || `Quy tắc #${request.targetRuleId}`;
-  }
-
+function buildProposalMeta(request, roomsMap) {
   const rule = request.proposedRule;
-  if (!rule || typeof rule !== 'object') return 'Không có thông tin đề xuất';
+  const isBase = rule?.ruleType === 'BASE';
+  const ruleTypeMeta = isBase ? PRICE_RULE_TYPE_META.BASE : PRICE_RULE_TYPE_META.ADJUSTMENT;
 
-  const scope = rule.roomId ? `Phòng #${rule.roomId}` : 'Toàn homestay';
-  if (rule.ruleType === 'BASE') {
-    return `${rule.name || 'Giá cơ bản'} • ${scope} • ${formatVnd(rule.basePrice)} / đêm`;
+  if (request.requestType === 'DEACTIVATE') {
+    const scope = rule?.roomId
+      ? roomsMap[rule.roomId] || `Phòng #${rule.roomId}`
+      : 'Toàn cơ sở';
+    return {
+      ruleTypeMeta,
+      title: rule?.name || `Quy tắc #${request.targetRuleId}`,
+      detail: `${scope} • Ngừng áp dụng quy tắc`,
+    };
   }
 
-  const value = rule.adjustType === 'PERCENT'
-    ? `${Number(rule.adjustValue) > 0 ? '+' : ''}${rule.adjustValue}%`
-    : `${formatVnd(rule.adjustValue)} / đêm`;
-  return `${rule.name || 'Điều chỉnh giá'} • ${scope} • ${value}`;
+  if (!rule || typeof rule !== 'object') {
+    return {
+      ruleTypeMeta: null,
+      title: 'Không có thông tin đề xuất',
+      detail: '',
+    };
+  }
+
+  const scope = rule.roomId ? roomsMap[rule.roomId] || `Phòng #${rule.roomId}` : 'Toàn cơ sở';
+  const title = rule.name || ruleTypeMeta.label;
+  const value = formatPriceRuleValue(rule);
+  return {
+    ruleTypeMeta,
+    title,
+    detail: value ? `${scope} • ${value}` : scope,
+  };
 }
 
-function statusClass(status) {
-  if (status === 'APPROVED') return 'bg-emerald-50 text-emerald-700';
-  if (status === 'REJECTED') return 'bg-rose-50 text-rose-700';
-  return 'bg-amber-50 text-amber-800';
-}
-
-export default function PriceRuleChangeRequestsPanel({ reloadKey = 0 }) {
+export default function PriceRuleChangeRequestsPanel({ reloadKey = 0, roomsMap = {} }) {
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(0);
   const [items, setItems] = useState([]);
@@ -83,7 +86,9 @@ export default function PriceRuleChangeRequestsPanel({ reloadKey = 0 }) {
       <header className="flex flex-col gap-3 border-b border-gray-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-lg font-bold text-[var(--color-ink)]">Yêu cầu thay đổi giá</h3>
-          <p className="mt-1 text-sm text-[var(--color-muted)]">Theo dõi trạng thái đề xuất gửi Giám đốc phê duyệt.</p>
+          <p className="mt-1 text-sm text-[var(--color-muted)]">
+            Theo dõi trạng thái đề xuất thêm mới, cập nhật hoặc ngừng áp dụng gửi Giám đốc phê duyệt.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <label htmlFor="price-request-status-filter" className="sr-only">Lọc trạng thái yêu cầu</label>
@@ -94,9 +99,9 @@ export default function PriceRuleChangeRequestsPanel({ reloadKey = 0 }) {
             className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-700"
           >
             <option value="">Tất cả trạng thái</option>
-            <option value="PENDING_APPROVAL">Chờ duyệt</option>
-            <option value="APPROVED">Đã duyệt</option>
-            <option value="REJECTED">Từ chối</option>
+            <option value="PENDING_APPROVAL">{PRICE_REQUEST_STATUS_META.PENDING_APPROVAL.label}</option>
+            <option value="APPROVED">{PRICE_REQUEST_STATUS_META.APPROVED.label}</option>
+            <option value="REJECTED">{PRICE_REQUEST_STATUS_META.REJECTED.label}</option>
           </select>
           <button
             type="button"
@@ -129,27 +134,63 @@ export default function PriceRuleChangeRequestsPanel({ reloadKey = 0 }) {
                 <tr><td colSpan="4" className="px-4 py-10 text-center text-gray-500">Đang tải yêu cầu…</td></tr>
               ) : items.length === 0 ? (
                 <tr><td colSpan="4" className="px-4 py-10 text-center text-gray-500">Chưa có yêu cầu thay đổi giá nào.</td></tr>
-              ) : items.map((request) => (
-                <tr key={request.id} className="align-top hover:bg-gray-50/70">
-                  <td className="px-4 py-4">
-                    <p className="font-semibold text-gray-900">{REQUEST_TYPE_LABELS[request.requestType] || request.requestType}</p>
-                    <p className="mt-1 text-xs text-gray-500">Mã yêu cầu #{request.id}</p>
-                    {request.targetRuleId && <p className="mt-1 text-xs text-gray-500">Quy tắc gốc #{request.targetRuleId}</p>}
-                  </td>
-                  <td className="max-w-[360px] px-4 py-4 text-gray-700">
-                    <p>{describeProposal(request)}</p>
-                    {request.status === 'REJECTED' && request.rejectionReason && (
-                      <p className="mt-1 text-xs text-rose-700">Lý do từ chối: {request.rejectionReason}</p>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-gray-600">{formatDateTime(request.requestedAt)}</td>
-                  <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(request.status)}`}>
-                      {STATUS_LABELS[request.status] || request.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              ) : items.map((request) => {
+                const typeMeta = PRICE_REQUEST_TYPE_META[request.requestType] || {
+                  label: request.requestType,
+                  badgeClass: 'border-gray-200 bg-gray-100 text-gray-700',
+                };
+                const statusMeta = PRICE_REQUEST_STATUS_META[request.status] || {
+                  label: request.status,
+                  badgeClass: 'border-gray-200 bg-gray-100 text-gray-700',
+                };
+                const proposal = buildProposalMeta(request, roomsMap);
+
+                return (
+                  <tr key={request.id} className="align-top hover:bg-gray-50/70">
+                    <td className="px-4 py-4">
+                      <div className="flex flex-col items-start gap-1.5">
+                        <span className="font-mono text-xs font-bold text-gray-900">#{request.id}</span>
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${typeMeta.badgeClass}`}
+                        >
+                          {typeMeta.label}
+                        </span>
+                        {request.targetRuleId && (
+                          <span className="text-xs text-gray-500">Quy tắc gốc #{request.targetRuleId}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="max-w-[380px] px-4 py-4 text-gray-700">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {proposal.ruleTypeMeta && (
+                          <span
+                            className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase ${proposal.ruleTypeMeta.badgeClass}`}
+                          >
+                            {proposal.ruleTypeMeta.label}
+                          </span>
+                        )}
+                        <span className="font-semibold text-gray-900">{proposal.title}</span>
+                      </div>
+                      {proposal.detail && (
+                        <p className="mt-1 text-xs text-gray-600 tabular-nums">{proposal.detail}</p>
+                      )}
+                      {request.status === 'REJECTED' && request.rejectionReason && (
+                        <p className="mt-1.5 text-xs text-rose-700">Lý do từ chối: {request.rejectionReason}</p>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-gray-600 tabular-nums">
+                      {formatDateTime(request.requestedAt)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.badgeClass}`}
+                      >
+                        {statusMeta.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

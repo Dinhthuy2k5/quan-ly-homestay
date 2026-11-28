@@ -49,6 +49,9 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     /** Lấy danh sách phòng theo homestay và status */
     List<Room> findByHomestayIdAndStatus(Long homestayId, RoomStatus status);
 
+    /** Nạp batch các phòng theo danh sách homestay và status (phục vụ tóm tắt phạm vi toàn cơ sở API-DIR-PRICE-01). */
+    List<Room> findByHomestayIdInAndStatus(Collection<Long> homestayIds, RoomStatus status);
+
     long countByHomestayIdAndStatus(Long homestayId, RoomStatus status);
 
     long countByHomestayId(Long homestayId);

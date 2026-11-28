@@ -28,6 +28,9 @@ public interface PriceRuleRepository extends JpaRepository<PriceRule, Long> {
      */
     Optional<PriceRule> findByRoomIdAndRuleTypeAndStatus(Long roomId, RuleType ruleType, PriceRule.Status status);
 
+    /** Nạp batch toàn bộ quy tắc giá theo danh sách cơ sở và trạng thái (phục vụ đối chiếu API-DIR-PRICE-01). */
+    List<PriceRule> findByHomestayIdInAndStatus(Collection<Long> homestayIds, PriceRule.Status status);
+
     /** API-PUB-03: lấy giá BASE của các phòng trong trang cùng điều chỉnh toàn cơ sở/phòng cụ thể. */
     @Query("""
         SELECT rule FROM PriceRule rule

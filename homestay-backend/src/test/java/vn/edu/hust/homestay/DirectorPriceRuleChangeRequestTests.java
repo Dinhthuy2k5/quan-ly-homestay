@@ -287,6 +287,189 @@ class DirectorPriceRuleChangeRequestTests {
     }
 
     @Test
+    @DisplayName("API-DIR-PRICE-01: trả đối chiếu giá hiện tại → đề xuất và tóm tắt phòng/toàn cơ sở")
+    void returnsPriceComparisonRoomAndScopeSummaries() throws Exception {
+        // Tạo giá BASE hiện hành 800.000đ cho room1 (ACTIVE)
+        PriceRule room1Base = createBaseRule(homestay1.getId(), room1.getId(), "Giá cơ bản Phòng 301", 800_000L);
+
+        // Tạo phòng khóa ở HS1 với giá BASE 800.000đ
+        Room lockedRoom = new Room();
+        lockedRoom.setHomestayId(homestay1.getId());
+        lockedRoom.setRoomTypeId(room1.getRoomTypeId());
+        lockedRoom.setName("Phòng Khóa 302");
+        lockedRoom.setMaxGuests((byte) 4);
+        lockedRoom.setStatus(RoomStatus.LOCKED);
+        lockedRoom.setStatusReason("Đang bảo trì điều hòa");
+        lockedRoom = roomRepository.saveAndFlush(lockedRoom);
+        PriceRule lockedRoomBase = createBaseRule(homestay1.getId(), lockedRoom.getId(), "Giá cơ bản Phòng 302", 800_000L);
+
+        // Tạo 3 phòng ở HS2 (2 ACTIVE: 600k & 1.000k; 1 LOCKED: 2.000k) để kiểm chứng homestayScopeSummary
+        RoomType hs2Type = new RoomType();
+        hs2Type.setHomestayId(homestay2.getId());
+        hs2Type.setName("Standard HS2");
+        hs2Type = roomTypeRepository.saveAndFlush(hs2Type);
+
+        Room hs2ActiveA = createRoom(homestay2.getId(), hs2Type.getId(), "P201", (byte) 2, RoomStatus.ACTIVE);
+        Room hs2ActiveB = createRoom(homestay2.getId(), hs2Type.getId(), "P202", (byte) 4, RoomStatus.ACTIVE);
+        Room hs2Locked = createRoom(homestay2.getId(), hs2Type.getId(), "P203", (byte) 2, RoomStatus.LOCKED);
+        createBaseRule(homestay2.getId(), hs2ActiveA.getId(), "BASE P201", 600_000L);
+        createBaseRule(homestay2.getId(), hs2ActiveB.getId(), "BASE P202", 1_000_000L);
+        createBaseRule(homestay2.getId(), hs2Locked.getId(), "BASE P203", 2_000_000L);
+
+        // Case 1: UPDATE BASE 800k → 1.000k (+25%, không rủi ro)
+        PriceRuleChangeRequest normalUpdate = createChangeRequest(
+                homestay1.getId(),
+                room1Base.getId(),
+                RequestType.UPDATE,
+                """
+                {
+                  "roomId": %d,
+                  "ruleType": "BASE",
+                  "name": "Giá cơ bản Phòng 301",
+                  "basePrice": 1000000
+                }
+                """.formatted(room1.getId()),
+                Status.PENDING_APPROVAL,
+                manager1.getId(),
+                Instant.parse("2048-03-10T01:00:00Z"),
+                null, null, null
+        );
+
+        // Case 2: UPDATE BASE phòng LOCKED 800k → 1.200k (+50% HIGH + ROOM_NOT_ACTIVE MEDIUM)
+        PriceRuleChangeRequest riskyLockedUpdate = createChangeRequest(
+                homestay1.getId(),
+                lockedRoomBase.getId(),
+                RequestType.UPDATE,
+                """
+                {
+                  "roomId": %d,
+                  "ruleType": "BASE",
+                  "name": "Giá cơ bản Phòng 302",
+                  "basePrice": 1200000
+                }
+                """.formatted(lockedRoom.getId()),
+                Status.PENDING_APPROVAL,
+                manager1.getId(),
+                Instant.parse("2048-03-10T02:00:00Z"),
+                null, null, null
+        );
+
+        // Case 3: CREATE ADJUSTMENT room1 trùng ưu tiên 10 với existingAdjustmentRule + FIXED_PRICE 1.300k (+62.5%)
+        PriceRuleChangeRequest overlapCreate = createChangeRequest(
+                homestay1.getId(),
+                null,
+                RequestType.CREATE,
+                """
+                {
+                  "roomId": %d,
+                  "ruleType": "ADJUSTMENT",
+                  "name": "Lễ cao điểm P301",
+                  "adjustType": "FIXED_PRICE",
+                  "adjustValue": 1300000,
+                  "weekdays": ["FRI", "SAT"],
+                  "priority": 10
+                }
+                """.formatted(room1.getId()),
+                Status.PENDING_APPROVAL,
+                manager1.getId(),
+                Instant.parse("2048-03-10T03:00:00Z"),
+                null, null, null
+        );
+
+        // Case 4: CREATE ADJUSTMENT toàn cơ sở HS2 (+20%): 2/3 phòng ACTIVE, giá dự kiến 720k–1.200k
+        PriceRuleChangeRequest scopeCreate = createChangeRequest(
+                homestay2.getId(),
+                null,
+                RequestType.CREATE,
+                """
+                {
+                  "ruleType": "ADJUSTMENT",
+                  "name": "Cuối tuần toàn cơ sở",
+                  "adjustType": "PERCENT",
+                  "adjustValue": 20,
+                  "weekdays": ["SAT", "SUN"],
+                  "priority": 15
+                }
+                """,
+                Status.PENDING_APPROVAL,
+                manager2.getId(),
+                Instant.parse("2048-03-10T04:00:00Z"),
+                null, null, null
+        );
+
+        // Case 5: Yêu cầu đã APPROVED không tạo priceComparison giả
+        PriceRuleChangeRequest approvedReq = createChangeRequest(
+                homestay1.getId(),
+                room1Base.getId(),
+                RequestType.UPDATE,
+                """
+                {
+                  "roomId": %d,
+                  "ruleType": "BASE",
+                  "name": "Giá cơ bản Phòng 301",
+                  "basePrice": 800000
+                }
+                """.formatted(room1.getId()),
+                Status.APPROVED,
+                manager1.getId(),
+                Instant.parse("2048-03-10T05:00:00Z"),
+                director.getId(),
+                Instant.parse("2048-03-10T06:00:00Z"),
+                null
+        );
+
+        mockMvc.perform(get("/api/v1/director/price-rule-change-requests")
+                        .header("Authorization", "Bearer " + directorToken)
+                        .param("fromDate", "2048-03-10")
+                        .param("toDate", "2048-03-10")
+                        .param("sort", "requestedAt,asc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(5)))
+
+                // [0] normalUpdate: 800k -> 1.000k (+25%), không rủi ro
+                .andExpect(jsonPath("$.data[0].id", is(normalUpdate.getId().intValue())))
+                .andExpect(jsonPath("$.data[0].roomSummary.name", is(room1.getName())))
+                .andExpect(jsonPath("$.data[0].roomSummary.maxGuests", is(2)))
+                .andExpect(jsonPath("$.data[0].roomSummary.status", is("ACTIVE")))
+                .andExpect(jsonPath("$.data[0].roomSummary.currentBasePrice", is(800000)))
+                .andExpect(jsonPath("$.data[0].currentRule.basePrice", is(800000)))
+                .andExpect(jsonPath("$.data[0].priceComparison.currentAmount", is(800000)))
+                .andExpect(jsonPath("$.data[0].priceComparison.proposedAmount", is(1000000)))
+                .andExpect(jsonPath("$.data[0].priceComparison.deltaAmount", is(200000)))
+                .andExpect(jsonPath("$.data[0].priceComparison.deltaPercent", is(25.0)))
+                .andExpect(jsonPath("$.data[0].priceComparison.changedFields", contains("basePrice")))
+                .andExpect(jsonPath("$.data[0].riskAlerts").doesNotExist())
+
+                // [1] riskyLockedUpdate: +50% + LOCKED room
+                .andExpect(jsonPath("$.data[1].id", is(riskyLockedUpdate.getId().intValue())))
+                .andExpect(jsonPath("$.data[1].roomSummary.status", is("LOCKED")))
+                .andExpect(jsonPath("$.data[1].roomSummary.maxGuests", is(4)))
+                .andExpect(jsonPath("$.data[1].priceComparison.deltaPercent", is(50.0)))
+
+                // [2] overlapCreate: +62.5% từ BASE 800k + trùng ưu tiên 10
+                .andExpect(jsonPath("$.data[2].id", is(overlapCreate.getId().intValue())))
+                .andExpect(jsonPath("$.data[2].priceComparison.currentAmount", is(800000)))
+                .andExpect(jsonPath("$.data[2].priceComparison.proposedAmount", is(1300000)))
+                .andExpect(jsonPath("$.data[2].priceComparison.deltaPercent", is(62.5)))
+
+                // [3] scopeCreate: toàn cơ sở HS2 (chỉ tính phòng ACTIVE 600k..1.000k → dự kiến 720k..1.200k)
+                .andExpect(jsonPath("$.data[3].id", is(scopeCreate.getId().intValue())))
+                .andExpect(jsonPath("$.data[3].roomSummary", nullValue()))
+                .andExpect(jsonPath("$.data[3].homestayScopeSummary.activeRoomCount", is(2)))
+                .andExpect(jsonPath("$.data[3].homestayScopeSummary.totalRoomCount", is(3)))
+                .andExpect(jsonPath("$.data[3].homestayScopeSummary.minBasePrice", is(600000)))
+                .andExpect(jsonPath("$.data[3].homestayScopeSummary.maxBasePrice", is(1000000)))
+                .andExpect(jsonPath("$.data[3].priceComparison.deltaPercent", is(20.0)))
+                .andExpect(jsonPath("$.data[3].priceComparison.projectedMinPrice", is(720000)))
+                .andExpect(jsonPath("$.data[3].priceComparison.projectedMaxPrice", is(1200000)))
+
+                // [4] approvedReq: giữ roomSummary nhưng không tạo priceComparison giả
+                .andExpect(jsonPath("$.data[4].id", is(approvedReq.getId().intValue())))
+                .andExpect(jsonPath("$.data[4].roomSummary.name", is(room1.getName())))
+                .andExpect(jsonPath("$.data[4].priceComparison", nullValue()));
+    }
+
+    @Test
     @DisplayName("API-DIR-PRICE-01: kiểm tra lỗi INVALID_DATE_RANGE, VALIDATION_ERROR và INVALID_SORT")
     void validatesQueryParameters() throws Exception {
         // fromDate > toDate → 400 INVALID_DATE_RANGE
@@ -396,5 +579,29 @@ class DirectorPriceRuleChangeRequestTests {
         req.setReviewedAt(reviewedAt);
         req.setRejectionReason(rejectionReason);
         return changeRequestRepository.saveAndFlush(req);
+    }
+
+    private Room createRoom(Long homestayId, Long roomTypeId, String name, byte maxGuests, RoomStatus status) {
+        Room room = new Room();
+        room.setHomestayId(homestayId);
+        room.setRoomTypeId(roomTypeId);
+        room.setName(name);
+        room.setMaxGuests(maxGuests);
+        room.setStatus(status);
+        return roomRepository.saveAndFlush(room);
+    }
+
+    private PriceRule createBaseRule(Long homestayId, Long roomId, String name, long basePrice) {
+        PriceRule rule = new PriceRule();
+        rule.setHomestayId(homestayId);
+        rule.setRoomId(roomId);
+        rule.setRuleType(RuleType.BASE);
+        rule.setName(name);
+        rule.setBasePrice(basePrice);
+        rule.setPriority((short) 0);
+        rule.setStatus(PriceRule.Status.ACTIVE);
+        rule.setCreatedAt(Instant.now());
+        rule.setUpdatedAt(Instant.now());
+        return priceRuleRepository.saveAndFlush(rule);
     }
 }
